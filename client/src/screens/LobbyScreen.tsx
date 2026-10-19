@@ -1,0 +1,83 @@
+import { useEffect, useState, type FormEvent } from 'react';
+import { client } from '../net/client.ts';
+import { useGame } from '../state.ts';
+import { StatusBadge } from '../ui/StatusBadge.tsx';
+
+export function LobbyScreen() {
+  const player = useGame((s) => s.player)!;
+  const lobbies = useGame((s) => s.lobbies);
+  const [code, setCode] = useState('');
+  const [name, setName] = useState('');
+  const [isPublic, setIsPublic] = useState(false);
+  const [maxPlayers, setMaxPlayers] = useState(16);
+
+  useEffect(() => {
+    void client.request({ t: 'listLobbies' });
+    const id = setInterval(() => void client.request({ t: 'listLobbies' }), 10_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const create = (e: FormEvent) => {
+    e.preventDefault();
+    void client.act({ t: 'createLobby', name: name.trim(), isPublic, maxPlayers });
+  };
+  const join = (e: FormEvent) => {
+    e.preventDefault();
+    void client.act({ t: 'joinLobby', code: code.trim().toUpperCase() });
+  };
+
+  return (
+    <div className="center-screen">
+      <div className="lobby-grid">
+        <header className="lobby-header">
+          <h1>Salons</h1>
+          <span className="muted">Connecté en tant que <strong>{player.name}</strong></span>
+          <StatusBadge />
+        </header>
+        <section className="card">
+          <h2>Rejoindre avec un code</h2>
+          <form onSubmit={join} className="row">
+            <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="ABC123" maxLength={6} className="code-input" required />
+            <button className="primary" disabled={code.trim().length !== 6}>Rejoindre</button>
+          </form>
+          <h2>Salons publics</h2>
+          {lobbies.length === 0 ? (
+            <p className="muted">Aucun salon public pour l'instant.</p>
+          ) : (
+            <ul className="lobby-list">
+              {lobbies.map((l) => (
+                <li key={l.id}>
+                  <div>
+                    <strong>{l.name}</strong>
+                    <span className="muted"> · {l.playerCount}/{l.maxPlayers} joueurs</span>
+                  </div>
+                  <button onClick={() => void client.act({ t: 'joinLobby', code: l.code })} disabled={l.playerCount >= l.maxPlayers}>
+                    Rejoindre
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        <section className="card">
+          <h2>Créer un salon</h2>
+          <form onSubmit={create} className="stack">
+            <label>Nom<input value={name} onChange={(e) => setName(e.target.value)} minLength={3} maxLength={40} required /></label>
+            <label>
+              Joueurs maximum
+              <input type="number" min={2} max={500} value={maxPlayers} onChange={(e) => setMaxPlayers(Number(e.target.value))} />
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
+              Public (sinon privé : accès par code d'invitation)
+            </label>
+            <button className="primary" disabled={name.trim().length < 3}>Créer</button>
+          </form>
+          <p className="muted small">
+            Le monde d'un salon est persistant : la simulation continue sur le serveur à vitesse fixe, même sans joueur connecté.
+          </p>
+        </section>
+      </div>
+    </div>
+  );
+}

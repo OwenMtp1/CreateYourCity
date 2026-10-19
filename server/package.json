@@ -1,0 +1,21 @@
+{
+  "name": "@cyc/server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../.env src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc -p . --noEmit",
+    "migrate": "tsx --env-file-if-exists=../.env src/migrate.ts"
+  },
+  "dependencies": {
+    "@cyc/shared": "*",
+    "jose": "^6.1.0",
+    "pg": "^8.16.3",
+    "tsx": "^4.20.6",
+    "ws": "^8.18.3",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": { "@types/pg": "^8.15.6", "@types/ws": "^8.18.1" }
+}

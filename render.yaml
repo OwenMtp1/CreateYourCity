@@ -1,0 +1,32 @@
+# Blueprint Render : un seul service web (serveur de jeu + client statique).
+# Le serveur de jeu est un processus à état : ne PAS augmenter numInstances.
+services:
+  - type: web
+    name: createyourcity
+    runtime: node
+    # Une instance qui ne s'endort pas est nécessaire pour une simulation continue 24 h/24
+    # (les instances gratuites s'arrêtent après 15 min sans trafic entrant).
+    plan: starter
+    numInstances: 1
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22.12.0
+      - key: AUTH_MODE
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_SSL
+        value: no-verify
+      - key: DB_AUTO_MIGRATE
+        value: "true"
+      - key: MAX_CATCHUP_HOURS
+        value: "24"

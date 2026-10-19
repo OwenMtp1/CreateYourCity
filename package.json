@@ -1,0 +1,28 @@
+{
+  "name": "createyourcity",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": ["shared", "server", "client"],
+  "engines": { "node": ">=22.12" },
+  "scripts": {
+    "dev": "npm run dev --workspace server & npm run dev --workspace client",
+    "dev:server": "npm run dev --workspace server",
+    "dev:client": "npm run dev --workspace client",
+    "build": "npm run build --workspace client && npm run build --workspace server",
+    "start": "npm run start --workspace server",
+    "typecheck": "tsc -p shared && tsc -p server && tsc -p client",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "db:migrate": "npm run migrate --workspace server",
+    "geodata": "node scripts/build-geodata.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^22.19.1",
+    "eslint": "^9.39.1",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.4",
+    "vitest": "^3.2.4"
+  }
+}
