@@ -1,4 +1,5 @@
 import type { ChatMessage, CityState } from '@cyc/shared';
+import type { WorldMeta } from '@cyc/shared/game';
 
 export interface LobbyRecord {
   id: string;
@@ -11,11 +12,13 @@ export interface LobbyRecord {
   /** Horloge du monde : dernier tick simulé et instant réel correspondant (ms epoch). */
   tick: number;
   lastSimulatedAt: number;
+  /** État global du monde (diplomatie, armées, nations…), null pour un salon jamais simulé. */
+  world: WorldMeta | null;
 }
 
 export interface LobbyClock { tick: number; lastSimulatedAt: number }
 
-export type ClaimResult = 'ok' | 'city_taken' | 'player_has_city';
+export type ClaimResult = 'ok' | 'city_taken';
 
 export interface ActionLogEntry {
   lobbyId: string;
@@ -38,10 +41,10 @@ export interface Store {
   loadMembers(lobbyId: string): Promise<string[]>;
   addMember(lobbyId: string, playerId: string): Promise<void>;
   loadCities(lobbyId: string): Promise<CityState[]>;
-  /** Attribution atomique : une ville = un propriétaire, un joueur = une ville par salon. */
+  /** Attribution atomique : une ville = un propriétaire (première ville ou expansion). */
   claimCity(lobbyId: string, city: CityState): Promise<ClaimResult>;
-  /** Enregistre l'horloge et les villes dans une même transaction. */
-  saveSnapshot(lobbyId: string, clock: LobbyClock, cities: CityState[]): Promise<void>;
+  /** Enregistre l'horloge, l'état du monde et les villes dans une même transaction. */
+  saveSnapshot(lobbyId: string, clock: LobbyClock, cities: CityState[], world: WorldMeta): Promise<void>;
   logAction(entry: ActionLogEntry): Promise<void>;
   appendChat(lobbyId: string, message: ChatMessage): Promise<void>;
   loadChat(lobbyId: string, limit: number): Promise<ChatMessage[]>;

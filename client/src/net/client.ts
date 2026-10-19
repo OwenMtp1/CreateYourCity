@@ -1,5 +1,6 @@
 // Connexion WebSocket au serveur de jeu, avec reconnexion automatique et reprise de session.
 import type { ClientMessage, ServerMessage } from '@cyc/shared';
+import { CITY_BY_ID } from '@cyc/shared/world';
 import { getState, setState, toast } from '../state.ts';
 import { currentToken, rememberedLobby, rememberLobby, setDevToken } from './auth.ts';
 
@@ -68,6 +69,18 @@ class GameClient {
     });
   }
 
+  /** Commande sur la ville active. */
+  cityCommand(cmd: Extract<Outgoing, { t: 'command' }>['cmd']): Promise<boolean> {
+    const cityId = getState().activeCityId;
+    if (!cityId) return Promise.resolve(false);
+    return this.act({ t: 'command', cityId, cmd });
+  }
+
+  /** Action de niveau monde (diplomatie, commerce, armée, nation). */
+  action(action: Extract<Outgoing, { t: 'action' }>['action']): Promise<boolean> {
+    return this.act({ t: 'action', action });
+  }
+
   /** Requête avec affichage automatique de l'erreur. */
   async act(msg: Outgoing): Promise<boolean> {
     const res = await this.request(msg);
@@ -93,30 +106,53 @@ class GameClient {
       case 'lobbies':
         setState({ lobbies: msg.lobbies });
         return;
-      case 'lobbyJoined':
+      case 'lobbyJoined': {
         rememberLobby(msg.lobby.code);
-        setState({
-          lobby: msg.lobby, clock: msg.clock, tick: msg.clock.tick, summaries: msg.summaries, myCity: msg.myCity,
-          layers: msg.layers, chat: msg.chat, lastSavedAt: msg.lastSavedAt,
-        });
+        const myCities = Object.fromEntries(msg.myCities.map((c) => [c.cityId, c]));
+        const first = msg.myCities[0]?.cityId ?? null;
+        setState((s) => ({
+          lobby: msg.lobby, clock: msg.clock, tick: msg.clock.tick, summaries: msg.summaries, myCities, layers: msg.layers,
+          world: msg.world, chat: msg.chat, lastSavedAt: msg.lastSavedAt,
+          activeCityId: s.activeCityId && myCities[s.activeCityId] ? s.activeCityId : first,
+          view: s.lobby?.id === msg.lobby.id ? s.view : first ? 'city' : 'globe',
+        }));
         return;
+      }
       case 'lobbyLeft':
         rememberLobby(null);
-        setState({ lobby: null, myCity: null, layers: null, summaries: [], chat: [], clock: null });
+        setState({ lobby: null, myCities: {}, activeCityId: null, layers: {}, world: null, summaries: [], chat: [], clock: null, view: 'globe' });
         return;
       case 'tick':
         setState({ tick: msg.tick });
         return;
       case 'city':
-        setState({ myCity: msg.city, layers: msg.layers });
+        setState((s) => ({
+          myCities: { ...s.myCities, [msg.city.cityId]: msg.city },
+          layers: { ...s.layers, [msg.city.cityId]: msg.layers },
+          activeCityId: s.activeCityId ?? msg.city.cityId,
+        }));
         return;
+      case 'cityRemoved': {
+        const name = CITY_BY_ID.get(msg.cityId)?.name ?? msg.cityId;
+        toast(`Vous ne contrôlez plus ${name}.`, 'error');
+        setState((s) => {
+          const myCities = { ...s.myCities };
+          delete myCities[msg.cityId];
+          const activeCityId = s.activeCityId === msg.cityId ? Object.keys(myCities)[0] ?? null : s.activeCityId;
+          return { myCities, activeCityId, view: activeCityId ? s.view : 'globe' };
+        });
+        return;
+      }
       case 'cityStats': {
-        const { t: _t, ...update } = msg;
-        setState((s) => (s.myCity ? { myCity: { ...s.myCity, ...update } } : {}));
+        const { t: _t, cityId, ...update } = msg;
+        setState((s) => (s.myCities[cityId] ? { myCities: { ...s.myCities, [cityId]: { ...s.myCities[cityId]!, ...update } } } : {}));
         return;
       }
       case 'layers':
-        setState({ layers: msg.layers });
+        setState((s) => ({ layers: { ...s.layers, [msg.cityId]: msg.layers } }));
+        return;
+      case 'world':
+        setState({ world: msg.world });
         return;
       case 'summaries':
         setState({ summaries: msg.summaries });

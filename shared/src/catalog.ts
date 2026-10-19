@@ -10,12 +10,15 @@ export type BuildingType =
   | 'school'
   | 'police'
   | 'power_plant'
-  | 'water_tower';
+  | 'water_tower'
+  | 'tower'
+  | 'park'
+  | 'barracks';
 
 export type RoadType = 'street' | 'avenue';
-export type BuildingCategory = 'residential' | 'commercial' | 'industrial' | 'service' | 'utility';
-export type ServiceKind = 'health' | 'education' | 'safety';
-export const SERVICE_KINDS: readonly ServiceKind[] = ['health', 'education', 'safety'];
+export type BuildingCategory = 'residential' | 'commercial' | 'industrial' | 'service' | 'utility' | 'military';
+export type ServiceKind = 'health' | 'education' | 'safety' | 'leisure';
+export const SERVICE_KINDS: readonly ServiceKind[] = ['health', 'education', 'safety', 'leisure'];
 
 export interface BuildingDef {
   type: BuildingType;
@@ -49,6 +52,11 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     type: 'house', label: 'Maisons', category: 'residential',
     description: 'Petit îlot de maisons individuelles.',
     w: 20, h: 20, cost: 15_000, upkeepPerDay: 10, jobs: 0, housing: 12, powerMW: 0.02, waterM3PerDay: 3,
+  },
+  tower: {
+    type: 'tower', label: "Tour d'habitation", category: 'residential',
+    description: 'Logements à haute densité.',
+    w: 30, h: 30, cost: 260_000, upkeepPerDay: 140, jobs: 0, housing: 400, powerMW: 0.6, waterM3PerDay: 80,
   },
   apartment: {
     type: 'apartment', label: 'Immeuble', category: 'residential',
@@ -102,6 +110,17 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     description: "Fournit de l'eau ; sinon la ville importe de l'eau régionale.",
     w: 20, h: 20, cost: 50_000, upkeepPerDay: 300, jobs: 5, housing: 0, powerMW: 0.1, waterM3PerDay: 0,
     waterOutputM3PerDay: 2_000, publicSector: true,
+  },
+  park: {
+    type: 'park', label: 'Parc', category: 'service',
+    description: 'Espace vert : loisirs pour les quartiers voisins.',
+    w: 40, h: 40, cost: 40_000, upkeepPerDay: 150, jobs: 3, housing: 0, powerMW: 0, waterM3PerDay: 20,
+    service: { kind: 'leisure', radius: 400, capacity: 3_000 }, publicSector: true,
+  },
+  barracks: {
+    type: 'barracks', label: 'Caserne', category: 'military',
+    description: "Permet de recruter des unités et renforce la défense de la ville.",
+    w: 60, h: 40, cost: 200_000, upkeepPerDay: 1_000, jobs: 40, housing: 0, powerMW: 0.3, waterM3PerDay: 15, publicSector: true,
   },
 };
 

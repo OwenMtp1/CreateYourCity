@@ -9,3 +9,4 @@ export * from './time.ts';
 export * from './types.ts';
 export * from './sim/layout.ts';
 export * from './sim/tick.ts';
+export * from './sim/modifiers.ts';

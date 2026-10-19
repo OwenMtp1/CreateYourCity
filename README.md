@@ -1,10 +1,11 @@
 # CreateYourCity — prototype
 
-Jeu web multijoueur persistant qui mêle construction urbaine et stratégie géopolitique sur la géographie réelle.
-Chaque joueur choisit un pays puis une ville réelle encore libre, en devient le dirigeant et la construit à partir de zéro.
+Jeu web multijoueur persistant qui mêle construction urbaine en 3D et stratégie géopolitique sur un globe réel.
+Chaque joueur choisit une ville réelle encore libre, en devient le dirigeant et la construit à partir de zéro, puis
+commerce, négocie, s'étend, fait la guerre et participe à la vie politique de son pays face à d'autres humains.
 Le monde tourne en temps réel continu, à vitesse fixe, sur un serveur autoritaire. Aucune IA ne joue ni ne génère de contenu.
 
-> **État : phase 1 jouable, avec les débuts de la phase 2.** Ce qui fonctionne réellement et ce qui reste à faire est listé
+> **État : phases 1 à 4 jouables dans une première version.** Ce qui fonctionne réellement et ce qui reste à faire est listé
 > dans [`docs/ROADMAP.md`](docs/ROADMAP.md). Les choix provisoires sont dans [`docs/DECISIONS.md`](docs/DECISIONS.md),
 > l'architecture dans [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -22,10 +23,14 @@ Ouvrez <http://localhost:5173> dans deux navigateurs (ou une fenêtre privée) p
 
 1. Saisissez un nom de dirigeant. Sans Supabase, le serveur crée une identité invitée signée.
 2. Créez un salon (public ou privé). Le second joueur le rejoint avec le **code d'invitation** affiché dans la barre du haut.
-3. Sur la carte, zoomez et cliquez sur un pays puis sur une ville libre, ou utilisez la recherche, et choisissez **Prendre cette ville**.
-4. Dans la ville vide, tracez une **rue** depuis la flèche jaune, l'accès régional au bord ouest. Placez ensuite logements, commerces,
-   bureaux et services le long de la route. La grille s'active et se désactive avec `G`, et `R` fait pivoter un bâtiment.
-5. Suivez le budget, la population, l'emploi, les services et le trafic dans les onglets de droite.
+3. Sur le **globe 3D**, tournez et zoomez (molette), cliquez sur une ville libre ou utilisez la recherche, puis **Prendre cette ville**.
+4. Dans la **ville 3D** vide, tracez une **rue** depuis le portique jaune (accès régional, bord ouest), puis placez logements,
+   commerces, bureaux, services, parcs… le long des routes. Glisser : déplacer la vue ; clic droit + glisser : pivoter ;
+   `R` : tourner un bâtiment ; `G` : grille ; `Échap` : annuler. La ville vit au rythme du jour et de la nuit.
+5. Barre latérale : **Économie, Population, Services** (ville active) ; **Territoire** (vos villes, annexions, transferts),
+   **Commerce** (marché commun, contrats), **Diplomatie** (traités, guerre, paix, messages privés), **Armée** (caserne requise ;
+   choisissez une destination sur le globe), **Nation** (élection, lois, grands projets, impôt national), **Salon** (chat, journal).
+6. Ordinateur peu puissant : cochez « Graphismes économiques » dans l'onglet Construire.
 
 Sans base de données, l'état est sauvegardé dans `./data/world.json` (`STORE=file`). Arrêtez le serveur avec Ctrl+C
 (une sauvegarde finale est faite), puis relancez-le : le temps écoulé est rattrapé de façon déterministe.
@@ -102,8 +107,9 @@ DATABASE_URL=postgres://user:pass@localhost:5432/cyc DATABASE_SSL=disable npm ru
 
 - Le terrain constructible (rivière, lac, collines) est **généré de façon déterministe** à partir de l'identifiant de la
   ville. Ce n'est pas le relief réel.
-- Diplomatie, traités, commerce entre joueurs, armée, expansion territoriale et élections nationales **ne sont pas
-  encore implémentés** (voir la feuille de route). L'interface ne propose aucun bouton factice pour ces systèmes.
+- Combats et sièges sont résolus de façon agrégée dans les villes (pas de bataille en rase campagne ni d'unités navales).
 - Le trafic est agrégé par tronçon d'accès, sans calcul d'itinéraire.
+- Les règles des phases 3 et 4 sont provisoires et listées dans `docs/DECISIONS.md`.
 - Un seul serveur de jeu simule tous les salons. La montée en charge horizontale n'est pas prévue à ce stade.
-- Le paquet JavaScript du client (~1,6 Mo, ~390 Ko compressé) embarque la liste des 7 340 villes. Le découpage est prévu.
+- Le paquet JavaScript du client embarque Three.js et la liste des 7 340 villes. Le découpage est prévu.
+- Le rendu 3D demande une carte graphique : sans accélération matérielle (rendu logiciel), il devient très lent.

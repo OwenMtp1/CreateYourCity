@@ -36,7 +36,7 @@ describe('serveur de jeu', () => {
     const game = await makeServer(new MemoryStore(), new FakeClock());
     const c = connectClient(game);
     await c.send({ t: 'auth', devName: 'Alice' });
-    const res = await c.send({ t: 'command', cmd: { type: 'build', building: 'castle', x: 1, y: 1, rotation: 0 } });
+    const res = await c.send({ t: 'command', cityId: PARIS, cmd: { type: 'build', building: 'castle', x: 1, y: 1, rotation: 0 } });
     expect(res.ok).toBe(false);
   });
 
@@ -66,11 +66,11 @@ describe('serveur de jeu', () => {
     const city = alice.last('city')!.city;
     expect(city.buildings).toHaveLength(0);
     expect(city.treasury).toBe(STARTING_TREASURY);
-    const bad = await alice.send({ t: 'command', cmd: { type: 'build', building: 'house', x: 500, y: 500, rotation: 0 } });
+    const bad = await alice.send({ t: 'command', cityId: PARIS, cmd: { type: 'build', building: 'house', x: 500, y: 500, rotation: 0 } });
     expect(bad.ok).toBe(false);
-    const road = await alice.send({ t: 'command', cmd: { type: 'buildRoad', road: 'street', x1: REGIONAL_ACCESS.x, y1: REGIONAL_ACCESS.y, x2: 150, y2: REGIONAL_ACCESS.y } });
+    const road = await alice.send({ t: 'command', cityId: PARIS, cmd: { type: 'buildRoad', road: 'street', x1: REGIONAL_ACCESS.x, y1: REGIONAL_ACCESS.y, x2: 150, y2: REGIONAL_ACCESS.y } });
     expect(road.ok).toBe(true);
-    const house = await alice.send({ t: 'command', cmd: { type: 'build', building: 'house', x: 60, y: 1020, rotation: 0 } });
+    const house = await alice.send({ t: 'command', cityId: PARIS, cmd: { type: 'build', building: 'house', x: 60, y: 1020, rotation: 0 } });
     expect(house.ok).toBe(true);
     expect(alice.last('city')!.city.buildings).toHaveLength(1);
     expect(alice.last('city')!.layers.buildingStatus[alice.last('city')!.city.buildings[0]!.id]).toBe('ok');
@@ -91,6 +91,8 @@ describe('serveur de jeu', () => {
     expect(bob.last('summaries')!.summaries.map((s) => s.cityId)).toEqual([PARIS]);
     // Bob ne reçoit pas l'état détaillé de la ville d'Alice.
     expect(bob.messages.some((m) => m.t === 'city' || m.t === 'cityStats')).toBe(false);
+    // Bob voit le monde mais pas le détail de la ville d'Alice.
+    expect(bob.last('world')!.world.cityDetails).toHaveLength(0);
   });
 
   it('diffuse le chat aux membres du salon', async () => {
@@ -126,8 +128,8 @@ describe('serveur de jeu', () => {
       await alice.send({ t: 'createLobby', name: 'Persistant', isPublic: true, maxPlayers: 4 });
       const code = alice.last('lobbyJoined')!.lobby.code;
       await alice.send({ t: 'claimCity', cityId: PARIS });
-      await alice.send({ t: 'command', cmd: { type: 'buildRoad', road: 'street', x1: 0, y1: 1000, x2: 200, y2: 1000 } });
-      await alice.send({ t: 'command', cmd: { type: 'build', building: 'apartment', x: 60, y: 1025, rotation: 0 } });
+      await alice.send({ t: 'command', cityId: PARIS, cmd: { type: 'buildRoad', road: 'street', x1: 0, y1: 1000, x2: 200, y2: 1000 } });
+      await alice.send({ t: 'command', cityId: PARIS, cmd: { type: 'build', building: 'apartment', x: 60, y: 1025, rotation: 0 } });
       clock.t += TICK_MS * 100;
       game1.loop();
       await game1.stop();
@@ -148,9 +150,9 @@ describe('serveur de jeu', () => {
       expect((await again.send({ t: 'auth', token })).ok).toBe(true);
       expect((await again.send({ t: 'joinLobby', code })).ok).toBe(true);
       const joined = again.last('lobbyJoined')!;
-      expect(joined.myCity!.buildings).toHaveLength(1);
-      expect(joined.myCity!.tick).toBe(world.tick);
-      expect(joined.myCity!.treasury).not.toBe(treasuryAtStop);
+      expect(joined.myCities[0]!.buildings).toHaveLength(1);
+      expect(joined.myCities[0]!.tick).toBe(world.tick);
+      expect(joined.myCities[0]!.treasury).not.toBe(treasuryAtStop);
       expect(joined.clock.catchUpTicks).toBe(3600);
       await game2.stop();
     } finally {
@@ -173,5 +175,51 @@ describe('serveur de jeu', () => {
     expect(world.tick).toBe(200);
     game2.loop(clock.t + TICK_MS);
     expect(world.tick).toBe(201);
+  });
+
+  it('phase 3 : traité, expansion et état du monde survivent au redémarrage', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cyc-'));
+    try {
+      const clock = new FakeClock();
+      const store1 = new FileStore(dir);
+      await store1.init();
+      const game1 = await makeServer(store1, clock);
+      const alice = connectClient(game1);
+      const bob = connectClient(game1);
+      await alice.send({ t: 'auth', devName: 'Alice' });
+      await bob.send({ t: 'auth', devName: 'Bob' });
+      await alice.send({ t: 'createLobby', name: 'Diplomatie', isPublic: false, maxPlayers: 4 });
+      const code = alice.last('lobbyJoined')!.lobby.code;
+      await bob.send({ t: 'joinLobby', code });
+      await alice.send({ t: 'claimCity', cityId: PARIS });
+      await bob.send({ t: 'claimCity', cityId: LYON });
+      const bobId = bob.last('authed')!.player.id;
+      expect((await alice.send({ t: 'action', action: { type: 'proposeTreaty', to: bobId, treaty: 'alliance' } })).ok).toBe(true);
+      const proposal = bob.last('world')!.world.treaties.find((t) => t.status === 'proposed')!;
+      expect((await bob.send({ t: 'action', action: { type: 'respondTreaty', treatyId: proposal.id, accept: true } })).ok).toBe(true);
+      expect(alice.last('world')!.world.treaties[0]!.status).toBe('active');
+      // L'alliance donne accès au détail de la ville du partenaire.
+      expect(alice.last('world')!.world.cityDetails.map((c) => c.cityId)).toEqual([LYON]);
+      // Expansion : nouvelle ville neutre à moins de 500 km, payée par Paris.
+      const ORLEANS = 'c1159142017';
+      const exp = await alice.send({ t: 'expandCity', fromCityId: PARIS, cityId: ORLEANS });
+      expect(exp.ok).toBe(true);
+      expect(alice.messages.some((m) => m.t === 'city' && m.city.cityId === ORLEANS)).toBe(true);
+      expect((await alice.send({ t: 'claimCity', cityId: 'c1159151609' })).ok).toBe(false);
+      clock.t += TICK_MS * 10;
+      game1.loop();
+      await game1.stop();
+      await store1.close();
+
+      const store2 = new FileStore(dir);
+      await store2.init();
+      const game2 = await makeServer(store2, clock);
+      const world = [...game2.lobbies.values()][0]!;
+      expect(world.world.meta.treaties[0]!.status).toBe('active');
+      expect(world.citiesOf(alice.last('authed')!.player.id).map((c) => c.cityId).sort()).toEqual([ORLEANS, PARIS].sort());
+      await game2.stop();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

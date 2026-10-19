@@ -9,6 +9,8 @@ export const TICK_MS = 1000;
 /** Temps de jeu écoulé par tick. */
 export const GAME_MINUTES_PER_TICK = 10;
 export const TICKS_PER_DAY = (24 * 60) / GAME_MINUTES_PER_TICK;
+/** Heure de jeu au tick 0 (un monde démarre le matin). */
+export const GAME_START_HOUR = 8;
 /** Pas de simulation exprimé en jours de jeu (les formules sont écrites « par jour »). */
 export const DT_DAYS = 1 / TICKS_PER_DAY;
 export const DAYS_PER_YEAR = 360;

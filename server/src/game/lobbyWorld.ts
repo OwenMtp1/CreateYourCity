@@ -1,22 +1,29 @@
-// Monde d'un salon : horloge fixe, villes possédées, simulation et rattrapage.
-import { simulateTick, simulateTicks, summarizeCity, TICK_MS, type CityLayers, type CityState, type CitySummary, type LobbyInfo } from '@cyc/shared';
+// Monde d'un salon : horloge fixe, villes, état global (diplomatie, armées, nations), rattrapage.
+import { simulateTicks, summarizeCity, TICK_MS, type CityLayers, type CityState, type CitySummary, type LobbyInfo } from '@cyc/shared';
+import { citiesOf, createWorldMeta, migrateWorldMeta, stepWorld, type World } from '@cyc/shared/game';
 import type { LobbyRecord } from '../store/types.ts';
 
 export interface CatchUpReport { simulated: number; skipped: number }
 
 export class LobbyWorld {
   readonly members = new Set<string>();
-  readonly cities = new Map<string, CityState>();
-  readonly cityByOwner = new Map<string, string>();
+  readonly world: World;
   /** Villes en cours d'attribution (empêche deux revendications concurrentes en mémoire). */
   readonly pendingClaims = new Set<string>();
   readonly layers = new Map<string, CityLayers>();
   catchUp: CatchUpReport = { simulated: 0, skipped: 0 };
   lastSavedAt: number | null = null;
 
-  constructor(readonly record: LobbyRecord) {}
+  constructor(readonly record: LobbyRecord) {
+    this.world = {
+      tick: record.tick,
+      cities: new Map(),
+      meta: record.world ? migrateWorldMeta(record.world) : createWorldMeta(),
+    };
+  }
 
-  get tick() { return this.record.tick; }
+  get tick() { return this.world.tick; }
+  get cities() { return this.world.cities; }
 
   info(): LobbyInfo {
     const r = this.record;
@@ -30,14 +37,21 @@ export class LobbyWorld {
     return [...this.cities.values()].map(summarizeCity);
   }
 
-  addCity(city: CityState) {
-    this.cities.set(city.cityId, city);
-    this.cityByOwner.set(city.ownerId, city.cityId);
+  addMember(id: string, name: string) {
+    this.members.add(id);
+    this.world.meta.players[id] = { name };
   }
 
-  cityOf(playerId: string): CityState | undefined {
-    const id = this.cityByOwner.get(playerId);
-    return id ? this.cities.get(id) : undefined;
+  addCity(city: CityState) {
+    this.cities.set(city.cityId, city);
+  }
+
+  citiesOf(playerId: string): CityState[] {
+    return citiesOf(this.world, playerId).map((id) => this.cities.get(id)!);
+  }
+
+  clock() {
+    return { tick: this.world.tick, lastSimulatedAt: this.record.lastSimulatedAt };
   }
 
   /**
@@ -46,29 +60,28 @@ export class LobbyWorld {
    * Au-delà, le temps est sauté (et signalé) : on ne prétend pas que le monde a tourné.
    */
   restore(now: number, maxCatchUpTicks: number): CatchUpReport {
-    let maxCityTick = this.record.tick;
+    let maxCityTick = this.world.tick;
     for (const c of this.cities.values()) maxCityTick = Math.max(maxCityTick, c.tick);
-    if (maxCityTick > this.record.tick) {
-      this.record.lastSimulatedAt += (maxCityTick - this.record.tick) * TICK_MS;
-      this.record.tick = maxCityTick;
+    if (maxCityTick > this.world.tick) {
+      this.record.lastSimulatedAt += (maxCityTick - this.world.tick) * TICK_MS;
+      this.world.tick = maxCityTick;
     }
     for (const c of this.cities.values()) {
-      if (c.tick < this.record.tick) simulateTicks(c, this.record.tick - c.tick);
+      if (c.tick < this.world.tick) simulateTicks(c, this.world.tick - c.tick);
     }
     const missed = Math.max(0, Math.floor((now - this.record.lastSimulatedAt) / TICK_MS));
     const simulated = Math.min(missed, maxCatchUpTicks);
     for (let i = 0; i < simulated; i++) this.step();
     const skipped = missed - simulated;
-    // Le temps sauté n'avance pas l'horloge de jeu : on repart de maintenant.
     if (skipped > 0) this.record.lastSimulatedAt += skipped * TICK_MS;
     this.catchUp = { simulated, skipped };
     return this.catchUp;
   }
 
-  /** Un tick de simulation pour toutes les villes du salon. */
+  /** Un tick de simulation pour tout le salon. */
   step() {
-    for (const city of this.cities.values()) this.layers.set(city.cityId, simulateTick(city));
-    this.record.tick += 1;
+    for (const [id, l] of stepWorld(this.world)) this.layers.set(id, l);
+    this.record.tick = this.world.tick;
     this.record.lastSimulatedAt += TICK_MS;
   }
 

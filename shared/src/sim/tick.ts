@@ -6,6 +6,7 @@ import { DAYS_PER_YEAR, DT_DAYS, ECONOMY, LOAN_ANNUAL_RATE, POPULATION, TRAFFIC 
 import { segmentLength } from '../geometry.ts';
 import type { Building, CityLayers, CityState, CityStats } from '../types.ts';
 import { getLayout } from './layout.ts';
+import { DEFAULT_MODIFIERS, LAW_EFFECTS, PROJECT_EFFECTS, type CityModifiers } from './modifiers.ts';
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
@@ -17,16 +18,31 @@ export function segmentEfficiency(ratio: number): number {
 
 /** Attractivité 0..1 : emploi, services, fiscalité, trafic, pollution. */
 export function attractiveness(input: {
-  jobScore: number; serviceScore: number; residentialTax: number; trafficEfficiency: number; pollution: number;
+  jobScore: number; serviceScore: number; residentialTax: number; trafficEfficiency: number; pollution: number; bonus?: number;
 }): number {
   const taxScore = 1 - clamp01((input.residentialTax - POPULATION.comfortableTaxRate) / 0.22);
   return clamp01(
-    0.4 * input.jobScore + 0.25 * input.serviceScore + 0.2 * taxScore + 0.15 * input.trafficEfficiency - 0.3 * input.pollution,
+    0.4 * input.jobScore + 0.25 * input.serviceScore + 0.2 * taxScore + 0.15 * input.trafficEfficiency - 0.3 * input.pollution +
+      (input.bonus ?? 0),
   );
 }
 
-export function simulateTick(city: CityState): CityLayers {
+export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIFIERS): CityLayers {
   const layout = getLayout(city);
+  const law = mod.laws;
+  const project = mod.projects;
+  const wage = ECONOMY.wagePerWorker * (law.minimum_wage ? LAW_EFFECTS.minimum_wage.wageFactor : 1);
+  const pollutionFactor = law.environment ? LAW_EFFECTS.environment.pollutionFactor : 1;
+  const industryFactor = law.environment ? LAW_EFFECTS.environment.industryFactor : 1;
+  const roadCapacityFactor = project.highway ? PROJECT_EFFECTS.highway.roadCapacityFactor : 1;
+  const powerPrice = ECONOMY.powerImportPricePerMWh * (project.power_grid ? PROJECT_EFFECTS.power_grid.powerImportFactor : 1);
+  const officeFactor = project.university ? PROJECT_EFFECTS.university.officeRevenueFactor : 1;
+  const serviceCapacityFactor: Record<ServiceKind, number> = {
+    health: law.public_health ? LAW_EFFECTS.public_health.healthCapacityFactor : 1,
+    education: project.university ? PROJECT_EFFECTS.university.educationCapacityFactor : 1,
+    safety: 1,
+    leisure: 1,
+  };
   const ops: Building[] = city.buildings.filter((b) => layout.status.get(b.id) === 'ok');
   const budgetEfficiency = city.treasury < 0 ? ECONOMY.deficitServiceEfficiency : 1;
 
@@ -86,7 +102,7 @@ export function simulateTick(city: CityState): CityLayers {
   let congestedSegments = 0;
   for (const r of city.roads) {
     const trips = roadTrips.get(r.id) ?? 0;
-    const ratio = trips / ROADS[r.type].capacityTripsPerDay;
+    const ratio = trips / (ROADS[r.type].capacityTripsPerDay * roadCapacityFactor);
     roadLoad[r.id] = ratio;
     roadConnected[r.id] = layout.roadConnected.get(r.id) === true;
     weightedEfficiency += trips * segmentEfficiency(ratio);
@@ -98,27 +114,36 @@ export function simulateTick(city: CityState): CityLayers {
   let produced = 0, officeRevenue = 0, commercialWages = 0, industrialWages = 0;
   for (const b of ops) {
     const def = BUILDINGS[b.type];
-    const wages = def.jobs * staffing * ECONOMY.wagePerWorker;
-    produced += (def.goodsProductionPerDay ?? 0) * staffing * trafficEfficiency;
-    if (def.officeRevenue) officeRevenue += def.jobs * staffing * ECONOMY.officeRevenuePerWorker * trafficEfficiency;
+    const wages = def.jobs * staffing * wage;
+    produced += (def.goodsProductionPerDay ?? 0) * staffing * trafficEfficiency * industryFactor;
+    if (def.officeRevenue) officeRevenue += def.jobs * staffing * ECONOMY.officeRevenuePerWorker * trafficEfficiency * officeFactor;
     if (def.category === 'commercial') commercialWages += wages;
     if (def.category === 'industrial') industrialWages += wages;
   }
-  const localUsed = Math.min(sold, produced);
-  const imported = sold - localUsed;
-  const exported = produced - localUsed;
+  // Ordre d'approvisionnement des commerces : contrats, production locale, marché commun.
+  // Les livraisons promises par contrat sont prélevées en priorité sur la production locale.
+  const contractDelivered = Math.min(mod.contractOut.qty, produced);
+  const contractDeliveredRatio = mod.contractOut.qty > 0 ? contractDelivered / mod.contractOut.qty : 1;
+  const available = produced - contractDelivered;
+  const contractUsed = Math.min(sold, mod.contractIn.qty);
+  const localUsed = Math.min(sold - contractUsed, available);
+  const imported = sold - contractUsed - localUsed;
+  const exported = available - localUsed;
+  const contractResold = mod.contractIn.qty - contractUsed;
   const commercialProfit =
-    sold * ECONOMY.retailPrice + officeRevenue -
-    (localUsed * ECONOMY.localWholesalePrice + imported * ECONOMY.importGoodsPrice + commercialWages);
-  const industrialProfit = localUsed * ECONOMY.localWholesalePrice + exported * ECONOMY.exportGoodsPrice - industrialWages;
+    sold * ECONOMY.retailPrice + officeRevenue + contractResold * mod.goodsExportPrice -
+    (mod.contractIn.cost + localUsed * ECONOMY.localWholesalePrice + imported * mod.goodsImportPrice + commercialWages);
+  const industrialProfit =
+    localUsed * ECONOMY.localWholesalePrice + exported * mod.goodsExportPrice +
+    mod.contractOut.revenue * contractDeliveredRatio - industrialWages;
 
   // --- Services publics : affectation gloutonne, du plus proche au plus lointain ----------------
-  const served: Record<ServiceKind, Map<number, number>> = { health: new Map(), education: new Map(), safety: new Map() };
-  const capacityByKind: Record<ServiceKind, number> = { health: 0, education: 0, safety: 0 };
+  const served: Record<ServiceKind, Map<number, number>> = { health: new Map(), education: new Map(), safety: new Map(), leisure: new Map() };
+  const capacityByKind: Record<ServiceKind, number> = { health: 0, education: 0, safety: 0, leisure: 0 };
   for (const b of ops) {
     const svc = BUILDINGS[b.type].service;
     if (!svc) continue;
-    let remaining = svc.capacity * staffing * budgetEfficiency;
+    let remaining = svc.capacity * serviceCapacityFactor[svc.kind] * staffing * budgetEfficiency;
     capacityByKind[svc.kind] += remaining;
     const map = served[svc.kind];
     for (const resId of layout.serviceReach.get(b.id) ?? []) {
@@ -132,13 +157,13 @@ export function simulateTick(city: CityState): CityLayers {
   }
   // Couverture par bâtiment résidentiel. Sans habitants, on mesure la couverture potentielle
   // (bâtiment à portée d'un service doté de personnel) pondérée par la capacité de logement.
-  const reachable: Record<ServiceKind, Set<number>> = { health: new Set(), education: new Set(), safety: new Set() };
+  const reachable: Record<ServiceKind, Set<number>> = { health: new Set(), education: new Set(), safety: new Set(), leisure: new Set() };
   for (const b of ops) {
     const svc = BUILDINGS[b.type].service;
     if (svc && staffing > 0) for (const id of layout.serviceReach.get(b.id) ?? []) reachable[svc.kind].add(id);
   }
   const residentialCoverage: Record<number, Record<ServiceKind, number>> = {};
-  const covByKind: Record<ServiceKind, number> = { health: 0, education: 0, safety: 0 };
+  const covByKind: Record<ServiceKind, number> = { health: 0, education: 0, safety: 0, leisure: 0 };
   let covSum = 0, covSqSum = 0, pollutionSum = 0, weightSum = 0;
   for (const b of ops) {
     const n = residents.get(b.id);
@@ -153,7 +178,7 @@ export function simulateTick(city: CityState): CityLayers {
     const avg = SERVICE_KINDS.reduce((a, k) => a + cov[k], 0) / SERVICE_KINDS.length;
     covSum += avg * w;
     covSqSum += avg * avg * w;
-    pollutionSum += (layout.pollution.get(b.id) ?? 0) * w;
+    pollutionSum += (layout.pollution.get(b.id) ?? 0) * pollutionFactor * w;
     weightSum += w;
   }
   const services = {} as CityStats['services'];
@@ -166,12 +191,17 @@ export function simulateTick(city: CityState): CityLayers {
 
   // --- Budget municipal ---------------------------------------------------------------------
   let upkeep = 0;
-  for (const b of city.buildings) upkeep += BUILDINGS[b.type].upkeepPerDay;
+  for (const b of city.buildings) {
+    const healthFactor = law.public_health && BUILDINGS[b.type].service?.kind === 'health' ? LAW_EFFECTS.public_health.healthUpkeepFactor : 1;
+    upkeep += BUILDINGS[b.type].upkeepPerDay * healthFactor;
+  }
   for (const r of city.roads) upkeep += segmentLength(r) * ROADS[r.type].upkeepPerMeterPerDay;
   const utilityImports =
-    powerImported * 24 * ECONOMY.powerImportPricePerMWh + waterImported * ECONOMY.waterImportPricePerM3;
+    powerImported * 24 * powerPrice + waterImported * ECONOMY.waterImportPricePerM3;
   const loanInterest = (city.debt * LOAN_ANNUAL_RATE) / DAYS_PER_YEAR;
-  const residentialTax = city.taxes.residential * employed * ECONOMY.wagePerWorker;
+  const residentialTax = city.taxes.residential * employed * wage;
+  // Impôt national prélevé sur les revenus des habitants ; versé au budget national par le monde.
+  const nationalTax = mod.nationalTaxRate * employed * wage;
   const commercialTax = city.taxes.commercial * Math.max(0, commercialProfit);
   const industrialTax = city.taxes.industrial * Math.max(0, industrialProfit);
   const net = residentialTax + commercialTax + industrialTax - upkeep - utilityImports - loanInterest;
@@ -180,8 +210,11 @@ export function simulateTick(city: CityState): CityLayers {
   // --- Migrations -----------------------------------------------------------------------------
   const jobScore = workforce > 0 ? Math.min(1, jobs / workforce) : jobs > 0 ? 1 : 0;
   const serviceScore = meanCoverage;
+  const bonus = (law.minimum_wage ? LAW_EFFECTS.minimum_wage.attractivenessBonus : 0) -
+    (law.conscription ? LAW_EFFECTS.conscription.attractivenessMalus : 0);
   const attract = attractiveness({
-    jobScore, serviceScore, residentialTax: city.taxes.residential, trafficEfficiency, pollution: pollutionExposure,
+    jobScore, serviceScore, residentialTax: city.taxes.residential + mod.nationalTaxRate, trafficEfficiency,
+    pollution: pollutionExposure, bonus,
   });
   const targetPopulation = housing * (POPULATION.baseOccupancy + (1 - POPULATION.baseOccupancy) * attract);
   const rate = targetPopulation > population ? POPULATION.immigrationRatePerDay : POPULATION.emigrationRatePerDay;
@@ -206,18 +239,21 @@ export function simulateTick(city: CityState): CityLayers {
     migrationPerDay,
     power: { demandMW: powerDemand, localMW: powerLocal, importedMW: powerImported },
     water: { demandM3: waterDemand, localM3: waterLocal, importedM3: waterImported },
-    goods: { demand: goodsDemand, sold, produced, imported, exported },
+    goods: {
+      demand: goodsDemand, sold, produced, imported, exported, contractIn: mod.contractIn.qty, contractDelivered, contractDeliveredRatio,
+      importPrice: mod.goodsImportPrice, exportPrice: mod.goodsExportPrice,
+    },
     services,
     serviceInequality,
     pollutionExposure,
     traffic: { trips: totalTrips, efficiency: trafficEfficiency, congestedSegments },
-    budget: { residentialTax, commercialTax, industrialTax, upkeep, utilityImports, loanInterest, net },
+    budget: { residentialTax, commercialTax, industrialTax, upkeep, utilityImports, loanInterest, net, nationalTax },
   };
 
   return { buildingStatus, residentialCoverage, pollution, roadLoad, roadConnected };
 }
 
 /** Avance une ville de n ticks (rattrapage déterministe). */
-export function simulateTicks(city: CityState, n: number): void {
-  for (let i = 0; i < n; i++) simulateTick(city);
+export function simulateTicks(city: CityState, n: number, mod: CityModifiers = DEFAULT_MODIFIERS): void {
+  for (let i = 0; i < n; i++) simulateTick(city, mod);
 }

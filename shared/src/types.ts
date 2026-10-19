@@ -42,7 +42,12 @@ export interface CityStats {
   migrationPerDay: number;
   power: { demandMW: number; localMW: number; importedMW: number };
   water: { demandM3: number; localM3: number; importedM3: number };
-  goods: { demand: number; sold: number; produced: number; imported: number; exported: number };
+  goods: {
+    demand: number; sold: number; produced: number; imported: number; exported: number;
+    /** Biens reçus par contrats, livrés aux contrats, et part des engagements honorée. */
+    contractIn: number; contractDelivered: number; contractDeliveredRatio: number;
+    importPrice: number; exportPrice: number;
+  };
   services: Record<ServiceKind, { coverage: number; capacity: number }>;
   /** Écart-type (pondéré par la population) de la couverture moyenne entre bâtiments résidentiels. */
   serviceInequality: number;
@@ -57,6 +62,8 @@ export interface CityStats {
     utilityImports: number;
     loanInterest: number;
     net: number;
+    /** Impôt national payé par les habitants (hors budget municipal). */
+    nationalTax: number;
   };
 }
 

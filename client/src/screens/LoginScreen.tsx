@@ -3,6 +3,7 @@ import { getSupabase } from '../net/auth.ts';
 import { client } from '../net/client.ts';
 import { useGame } from '../state.ts';
 import { StatusBadge } from '../ui/StatusBadge.tsx';
+import { GlobeBackdrop } from '../globe/GlobeView.tsx';
 
 export function LoginScreen() {
   const status = useGame((s) => s.status);
@@ -10,9 +11,10 @@ export function LoginScreen() {
   const supabase = getSupabase();
   return (
     <div className="center-screen">
-      <div className="card login">
-        <h1>CreateYourCity</h1>
-        <p className="muted">Prototype de gestion urbaine et de stratégie géopolitique multijoueur.</p>
+      <GlobeBackdrop />
+      <div className="card login glass">
+        <h1 className="title">CreateYourCity</h1>
+        <p className="muted">Bâtissez votre ville sur la Terre réelle, négociez, commercez, conquérez — face à d'autres humains, en temps réel.</p>
         <StatusBadge />
         {authError && <p className="error-text">{authError}</p>}
         {supabase ? <SupabaseLogin disabled={status !== 'online'} /> : <DevLogin disabled={status !== 'online'} />}

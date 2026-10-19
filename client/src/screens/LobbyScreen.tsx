@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { client } from '../net/client.ts';
 import { useGame } from '../state.ts';
 import { StatusBadge } from '../ui/StatusBadge.tsx';
+import { GlobeBackdrop } from '../globe/GlobeView.tsx';
 
 export function LobbyScreen() {
   const player = useGame((s) => s.player)!;
@@ -28,13 +29,14 @@ export function LobbyScreen() {
 
   return (
     <div className="center-screen">
+      <GlobeBackdrop />
       <div className="lobby-grid">
-        <header className="lobby-header">
+        <header className="lobby-header glass">
           <h1>Salons</h1>
           <span className="muted">Connecté en tant que <strong>{player.name}</strong></span>
           <StatusBadge />
         </header>
-        <section className="card">
+        <section className="card glass">
           <h2>Rejoindre avec un code</h2>
           <form onSubmit={join} className="row">
             <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="ABC123" maxLength={6} className="code-input" required />
@@ -59,7 +61,7 @@ export function LobbyScreen() {
             </ul>
           )}
         </section>
-        <section className="card">
+        <section className="card glass">
           <h2>Créer un salon</h2>
           <form onSubmit={create} className="stack">
             <label>Nom<input value={name} onChange={(e) => setName(e.target.value)} minLength={3} maxLength={40} required /></label>

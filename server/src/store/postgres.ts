@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { migrateCityState, type ChatMessage, type CityState } from '@cyc/shared';
+import { migrateWorldMeta, type WorldMeta } from '@cyc/shared/game';
 import type { ActionLogEntry, ClaimResult, LobbyClock, LobbyRecord, Store } from './types.ts';
 
 const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../supabase/migrations');
@@ -47,7 +48,7 @@ export class PostgresStore implements Store {
 
   async loadLobbies(): Promise<LobbyRecord[]> {
     const { rows } = await this.pool.query(
-      `select id, code, name, is_public, max_players, owner_id, created_at, tick, last_simulated_at from lobbies`,
+      `select id, code, name, is_public, max_players, owner_id, created_at, tick, last_simulated_at, world from lobbies`,
     );
     return rows.map((r) => ({
       id: r.id,
@@ -59,6 +60,7 @@ export class PostgresStore implements Store {
       createdAt: new Date(r.created_at).toISOString(),
       tick: Number(r.tick),
       lastSimulatedAt: new Date(r.last_simulated_at).getTime(),
+      world: r.world && Object.keys(r.world).length ? migrateWorldMeta(r.world) : null,
     }));
   }
 
@@ -97,23 +99,23 @@ export class PostgresStore implements Store {
       return 'ok';
     } catch (e) {
       const err = e as { code?: string; constraint?: string };
-      if (err.code === '23505') return err.constraint === 'cities_pkey' ? 'city_taken' : 'player_has_city';
+      if (err.code === '23505') return 'city_taken';
       throw e;
     }
   }
 
-  async saveSnapshot(lobbyId: string, clock: LobbyClock, cities: CityState[]) {
+  async saveSnapshot(lobbyId: string, clock: LobbyClock, cities: CityState[], world: WorldMeta) {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      await client.query(`update lobbies set tick = $2, last_simulated_at = $3 where id = $1`, [
-        lobbyId, clock.tick, new Date(clock.lastSimulatedAt),
+      await client.query(`update lobbies set tick = $2, last_simulated_at = $3, world = $4 where id = $1`, [
+        lobbyId, clock.tick, new Date(clock.lastSimulatedAt), JSON.stringify(world),
       ]);
       for (const c of cities) {
-        // La condition sur owner_id empêche d'écraser une ville réattribuée entre-temps.
+        // Le propriétaire peut avoir changé (cession, conquête) : il est réécrit avec l'état.
         await client.query(
-          `update cities set state = $4, tick = $5, schema_version = $6, updated_at = now()
-           where lobby_id = $1 and city_id = $2 and owner_id = $3`,
+          `update cities set state = $4, tick = $5, schema_version = $6, owner_id = $3, updated_at = now()
+           where lobby_id = $1 and city_id = $2`,
           [lobbyId, c.cityId, c.ownerId, c, c.tick, c.schemaVersion],
         );
       }

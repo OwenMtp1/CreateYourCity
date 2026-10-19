@@ -4,6 +4,47 @@ import { z } from 'zod';
 import { BUILDING_TYPES, ROAD_TYPES, type BuildingType, type RoadType } from './catalog.ts';
 import type { CityCommand } from './commands.ts';
 import type { CityLayers, CityState, CityStats, CitySummary, TaxRates } from './types.ts';
+import type { WorldAction } from './world/actions.ts';
+import type { WorldView } from './world/view.ts';
+
+const id = z.string().min(1).max(80);
+const cityId = z.string().min(1).max(40);
+const unit = z.enum(['infantry', 'armor', 'artillery']);
+const treatyType = z.enum(['alliance', 'non_aggression', 'defense', 'trade', 'intel', 'peace', 'city_transfer']);
+const amount = z.number().finite().positive().max(1e10);
+
+export const worldActionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('transferFunds'), fromCityId: cityId, toCityId: cityId, amount }),
+  z.object({
+    type: z.literal('proposeTreaty'), to: id, treaty: treatyType, cityId: cityId.optional(), price: z.number().finite().min(0).max(1e10).optional(),
+    payFromCityId: cityId.optional(), nation: z.object({ from: id, to: id }).optional(),
+  }),
+  z.object({ type: z.literal('respondTreaty'), treatyId: z.number().int(), accept: z.boolean(), payFromCityId: cityId.optional() }),
+  z.object({ type: z.literal('cancelTreaty'), treatyId: z.number().int() }),
+  z.object({ type: z.literal('declareWar'), target: id }),
+  z.object({ type: z.literal('declareNationalWar'), countryId: id, targetCountryId: id }),
+  z.object({
+    type: z.literal('proposeContract'), myCityId: cityId, otherCityId: cityId, direction: z.enum(['sell', 'buy']),
+    qtyPerDay: z.number().finite(), pricePerUnit: z.number().finite(), days: z.number().finite(),
+  }),
+  z.object({ type: z.literal('respondContract'), contractId: z.number().int(), accept: z.boolean() }),
+  z.object({ type: z.literal('cancelContract'), contractId: z.number().int() }),
+  z.object({ type: z.literal('recruit'), cityId, unit, count: z.number().finite() }),
+  z.object({
+    type: z.literal('moveArmy'), armyId: z.number().int(), toCityId: cityId,
+    units: z.object({ infantry: z.number().finite().optional(), armor: z.number().finite().optional(), artillery: z.number().finite().optional() }).optional(),
+  }),
+  z.object({ type: z.literal('disbandArmy'), armyId: z.number().int() }),
+  z.object({ type: z.literal('runForLeader'), countryId: id, run: z.boolean() }),
+  z.object({ type: z.literal('vote'), countryId: id, candidateId: id.nullable() }),
+  z.object({ type: z.literal('impeach'), countryId: id, support: z.boolean() }),
+  z.object({ type: z.literal('resign'), countryId: id }),
+  z.object({ type: z.literal('setNationalTax'), countryId: id, rate: z.number().finite() }),
+  z.object({ type: z.literal('setLaw'), countryId: id, law: z.enum(['environment', 'minimum_wage', 'public_health', 'conscription']), enabled: z.boolean() }),
+  z.object({ type: z.literal('fundProject'), countryId: id, project: z.enum(['highway', 'power_grid', 'university', 'national_defense']) }),
+  z.object({ type: z.literal('nationalGrant'), countryId: id, toCityId: cityId, amount }),
+  z.object({ type: z.literal('sendMessage'), to: id, text: z.string().trim().min(1).max(500) }),
+]) satisfies z.ZodType<WorldAction>;
 
 const coord = z.number().finite().min(-10_000).max(10_000);
 
@@ -42,7 +83,9 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('joinLobby'), reqId, code: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{6}$/) }),
   z.object({ t: z.literal('leaveLobby'), reqId }),
   z.object({ t: z.literal('claimCity'), reqId, cityId: z.string().max(40) }),
-  z.object({ t: z.literal('command'), reqId, cmd: cityCommandSchema }),
+  z.object({ t: z.literal('expandCity'), reqId, fromCityId: z.string().max(40), cityId: z.string().max(40) }),
+  z.object({ t: z.literal('command'), reqId, cityId: z.string().max(40), cmd: cityCommandSchema }),
+  z.object({ t: z.literal('action'), reqId, action: worldActionSchema }),
   z.object({ t: z.literal('chat'), reqId, text: z.string().trim().min(1).max(500) }),
   z.object({ t: z.literal('ping'), reqId }),
 ]);
@@ -86,16 +129,22 @@ export type ServerMessage =
       lobby: LobbyInfo;
       clock: ClockInfo;
       summaries: CitySummary[];
-      myCity: CityState | null;
-      layers: CityLayers | null;
+      myCities: CityState[];
+      layers: Record<string, CityLayers>;
+      world: WorldView;
       chat: ChatMessage[];
       lastSavedAt: number | null;
     }
   | { t: 'lobbyLeft' }
   | { t: 'tick'; tick: number }
   | { t: 'city'; city: CityState; layers: CityLayers }
-  | { t: 'cityStats'; tick: number; treasury: number; debt: number; population: number; taxes: TaxRates; stats: CityStats | null }
-  | { t: 'layers'; layers: CityLayers }
+  | { t: 'cityRemoved'; cityId: string }
+  | {
+      t: 'cityStats'; cityId: string; tick: number; treasury: number; debt: number; population: number; taxes: TaxRates;
+      stats: CityStats | null;
+    }
+  | { t: 'layers'; cityId: string; layers: CityLayers }
+  | { t: 'world'; world: WorldView }
   | { t: 'summaries'; summaries: CitySummary[] }
   | { t: 'chat'; message: ChatMessage }
   | { t: 'saved'; at: number };

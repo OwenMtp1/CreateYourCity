@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createCityState } from '@cyc/shared';
+import { createWorldMeta } from '@cyc/shared/game';
 import { PostgresStore } from '../src/store/postgres.ts';
 import type { LobbyRecord } from '../src/store/types.ts';
 import { connectClient, FakeClock, makeServer } from './helpers.ts';
@@ -25,7 +26,7 @@ describe.skipIf(!url)('stockage PostgreSQL', () => {
     await store.upsertPlayer(owner, 'Owner');
     const l: LobbyRecord = {
       id: randomUUID(), code: randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase(), name: 'Test', isPublic: true,
-      maxPlayers: 10, ownerId: owner, createdAt: new Date().toISOString(), tick: 0, lastSimulatedAt: Date.now(),
+      maxPlayers: 10, ownerId: owner, createdAt: new Date().toISOString(), tick: 0, lastSimulatedAt: Date.now(), world: null,
     };
     await store.createLobby(l);
     return l;
@@ -40,9 +41,10 @@ describe.skipIf(!url)('stockage PostgreSQL', () => {
     );
     expect(results.filter((r) => r === 'ok')).toHaveLength(1);
     expect(results.filter((r) => r === 'city_taken')).toHaveLength(7);
+    // Un joueur peut posséder plusieurs villes (expansion) : la limite est appliquée par le serveur de jeu.
     const winner = players[results.indexOf('ok')]!;
     const again = await store.claimCity(l.id, createCityState({ cityId: 'c2', countryId: 'N250', ownerId: winner, ownerName: winner, tick: 0 }));
-    expect(again).toBe('player_has_city');
+    expect(again).toBe('ok');
   });
 
   it('sauvegarde et recharge un instantané', async () => {
@@ -52,12 +54,20 @@ describe.skipIf(!url)('stockage PostgreSQL', () => {
     expect(await store.claimCity(l.id, city)).toBe('ok');
     city.treasury = 1234;
     city.tick = 42;
-    await store.saveSnapshot(l.id, { tick: 42, lastSimulatedAt: l.lastSimulatedAt + 42_000 }, [city]);
+    const meta = createWorldMeta();
+    meta.players['alice-pg'] = { name: 'Alice' };
+    // Conquête : le propriétaire change et doit être réécrit.
+    await store.upsertPlayer('bob-pg', 'Bob');
+    city.ownerId = 'bob-pg';
+    await store.saveSnapshot(l.id, { tick: 42, lastSimulatedAt: l.lastSimulatedAt + 42_000 }, [city], meta);
     const [loaded] = await store.loadCities(l.id);
-    expect(loaded).toMatchObject({ treasury: 1234, tick: 42 });
+    expect(loaded).toMatchObject({ treasury: 1234, tick: 42, ownerId: 'bob-pg' });
+    const { rows } = await store.pool.query('select owner_id from cities where lobby_id = $1', [l.id]);
+    expect(rows[0].owner_id).toBe('bob-pg');
     const reloaded = (await store.loadLobbies()).find((x) => x.id === l.id)!;
     expect(reloaded.tick).toBe(42);
     expect(reloaded.lastSimulatedAt).toBe(l.lastSimulatedAt + 42_000);
+    expect(reloaded.world!.players['alice-pg']!.name).toBe('Alice');
   });
 
   it('fait tourner une partie complète sur PostgreSQL', async () => {
@@ -68,7 +78,7 @@ describe.skipIf(!url)('stockage PostgreSQL', () => {
     expect(await alice.send({ t: 'createLobby', name: 'Partie PG', isPublic: true, maxPlayers: 4 })).toMatchObject({ ok: true });
     expect(await alice.send({ t: 'claimCity', cityId: 'c1159151613' })).toMatchObject({ ok: true });
     expect((await alice.send({ t: 'chat', text: 'Salut' })).ok).toBe(true);
-    await alice.send({ t: 'command', cmd: { type: 'buildRoad', road: 'street', x1: 0, y1: 1000, x2: 200, y2: 1000 } });
+    await alice.send({ t: 'command', cityId: 'c1159151613', cmd: { type: 'buildRoad', road: 'street', x1: 0, y1: 1000, x2: 200, y2: 1000 } });
     clock.t += 10_000;
     game.loop();
     await game.stop();

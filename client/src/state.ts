@@ -1,6 +1,7 @@
 // État global du client (copie des données reçues du serveur, qui reste l'autorité).
 import { useSyncExternalStore } from 'react';
 import type { ChatMessage, CityLayers, CityState, CitySummary, ClockInfo, LobbyInfo } from '@cyc/shared';
+import type { WorldView } from '@cyc/shared/game';
 
 export type ConnStatus = 'connecting' | 'online' | 'offline';
 
@@ -16,8 +17,13 @@ export interface GameState {
   clock: ClockInfo | null;
   tick: number;
   summaries: CitySummary[];
-  myCity: CityState | null;
-  layers: CityLayers | null;
+  myCities: Record<string, CityState>;
+  activeCityId: string | null;
+  layers: Record<string, CityLayers>;
+  world: WorldView | null;
+  view: 'globe' | 'city';
+  /** Ville sélectionnée sur le globe. */
+  focusCityId: string | null;
   chat: ChatMessage[];
   lastSavedAt: number | null;
   toasts: Toast[];
@@ -25,7 +31,8 @@ export interface GameState {
 
 let state: GameState = {
   status: 'connecting', authMode: null, player: null, authError: null, lobbies: [], lobby: null, clock: null, tick: 0,
-  summaries: [], myCity: null, layers: null, chat: [], lastSavedAt: null, toasts: [],
+  summaries: [], myCities: {}, activeCityId: null, layers: {}, world: null, view: 'globe', focusCityId: null, chat: [],
+  lastSavedAt: null, toasts: [],
 };
 const listeners = new Set<() => void>();
 
@@ -49,3 +56,6 @@ export function toast(text: string, kind: Toast['kind'] = 'info') {
   setState((s) => ({ toasts: [...s.toasts, { id, kind, text }].slice(-4) }));
   setTimeout(() => setState((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), kind === 'error' ? 5000 : 3000);
 }
+
+/** Ville active (vue de construction et panneaux municipaux). */
+export const activeCity = (s: GameState): CityState | null => (s.activeCityId ? s.myCities[s.activeCityId] ?? null : null);

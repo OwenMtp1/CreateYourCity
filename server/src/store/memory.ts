@@ -1,4 +1,5 @@
 import type { ChatMessage, CityState } from '@cyc/shared';
+import type { WorldMeta } from '@cyc/shared/game';
 import type { ActionLogEntry, ClaimResult, LobbyClock, LobbyRecord, Store } from './types.ts';
 
 export interface MemoryData {
@@ -50,21 +51,21 @@ export class MemoryStore implements Store {
   async claimCity(lobbyId: string, city: CityState): Promise<ClaimResult> {
     const cities = (this.data.cities[lobbyId] ??= {});
     if (cities[city.cityId]) return 'city_taken';
-    if (Object.values(cities).some((c) => c.ownerId === city.ownerId)) return 'player_has_city';
     cities[city.cityId] = clone(city);
     await this.changed();
     return 'ok';
   }
 
-  async saveSnapshot(lobbyId: string, clock: LobbyClock, cities: CityState[]) {
+  async saveSnapshot(lobbyId: string, clock: LobbyClock, cities: CityState[], world: WorldMeta) {
     const lobby = this.data.lobbies[lobbyId];
     if (!lobby) throw new Error('salon inconnu');
     lobby.tick = clock.tick;
     lobby.lastSimulatedAt = clock.lastSimulatedAt;
+    lobby.world = clone(world);
     const stored = (this.data.cities[lobbyId] ??= {});
     for (const c of cities) {
-      // Seules les villes déjà attribuées sont mises à jour (pas de réattribution implicite).
-      if (stored[c.cityId]?.ownerId === c.ownerId) stored[c.cityId] = clone(c);
+      // Seules les villes déjà attribuées (claimCity) sont mises à jour.
+      if (stored[c.cityId]) stored[c.cityId] = clone(c);
     }
     await this.changed();
   }
