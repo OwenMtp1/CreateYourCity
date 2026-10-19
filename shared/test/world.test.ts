@@ -245,6 +245,22 @@ describe('politique nationale', () => {
     expect(w.meta.nations[fr]!.leaderId).toBeNull();
   });
 
+  it('aucun dirigeant sans vote majoritaire, même avec des candidats et du temps', () => {
+    const w = world();
+    give(w, PARIS, 'alice');
+    give(w, LYON, 'bob');
+    give(w, LILLE, 'carol');
+    const fr = w.cities.get(PARIS)!.countryId;
+    act(w, 'alice', { type: 'runForLeader', countryId: fr, run: true });
+    act(w, 'bob', { type: 'runForLeader', countryId: fr, run: true });
+    act(w, 'alice', { type: 'vote', countryId: fr, candidateId: 'alice' });
+    act(w, 'bob', { type: 'vote', countryId: fr, candidateId: 'bob' });
+    steps(w, TICKS_PER_DAY * 3);
+    expect(w.meta.nations[fr]!.leaderId).toBeNull();
+    expect(applyWorldAction(w, 'alice', { type: 'setNationalTax', countryId: fr, rate: 0.05 }).ok).toBe(false);
+    expect(w.meta.nations[fr]!.taxRate).toBe(0);
+  });
+
   it('une guerre nationale engage tous les joueurs des deux pays', () => {
     const w = world();
     give(w, PARIS, 'alice');

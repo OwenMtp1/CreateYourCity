@@ -465,7 +465,7 @@ function NationDetail({ world, me, countryId }: { world: WorldView; me: string; 
   return (
     <>
       <h3>🏛️ {countryLabel(countryId)}</h3>
-      <Row label="Dirigeant national" value={nation?.leaderId ? nameOf(players, nation.leaderId) : 'Aucun (élection ouverte)'} />
+      <Row label="Dirigeant national" value={nation?.leaderId ? nameOf(players, nation.leaderId) : 'Aucun : chaque ville est indépendante'} />
       <Row label="Électeurs (propriétaires de villes)" value={`${voters.length} · majorité ${majority}`} />
       <Row label="Budget national" value={fmtMoney(nation?.treasury ?? 0)} />
       <Row label="Impôt national" value={fmtPct(nation?.taxRate ?? 0, 1)} />
@@ -488,7 +488,10 @@ function NationDetail({ world, me, countryId }: { world: WorldView; me: string; 
           {candidates.includes(me) ? 'Retirer ma candidature' : 'Me porter candidat'}
         </button>
       )}
-      <p className="small muted">Élu dès qu'un candidat obtient la majorité absolue des électeurs. Mandat sans échéance, jusqu'à démission ou destitution (majorité absolue).</p>
+      <p className="small muted">
+        Pas de dirigeant tant que les électeurs n'en choisissent pas : sans élu, aucun impôt, loi ni guerre nationale, chaque ville est gouvernée par son seul dirigeant local.
+        Un candidat est élu dès qu'il obtient la majorité absolue des électeurs. Mandat sans échéance, jusqu'à démission ou destitution (majorité absolue).
+      </p>
 
       {nation?.leaderId && !isLeader && (
         <button className={nation.iSupportImpeach ? 'active danger' : 'danger'}

@@ -238,7 +238,7 @@ function CountryCard({ countryId, onFocus }: { countryId: string; onFocus: (id: 
     <>
       <h3>{country?.nameFr}</h3>
       <div className="small muted">
-        {summaries.filter((s) => s.countryId === countryId).length} ville(s) dirigée(s) · {leader ? `dirigeant national : ${leader}` : 'aucun dirigeant national'}
+        {summaries.filter((s) => s.countryId === countryId).length} ville(s) dirigée(s) · {leader ? `dirigeant national : ${leader}` : 'pas de dirigeant national (villes indépendantes)'}
       </div>
       <ul className="list scroll">
         {cities.map((c) => {
