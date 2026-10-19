@@ -30,7 +30,9 @@ Ouvrez <http://localhost:5173> dans deux navigateurs (ou une fenêtre privée) p
 5. Barre latérale : **Économie, Population, Services** (ville active) ; **Territoire** (vos villes, annexions, transferts),
    **Commerce** (marché commun, contrats), **Diplomatie** (traités, guerre, paix, messages privés), **Armée** (caserne requise ;
    choisissez une destination sur le globe), **Nation** (élection, lois, grands projets, impôt national), **Salon** (chat, journal).
-6. Ordinateur peu puissant : cochez « Graphismes économiques » dans l'onglet Construire.
+6. Un **tutoriel** guide les premiers pas ; les **conseillers** (🧭) signalent les problèmes chiffrés ; les **statistiques** (📈)
+   retracent l'évolution de la ville. Routes droites, **courbes** ou **ronds-points** ; transports en commun ; voitures animées.
+7. Ordinateur peu puissant : cochez « Graphismes économiques » dans l'onglet Construire.
 
 Sans base de données, l'état est sauvegardé dans `./data/world.json` (`STORE=file`). Arrêtez le serveur avec Ctrl+C
 (une sauvegarde finale est faite), puis relancez-le : le temps écoulé est rattrapé de façon déterministe.
@@ -63,6 +65,8 @@ DATABASE_URL=postgres://user:pass@localhost:5432/cyc DATABASE_SSL=disable npm ru
 | `npm run geodata` | Régénère les données géographiques depuis Natural Earth (réseau requis ; sorties versionnées) |
 
 ## Déploiement Render + Supabase
+
+Guide détaillé pas à pas : [`docs/SUPABASE.md`](docs/SUPABASE.md). Résumé ci-dessous.
 
 ### 1. Supabase
 
@@ -107,8 +111,8 @@ DATABASE_URL=postgres://user:pass@localhost:5432/cyc DATABASE_SSL=disable npm ru
 
 - Le terrain constructible (rivière, lac, collines) est **généré de façon déterministe** à partir de l'identifiant de la
   ville. Ce n'est pas le relief réel.
-- Combats et sièges sont résolus de façon agrégée dans les villes (pas de bataille en rase campagne ni d'unités navales).
-- Le trafic est agrégé par tronçon d'accès, sans calcul d'itinéraire.
+- Combats, sièges et batailles sont résolus de façon agrégée et déterministe (pas de micro-gestion tactique).
+- Les véhicules animés illustrent le trafic calculé ; ils ne sont pas simulés individuellement.
 - Les règles des phases 3 et 4 sont provisoires et listées dans `docs/DECISIONS.md`.
 - Un seul serveur de jeu simule tous les salons. La montée en charge horizontale n'est pas prévue à ce stade.
 - Le paquet JavaScript du client embarque Three.js et la liste des 7 340 villes. Le découpage est prévu.

@@ -1,6 +1,7 @@
 // Analyse géométrique de l'agencement d'une ville : raccordement des routes, desserte des
 // bâtiments, zones de service et pollution. Recalculée seulement quand layoutVersion change.
-import { BUILDINGS } from '../catalog.ts';
+import { BUILDINGS, type TransitMode } from '../catalog.ts';
+import { buildRouting, type Routing } from './routing.ts';
 import { REGIONAL_ACCESS, ROAD_ACCESS_DISTANCE, ROAD_JOIN_TOLERANCE } from '../constants.ts';
 import { buildingRect, pointSegmentDistance, rectDistance, roadWidth, segmentDistance, segmentRectDistance } from '../geometry.ts';
 import type { BuildingStatus, CityState } from '../types.ts';
@@ -15,6 +16,10 @@ export interface CityLayout {
   serviceReach: Map<number, number[]>;
   /** Exposition à la pollution (0..1) de chaque bâtiment résidentiel. */
   pollution: Map<number, number>;
+  /** Modes de transport en commun desservant chaque logement. */
+  transitCover: Map<number, Set<TransitMode>>;
+  /** Graphe routier et répartition des itinéraires. */
+  routing: Routing;
 }
 
 function find(parent: number[], i: number): number {
@@ -90,7 +95,16 @@ export function analyzeLayout(city: CityState): CityLayout {
     }
   }
 
-  return { key: `${city.cityId}:${city.layoutVersion}`, roadConnected, access, status, serviceReach, pollution };
+  const transitCover = new Map<number, Set<TransitMode>>(residential.map((r) => [r.id, new Set()]));
+  for (const s of buildings) {
+    const t = BUILDINGS[s.type].transit;
+    if (!t || status.get(s.id) !== 'ok') continue;
+    const srect = buildingRect(s);
+    for (const r of residential) if (rectDistance(srect, buildingRect(r)) <= t.radius) transitCover.get(r.id)!.add(t.mode);
+  }
+  const connected = new Set([...roadConnected].filter(([, v]) => v).map(([k]) => k));
+  const routing = buildRouting(city, connected, access, buildings.filter((b) => status.get(b.id) === 'ok'));
+  return { key: `${city.cityId}:${city.layoutVersion}`, roadConnected, access, status, serviceReach, pollution, transitCover, routing };
 }
 
 const layoutCache = new WeakMap<CityState, CityLayout>();

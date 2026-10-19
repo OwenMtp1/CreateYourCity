@@ -335,6 +335,88 @@ export function buildModel(type: BuildingType, seed: number): { group: THREE.Gro
       info.height = 14;
       break;
     }
+    case 'bus_station': {
+      g.add(ground(W, D, 0x9ca3af));
+      g.add(box(18, 0.4, 7, solid(0x374151), 0, 3.6, -3));
+      for (const x of [-8, 8]) g.add(box(0.4, 3.6, 0.4, solid(0x6b7280), x, 0, -6));
+      g.add(box(16, 2.4, 0.3, solid(0x93c5fd, { transparent: true, opacity: 0.6 }), 0, 0.6, -6.3));
+      g.add(box(3, 5, 0.4, solid(0x2563eb, { emissive: new THREE.Color(0x2563eb), emissiveIntensity: 0.5 }), 7, 0, 4));
+      g.add(box(11, 3.2, 2.6, solid(0xf59e0b), -2, 0.4, 4));
+      info.height = 5;
+      break;
+    }
+    case 'tram_station': {
+      g.add(ground(W, D, 0x8b8f94));
+      for (const x of [-3, 3]) g.add(box(0.5, 0.25, D, solid(0xd1d5db, { metalness: 0.7, roughness: 0.3 }), x, 0.1, 0));
+      g.add(box(4, 1, D - 4, solid(0xcbd5e1), -6, 0, 0));
+      g.add(box(5, 0.3, D - 6, solid(0x0f766e), -6, 4, 0));
+      g.add(box(4.2, 3.4, 14, solid(0x10b981, { metalness: 0.2 }), 0, 0.4, 3));
+      info.height = 5;
+      break;
+    }
+    case 'metro_station': {
+      g.add(ground(W, D, 0xa8a29e));
+      g.add(box(8, 0.5, 6, solid(0x1f2937), 0, 3.4, 0));
+      for (const [x, z] of [[-3.8, -2.8], [3.8, -2.8], [-3.8, 2.8], [3.8, 2.8]] as const) g.add(box(0.3, 3.4, 0.3, solid(0x4b5563), x, 0, z));
+      g.add(box(1.4, 1.4, 1.4, solid(0xfacc15, { emissive: new THREE.Color(0xfacc15), emissiveIntensity: 0.7 }), 6, 4, 6));
+      const pole = new THREE.Mesh(sharedGeometry('mpole', () => new THREE.CylinderGeometry(0.15, 0.15, 4, 6)), solid(0x6b7280));
+      pole.position.set(6, 2, 6);
+      g.add(pole);
+      info.height = 6;
+      break;
+    }
+    case 'train_station': {
+      g.add(ground(W, D, 0x9a958c));
+      const stone = facade('plain', 40, 12);
+      const roof = solid(0x475569);
+      g.add(box(36, 12, 12, [stone, stone, roof, roof, stone, stone], -8, 0, -7));
+      const hall = new THREE.Mesh(sharedGeometry('hall', () => new THREE.CylinderGeometry(9, 9, 52, 20, 1, false, 0, Math.PI)), solid(0x93c5fd, { transparent: true, opacity: 0.55, metalness: 0.5, side: THREE.DoubleSide }));
+      hall.rotation.z = Math.PI / 2;
+      hall.rotation.y = Math.PI / 2;
+      hall.position.set(0, 0.5, 8);
+      g.add(hall);
+      for (const z of [4, 12]) g.add(box(58, 0.3, 1.6, solid(0x57534e), 0, 0.1, z));
+      g.add(box(14, 3.4, 3.2, solid(0xdc2626), 8, 0.4, 4));
+      g.add(box(4, 4, 4, solid(0xe5e7eb), -8, 12, -7));
+      info.height = 16;
+      break;
+    }
+    case 'port': {
+      g.add(ground(W, D, 0x8a8f96));
+      g.add(box(20, 9, 14, solid(0x9ca3af), -18, 0, -10));
+      const colors = [0xdc2626, 0x2563eb, 0x16a34a, 0xf59e0b, 0x7c3aed];
+      for (let i = 0; i < 8; i++) {
+        g.add(box(6, 2.6, 2.4, solid(colors[Math.floor(rnd() * colors.length)]!), 2 + (i % 4) * 6.5, Math.floor(i / 4) * 2.6, -12));
+      }
+      // Grue portuaire.
+      g.add(box(1.2, 22, 1.2, solid(0xf59e0b), 18, 0, 10));
+      g.add(box(18, 1.2, 1.2, solid(0xf59e0b), 12, 22, 10));
+      g.add(box(1, 6, 1, solid(0x374151), 6, 16, 10));
+      info.height = 24;
+      break;
+    }
+    case 'airbase': {
+      g.add(ground(W, D, 0x71717a));
+      g.add(box(78, 0.2, 12, solid(0x27272a), 0, 0.1, 18));
+      g.add(box(78, 0.25, 0.6, solid(0xfafafa), 0, 0.2, 18));
+      const hangar = new THREE.Mesh(sharedGeometry('hangar', () => new THREE.CylinderGeometry(9, 9, 20, 16, 1, false, 0, Math.PI)), solid(0x6b7280, { side: THREE.DoubleSide }));
+      hangar.rotation.z = Math.PI / 2;
+      hangar.rotation.y = Math.PI / 2;
+      for (const x of [-22, 2]) {
+        const h = hangar.clone();
+        h.position.set(x, 0, -14);
+        g.add(h);
+      }
+      g.add(box(3, 16, 3, solid(0xe5e7eb), 30, 0, -16));
+      g.add(box(6, 3, 6, solid(0x60a5fa, { transparent: true, opacity: 0.7 }), 30, 16, -16));
+      const jet = new THREE.Group();
+      jet.add(box(10, 1.2, 1.4, solid(0x52525b)));
+      jet.add(box(2.4, 0.3, 9, solid(0x52525b), 1, 0.4, 0));
+      jet.position.set(-10, 0.3, 4);
+      g.add(jet);
+      info.height = 19;
+      break;
+    }
   }
   return { group: g, info };
 }

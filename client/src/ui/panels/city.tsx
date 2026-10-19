@@ -12,13 +12,15 @@ import { fmtInt, fmtMoney, fmtPct } from '../format.ts';
 
 const CATEGORY_LABEL: Record<BuildingCategory, string> = {
   residential: 'Logement', commercial: 'Commerce et entreprises', industrial: 'Industrie', service: 'Services publics',
-  utility: 'Réseaux', military: 'Défense',
+  utility: 'Réseaux', transport: 'Transports', military: 'Défense',
 };
 export const SERVICE_LABEL: Record<ServiceKind, string> = { health: 'Santé', education: 'Éducation', safety: 'Sécurité', leisure: 'Loisirs' };
+export { ICON };
 const STATUS_LABEL = { ok: 'En service', no_road: 'Aucune route à proximité', disconnected: "Route non reliée à l'accès régional" };
 const ICON: Record<string, string> = {
   house: '🏡', apartment: '🏢', tower: '🏙️', shop: '🛍️', office: '💼', factory: '🏭', clinic: '🏥', school: '🏫', police: '🚓',
   power_plant: '⚡', water_tower: '💧', park: '🌳', barracks: '🎖️', street: '🛣️', avenue: '🛤️',
+  bus_station: '🚌', tram_station: '🚋', metro_station: '🚇', train_station: '🚆', port: '⚓', airbase: '✈️',
 };
 
 export function BuildPanel(props: {
@@ -59,9 +61,25 @@ export function BuildPanel(props: {
       </label>
 
       <h4>Routes</h4>
+      <div className="row wrap">
+        {([['straight', '➖ Droite'], ['curve', '〰️ Courbe'], ['roundabout', '⭕ Rond-point']] as const).map(([mode, label]) => (
+          <button key={mode} className={`small-btn ${tool.kind === 'road' && (tool.mode ?? 'straight') === mode ? 'active' : ''}`}
+            onClick={() => setTool({ kind: 'road', road: tool.kind === 'road' ? tool.road : 'street', mode, radius: tool.kind === 'road' ? tool.radius ?? 30 : 30 })}>
+            {label}
+          </button>
+        ))}
+        {tool.kind === 'road' && tool.mode === 'roundabout' && (
+          <select value={tool.radius ?? 30} onChange={(e) => setTool({ ...tool, radius: Number(e.target.value) })} style={{ width: 'auto' }}>
+            <option value={22}>Petit (22 m)</option>
+            <option value={30}>Moyen (30 m)</option>
+            <option value={45}>Grand (45 m)</option>
+          </select>
+        )}
+      </div>
       <div className="build-grid">
         {ROAD_TYPES.map((r) => (
-          <button key={r} className={tool.kind === 'road' && tool.road === r ? 'build active' : 'build'} onClick={() => setTool({ kind: 'road', road: r })}>
+          <button key={r} className={tool.kind === 'road' && tool.road === r ? 'build active' : 'build'}
+            onClick={() => setTool({ kind: 'road', road: r, mode: tool.kind === 'road' ? tool.mode ?? 'straight' : 'straight', radius: tool.kind === 'road' ? tool.radius ?? 30 : 30 })}>
             <span className="build-icon">{ICON[r]}</span>
             <strong>{ROADS[r].label}</strong>
             <span className="small">{ROADS[r].costPerMeter} cr/m · {fmtInt(ROADS[r].capacityTripsPerDay)} trajets/j</span>

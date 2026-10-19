@@ -1,7 +1,7 @@
 // Serveur de jeu autoritaire : sessions, salons, commandes, boucle de simulation et sauvegardes.
 import { randomInt, randomUUID } from 'node:crypto';
 import {
-  applyCityCommand, clientMessageSchema, createCityState, simulateTick, simulateTicks, TICK_MS,
+  applyCityCommand, clientMessageSchema, createCityState, HISTORY_EVERY_TICKS, simulateTick, simulateTicks, TICK_MS,
   type ChatMessage, type CityState, type ClientMessage, type LobbyInfo, type ServerMessage,
 } from '@cyc/shared';
 import { applyWorldAction, buildWorldView, checkExpansion, cityModifiers, commitExpansion, evaluateNation, RuleError } from '@cyc/shared/game';
@@ -124,6 +124,8 @@ export class GameServer {
         s.conn.send({
           t: 'cityStats', cityId: city.cityId, tick: city.tick, treasury: city.treasury, debt: city.debt,
           population: city.population, taxes: city.taxes, stats: city.stats,
+          ...(Math.floor(city.tick / HISTORY_EVERY_TICKS) > Math.floor((city.tick - (world.tick - previousTick)) / HISTORY_EVERY_TICKS)
+            ? { history: city.history ?? [] } : {}),
         });
         const layers = world.layers.get(city.cityId);
         if (sendLayers && layers) s.conn.send({ t: 'layers', cityId: city.cityId, layers });
@@ -268,8 +270,9 @@ export class GameServer {
           if (!city || city.ownerId !== player.id) throw new UserError('Vous ne dirigez pas cette ville.');
           const res = applyCityCommand(city, msg.cmd);
           if (!res.ok) return reply(false, res.reason);
-          reply(true, undefined, res.cost);
+          // Nouvel état envoyé avant la réponse : le client le reçoit quand sa requête aboutit.
           this.sendCity(world, city.cityId);
+          reply(true, undefined, res.cost);
           this.requestSave(world);
           await this.log(world, player.id, msg.cmd.type, { cityId: msg.cityId, ...msg.cmd });
           return;
@@ -278,8 +281,8 @@ export class GameServer {
           const world = this.currentLobby(s);
           const res = applyWorldAction(world.world, player.id, msg.action, new Date(this.now()));
           if (!res.ok) return reply(false, res.error);
-          reply(true);
           this.syncLobby(world);
+          reply(true);
           this.requestSave(world);
           if (msg.action.type !== 'sendMessage') await this.log(world, player.id, msg.action.type, msg.action);
           return;

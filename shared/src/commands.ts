@@ -3,12 +3,14 @@
 import { BUILDINGS, ROADS, type BuildingType, type RoadType } from './catalog.ts';
 import { CITY_SIZE_M, MAX_DEBT, MAX_TAX_RATE, ROAD_ACCESS_DISTANCE, ROAD_MAX_LENGTH, ROAD_MIN_LENGTH } from './constants.ts';
 import { buildingRect, footprint, rectsOverlap, roadWidth, segmentLength, segmentRectDistance, type Segment } from './geometry.ts';
-import { generateTerrain, rectTerrain, roadTerrain } from './terrain.ts';
+import { generateTerrain, rectTerrain, roadTerrain, terrainAt, TerrainKind } from './terrain.ts';
 import type { CityState, TaxRates } from './types.ts';
 
 export type CityCommand =
   | { type: 'build'; building: BuildingType; x: number; y: number; rotation: 0 | 90 }
   | { type: 'buildRoad'; road: RoadType; x1: number; y1: number; x2: number; y2: number }
+  /** Tracé à plusieurs tronçons (courbe, rond-point) : construit entièrement ou pas du tout. */
+  | { type: 'buildRoadPath'; road: RoadType; points: { x: number; y: number }[] }
   | { type: 'demolish'; target: 'building' | 'road'; id: number }
   | { type: 'setTaxes'; taxes: TaxRates }
   | { type: 'borrow'; amount: number }
@@ -29,6 +31,7 @@ export function validateBuilding(city: CityState, type: BuildingType, x: number,
   }
   const terrain = rectTerrain(generateTerrain(city.cityId), rect);
   if (terrain.water) return { ok: false, reason: "Impossible de construire sur l'eau." };
+  if (def.needsWater && !waterNearby(city.cityId, rect, 40)) return { ok: false, reason: "Un port doit être construit à moins de 40 m de l'eau." };
   if (city.buildings.some((b) => rectsOverlap(rect, buildingRect(b)))) {
     return { ok: false, reason: 'Chevauche un bâtiment existant.' };
   }
@@ -42,6 +45,18 @@ export function validateBuilding(city: CityState, type: BuildingType, x: number,
   const cost = Math.round(def.cost * terrain.multiplier);
   if (city.treasury < cost) return { ok: false, reason: `Fonds insuffisants (${fmt(cost)} cr requis).` };
   return { ok: true, cost };
+}
+
+/** Présence d'eau à moins de `margin` mètres d'une emprise (échantillonnage tous les 10 m). */
+export function waterNearby(cityId: string, rect: { minX: number; minY: number; maxX: number; maxY: number }, margin: number): boolean {
+  const t = generateTerrain(cityId);
+  for (let x = rect.minX - margin; x <= rect.maxX + margin; x += 10) {
+    for (let y = rect.minY - margin; y <= rect.maxY + margin; y += 10) {
+      if (x < 0 || y < 0 || x > CITY_SIZE_M || y > CITY_SIZE_M) continue;
+      if (terrainAt(t, x, y) === TerrainKind.Water) return true;
+    }
+  }
+  return false;
 }
 
 export function validateRoad(city: CityState, type: RoadType, seg: Segment): ValidationResult {
@@ -69,6 +84,48 @@ export function validateRoad(city: CityState, type: RoadType, seg: Segment): Val
   return { ok: true, cost };
 }
 
+export const MAX_PATH_POINTS = 48;
+
+/** Valide un tracé multi-tronçons sur une copie de la ville (les tronçons se suivent). */
+export function validateRoadPath(
+  city: CityState, type: RoadType, points: { x: number; y: number }[],
+): { ok: true; cost: number; segments: Segment[] } | { ok: false; reason: string } {
+  if (points.length < 2 || points.length > MAX_PATH_POINTS) return { ok: false, reason: `Tracé de 2 à ${MAX_PATH_POINTS} points.` };
+  const draft: CityState = { ...city, roads: [...city.roads] };
+  let cost = 0;
+  const segments: Segment[] = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i]!;
+    const b = points[i + 1]!;
+    const seg = { x1: round1(a.x), y1: round1(a.y), x2: round1(b.x), y2: round1(b.y) };
+    const v = validateRoad({ ...draft, treasury: Infinity }, type, seg);
+    if (!v.ok) return { ok: false, reason: `Tronçon ${i + 1} : ${v.reason}` };
+    cost += v.cost;
+    segments.push(seg);
+    draft.roads.push({ id: -1 - i, type, ...seg, builtAtTick: city.tick });
+  }
+  if (city.treasury < cost) return { ok: false, reason: `Fonds insuffisants (${fmt(cost)} cr requis).` };
+  return { ok: true, cost, segments };
+}
+
+/** Points d'une courbe de Bézier quadratique (un point tous les ~25 m, tronçons ≥ 10 m). */
+export function curvePoints(a: { x: number; y: number }, c: { x: number; y: number }, b: { x: number; y: number }) {
+  const approx = Math.hypot(c.x - a.x, c.y - a.y) + Math.hypot(b.x - c.x, b.y - c.y);
+  const n = Math.max(2, Math.min(MAX_PATH_POINTS - 1, Math.round(approx / 25)));
+  return Array.from({ length: n + 1 }, (_, i) => {
+    const t = i / n;
+    return { x: (1 - t) ** 2 * a.x + 2 * (1 - t) * t * c.x + t ** 2 * b.x, y: (1 - t) ** 2 * a.y + 2 * (1 - t) * t * c.y + t ** 2 * b.y };
+  });
+}
+
+/** Points d'un rond-point (polygone fermé à 12 côtés). */
+export function roundaboutPoints(center: { x: number; y: number }, radius: number) {
+  return Array.from({ length: 13 }, (_, i) => {
+    const a = (i / 12) * Math.PI * 2;
+    return { x: center.x + radius * Math.cos(a), y: center.y + radius * Math.sin(a) };
+  });
+}
+
 export type CommandResult = { ok: true; cost: number } | { ok: false; reason: string };
 
 /** Valide puis applique une commande sur l'état de la ville (mutation). */
@@ -92,6 +149,14 @@ export function applyCityCommand(city: CityState, cmd: CityCommand): CommandResu
       city.roads.push({ id: city.nextEntityId++, type: cmd.road, ...seg, builtAtTick: city.tick });
       city.layoutVersion++;
       return v;
+    }
+    case 'buildRoadPath': {
+      const v = validateRoadPath(city, cmd.road, cmd.points);
+      if (!v.ok) return v;
+      city.treasury -= v.cost;
+      for (const seg of v.segments) city.roads.push({ id: city.nextEntityId++, type: cmd.road, ...seg, builtAtTick: city.tick });
+      city.layoutVersion++;
+      return { ok: true, cost: v.cost };
     }
     case 'demolish': {
       const list: { id: number }[] = cmd.target === 'building' ? city.buildings : city.roads;

@@ -9,13 +9,28 @@ export const UNITS: Record<UnitType, {
   infantry: { label: 'Infanterie', cost: 2_000, upkeepPerDay: 15, attack: 1, defense: 1.5, speedKmh: 20, siege: 1 },
   armor: { label: 'Blindés', cost: 9_000, upkeepPerDay: 70, attack: 4, defense: 2.5, speedKmh: 35, siege: 1 },
   artillery: { label: 'Artillerie', cost: 6_000, upkeepPerDay: 40, attack: 3, defense: 0.8, speedKmh: 15, siege: 3 },
+  navy: { label: 'Frégates', cost: 30_000, upkeepPerDay: 200, attack: 5, defense: 4, speedKmh: 40, siege: 2 },
+  air: { label: 'Aviation', cost: 40_000, upkeepPerDay: 300, attack: 6, defense: 1, speedKmh: 500, siege: 1.5 },
 };
+
+/** Bâtiment nécessaire au recrutement de chaque unité. */
+export const UNIT_REQUIRES = {
+  infantry: 'barracks', armor: 'barracks', artillery: 'barracks', navy: 'port', air: 'airbase',
+} as const satisfies Record<UnitType, string>;
 
 export const MILITARY = {
   /** Part maximale de la population mobilisable dans les armées payées par une ville. */
   mobilizationShare: 0.05,
   supplyRangeKm: 600,
+  /** Portée de ravitaillement depuis une ville dotée d'une gare. */
+  railSupplyRangeKm: 1_000,
+  /** Vitesse multipliée entre deux gares amies (unités terrestres seulement). */
+  railSpeedFactor: 3,
   maxMoveKm: 2_500,
+  maxAirMoveKm: 1_500,
+  /** Distance d'engagement entre armées ennemies hors des villes. */
+  engageKm: 30,
+  retreatSpeedFactor: 0.5,
   /** Attrition par jour hors ravitaillement / sans solde. */
   unsuppliedAttrition: 0.03,
   unpaidAttrition: 0.01,
@@ -54,8 +69,20 @@ export const MARKET = {
   historyLength: 60,
 } as const;
 
+/** Transport des marchandises sous contrat : coût par unité et par 1 000 km. */
+export const TRANSPORT = { costPer1000Km: 1, logisticsDiscount: 0.5 } as const;
+
+/** Effet des infrastructures logistiques sur les prix du marché commun. */
+export const LOGISTICS = {
+  port: { sell: 1.1, buy: 0.95 },
+  train_station: { sell: 1.05, buy: 0.97 },
+} as const;
+
+export const ORGANIZATION = { maxMembers: 20, maxPerPlayer: 5 } as const;
+
 export const NATION = {
   maxTaxRate: 0.1,
+  maxTariff: 0.5,
   projectCost: { highway: 1_500_000, power_grid: 1_000_000, university: 800_000, national_defense: 1_200_000 } as Record<ProjectId, number>,
 } as const;
 
@@ -131,14 +158,27 @@ export function activeTreaty(meta: WorldMeta, x: string, y: string, types: Treat
   return meta.treaties.find((t) => t.status === 'active' && types.includes(t.type) && pair(t, x, y));
 }
 
-/** Alliés militaires : mêmes joueurs, alliance ou accord de défense actifs. */
+export function sharedOrganization(meta: Pick<WorldMeta, 'organizations'>, x: string, y: string, kind: 'military' | 'trade'): boolean {
+  return (meta.organizations ?? []).some((o) => o.kind === kind && o.members.includes(x) && o.members.includes(y));
+}
+
+/** Alliés militaires : mêmes joueurs, alliance ou accord de défense actifs, organisation militaire commune. */
 export function allied(meta: WorldMeta, x: string, y: string): boolean {
-  return x === y || !!activeTreaty(meta, x, y, ['alliance', 'defense']);
+  return x === y || !!activeTreaty(meta, x, y, ['alliance', 'defense']) || sharedOrganization(meta, x, y, 'military');
+}
+
+/** Libre-échange : accord commercial ou union commerciale commune (pas de droits de douane). */
+export function freeTrade(meta: WorldMeta, x: string, y: string): boolean {
+  return x === y || !!activeTreaty(meta, x, y, ['trade']) || sharedOrganization(meta, x, y, 'trade');
 }
 
 /** Le détail économique et militaire d'un joueur est visible par lui-même et ses partenaires. */
 export function detailVisible(meta: WorldMeta, viewer: string, owner: string): boolean {
-  return viewer === owner || !!activeTreaty(meta, viewer, owner, ['alliance', 'intel']);
+  return viewer === owner || !!activeTreaty(meta, viewer, owner, ['alliance', 'intel']) || sharedOrganization(meta, viewer, owner, 'military');
+}
+
+export function hasBuilding(city: { buildings: { type: string }[] } | undefined, type: string): boolean {
+  return !!city && city.buildings.some((b) => b.type === type);
 }
 
 export function citiesOf(world: World, playerId: string): string[] {

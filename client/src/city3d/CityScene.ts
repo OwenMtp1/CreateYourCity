@@ -5,7 +5,7 @@ import { MapControls } from 'three/addons/controls/MapControls.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import {
   BUILDINGS, CITY_SIZE_M, footprint, generateTerrain, hashString, mulberry32, REGIONAL_ACCESS, ROADS, segmentLength,
-  terrainAt, TerrainKind, type BuildingType, type CityLayers, type CityState, type Point, type RoadType, type Segment,
+  terrainAt, TerrainKind, analyzeLayout, type BuildingType, type CityLayers, type CityLayout, type CityState, type Point, type RoadType, type Segment,
 } from '@cyc/shared';
 import { getQuality } from './quality.ts';
 import { buildModel, placeModel, sharedGeometry, solid, treeInstances, windowMaterials, type ModelInfo } from './models.ts';
@@ -15,6 +15,7 @@ export type CityLayer = 'none' | 'status' | 'traffic' | 'health' | 'education' |
 export type Preview =
   | { kind: 'building'; type: BuildingType; x: number; y: number; rotation: 0 | 90; ok: boolean }
   | { kind: 'road'; road: RoadType; seg: Segment; ok: boolean }
+  | { kind: 'path'; road: RoadType; points: Point[]; ok: boolean }
   | { kind: 'cursor'; x: number; y: number }
   | { kind: 'demolish'; target: { kind: 'building' | 'road'; id: number } | null }
   | null;
@@ -148,10 +149,175 @@ export class CityScene {
       this.layoutKey = layoutKey;
       this.rebuildRoads(city, layers, layer);
       this.placeTrees(city);
+      this.layout = analyzeLayout(city);
+      this.rebuildTransit(city);
     } else {
       this.colorRoads(city, layers, layer);
     }
+    this.updateTraffic(city);
     this.rebuildOverlays(city, layers, layer, selected);
+  }
+
+  // --- Circulation animée -------------------------------------------------------------------
+
+  private layout: CityLayout | null = null;
+  private cars: THREE.InstancedMesh | null = null;
+  private carState: { path: number; s: number; dir: 1 | -1; speed: number }[] = [];
+  private paths: { pts: THREE.Vector3[]; cum: number[]; total: number }[] = [];
+  private trafficEfficiency = 1;
+
+  /** Voitures proportionnelles aux déplacements, sur les itinéraires représentatifs du graphe. */
+  private updateTraffic(city: CityState) {
+    const routing = this.layout?.routing;
+    const trips = city.stats?.traffic.trips ?? 0;
+    const carTrips = trips * (1 - (city.stats?.transit.share ?? 0));
+    this.trafficEfficiency = city.stats?.traffic.efficiency ?? 1;
+    const wanted = routing && routing.samples.length ? Math.min(this.low ? 80 : 260, Math.round(carTrips / 25)) : 0;
+    if (this.cars && this.carState.length === wanted && this.paths.length === (routing?.samples.length ?? 0)) return;
+    if (this.cars) {
+      this.scene.remove(this.cars);
+      this.cars.dispose();
+      this.cars = null;
+    }
+    this.carState = [];
+    if (!routing || wanted === 0) return;
+    this.paths = routing.samples.map((sm) => {
+      const pts = sm.points.map((p) => new THREE.Vector3(p.x - HALF, 0.9, p.y - HALF));
+      const cum = [0];
+      for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1]! + pts[i]!.distanceTo(pts[i - 1]!));
+      return { pts, cum, total: cum.at(-1)! };
+    }).filter((p) => p.total > 5);
+    if (!this.paths.length) return;
+    const geo = sharedGeometry('car', () => new THREE.BoxGeometry(4.4, 1.6, 2));
+    this.cars = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.3 }), wanted);
+    this.cars.castShadow = !this.low;
+    const rnd = mulberry32(hashString(city.cityId) + wanted);
+    const colors = [0xe5e7eb, 0x1f2937, 0xdc2626, 0x2563eb, 0x9ca3af, 0xf59e0b, 0x16a34a, 0xf8fafc];
+    const weights = routing.samples.map((s2) => s2.weight);
+    const total = weights.reduce((a, b) => a + b, 0);
+    for (let i = 0; i < wanted; i++) {
+      let r = rnd() * total, k = 0;
+      while (k < weights.length - 1 && r > weights[k]!) { r -= weights[k]!; k++; }
+      const path = Math.min(k, this.paths.length - 1);
+      this.carState.push({ path, s: rnd() * this.paths[path]!.total, dir: rnd() < 0.5 ? 1 : -1, speed: 10 + rnd() * 6 });
+      this.cars.setColorAt(i, new THREE.Color(colors[Math.floor(rnd() * colors.length)]!));
+    }
+    this.scene.add(this.cars);
+  }
+
+  private moveCars(dt: number) {
+    if (!this.cars) return;
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const up = new THREE.Vector3(0, 1, 0);
+    const pos = new THREE.Vector3();
+    // Les embouteillages ralentissent visiblement la circulation.
+    const slow = Math.max(0.15, this.trafficEfficiency ** 3);
+    this.carState.forEach((c, i) => {
+      const p = this.paths[c.path]!;
+      c.s += c.dir * c.speed * slow * dt * 4;
+      if (c.s > p.total) { c.s = p.total; c.dir = -1; }
+      if (c.s < 0) { c.s = 0; c.dir = 1; }
+      let k = 1;
+      while (k < p.cum.length - 1 && p.cum[k]! < c.s) k++;
+      const a = p.pts[k - 1]!, b = p.pts[k]!;
+      const segLen = p.cum[k]! - p.cum[k - 1]! || 1;
+      pos.lerpVectors(a, b, (c.s - p.cum[k - 1]!) / segLen);
+      const dir = new THREE.Vector3().subVectors(b, a).normalize().multiplyScalar(c.dir);
+      // Circulation à droite.
+      pos.add(new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(-2.4));
+      q.setFromAxisAngle(up, Math.atan2(-dir.z, dir.x));
+      m.compose(pos, q, new THREE.Vector3(1, 1, 1));
+      this.cars!.setMatrixAt(i, m);
+    });
+    this.cars.instanceMatrix.needsUpdate = true;
+  }
+
+  // --- Transports en commun -------------------------------------------------------------------
+
+  private readonly transitGroup = new THREE.Group();
+  private vehicles: { mesh: THREE.Object3D; pts: THREE.Vector3[]; cum: number[]; total: number; s: number; dir: 1 | -1; speed: number }[] = [];
+
+  /** Lignes reliant les stations d'un même mode (ordre du plus proche voisin) et leurs véhicules. */
+  private rebuildTransit(city: CityState) {
+    for (const o of [...this.transitGroup.children]) o.removeFromParent();
+    this.vehicles = [];
+    if (!this.transitGroup.parent) this.scene.add(this.transitGroup);
+    const style = {
+      bus: { color: 0x3b82f6, y: 1.2, vehicle: () => box3(11, 3.2, 2.6, 0xf59e0b), speed: 12 },
+      tram: { color: 0x10b981, y: 0.3, vehicle: () => box3(26, 3.4, 2.6, 0x10b981), speed: 14 },
+      metro: { color: 0xfacc15, y: 9, vehicle: () => box3(40, 3.2, 3, 0xe5e7eb), speed: 22 },
+    } as const;
+    for (const mode of ['bus', 'tram', 'metro'] as const) {
+      const stations = city.buildings.filter((b) => BUILDINGS[b.type].transit?.mode === mode && this.layout?.status.get(b.id) === 'ok');
+      if (stations.length < 2) continue;
+      // Chaîne du plus proche voisin, depuis la station la plus à l'ouest.
+      const rest = [...stations].sort((a, b) => a.x - b.x);
+      const chain = [rest.shift()!];
+      while (rest.length) {
+        const last = chain.at(-1)!;
+        rest.sort((a, b) => Math.hypot(a.x - last.x, a.y - last.y) - Math.hypot(b.x - last.x, b.y - last.y));
+        chain.push(rest.shift()!);
+      }
+      const st = style[mode];
+      const pts = chain.map((b) => new THREE.Vector3(b.x - HALF, st.y, b.y - HALF));
+      const cum = [0];
+      for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1]! + pts[i]!.distanceTo(pts[i - 1]!));
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i]!, b = pts[i + 1]!;
+        const len = a.distanceTo(b);
+        const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
+        const angle = Math.atan2(b.z - a.z, b.x - a.x);
+        if (mode === 'metro') {
+          const deck = new THREE.Mesh(new THREE.BoxGeometry(len, 1.2, 6), solid(0x9ca3af));
+          deck.position.copy(mid).setY(st.y - 1.4);
+          deck.rotation.y = -angle;
+          deck.castShadow = deck.receiveShadow = true;
+          this.transitGroup.add(deck);
+          for (let k = 0; k <= Math.floor(len / 40); k++) {
+            const p = new THREE.Vector3().lerpVectors(a, b, len > 0 ? (k * 40) / len : 0);
+            const pillar = new THREE.Mesh(sharedGeometry('pillar', () => new THREE.CylinderGeometry(0.8, 1, 7.6, 8)), solid(0xa8a29e));
+            pillar.position.set(p.x, 3.8, p.z);
+            pillar.castShadow = true;
+            this.transitGroup.add(pillar);
+          }
+        } else if (mode === 'tram') {
+          for (const off of [-0.8, 0.8]) {
+            const rail = new THREE.Mesh(new THREE.BoxGeometry(len, 0.2, 0.25), solid(0xd1d5db, { metalness: 0.8, roughness: 0.3 }));
+            rail.position.copy(mid).add(new THREE.Vector3(-Math.sin(angle) * off, 0, Math.cos(angle) * off));
+            rail.rotation.y = -angle;
+            this.transitGroup.add(rail);
+          }
+        } else {
+          const line = new THREE.Mesh(new THREE.PlaneGeometry(len, 1.2), new THREE.MeshBasicMaterial({ color: st.color, transparent: true, opacity: 0.55, depthWrite: false }));
+          line.rotation.x = -Math.PI / 2;
+          line.rotation.z = -angle;
+          line.position.copy(mid).setY(0.6);
+          this.transitGroup.add(line);
+        }
+      }
+      const total = cum.at(-1)!;
+      const count = Math.max(1, Math.min(4, Math.round(total / 400)));
+      for (let k = 0; k < count; k++) {
+        const mesh = st.vehicle();
+        this.transitGroup.add(mesh);
+        this.vehicles.push({ mesh, pts, cum, total, s: (k / count) * total, dir: k % 2 ? -1 : 1, speed: st.speed });
+      }
+    }
+  }
+
+  private moveVehicles(dt: number) {
+    for (const v of this.vehicles) {
+      v.s += v.dir * v.speed * dt * 4;
+      if (v.s > v.total) { v.s = v.total; v.dir = -1; }
+      if (v.s < 0) { v.s = 0; v.dir = 1; }
+      let k = 1;
+      while (k < v.cum.length - 1 && v.cum[k]! < v.s) k++;
+      const a = v.pts[k - 1]!, b = v.pts[k]!;
+      const segLen = v.cum[k]! - v.cum[k - 1]! || 1;
+      v.mesh.position.lerpVectors(a, b, (v.s - v.cum[k - 1]!) / segLen);
+      v.mesh.rotation.y = -Math.atan2(b.z - a.z, b.x - a.x);
+    }
   }
 
   private removeBuilding(id: number) {
@@ -307,24 +473,36 @@ export class CityScene {
       group.position.set(cx, 0, cz);
       group.rotation.y = -angle;
       group.userData.roadId = r.id;
-      const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(len + def.width, def.width), new THREE.MeshStandardMaterial({ color: 0x3b3f45, roughness: 0.92 }));
+      const asphaltMat = new THREE.MeshStandardMaterial({ color: 0x3b3f45, roughness: 0.92 });
+      const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(len, def.width), asphaltMat);
       asphalt.rotation.x = -Math.PI / 2;
       asphalt.position.y = 0.18;
       asphalt.receiveShadow = true;
       group.add(asphalt);
+      // Raccords arrondis aux extrémités : jonctions et virages propres.
+      for (const end of [-1, 1]) {
+        const cap = new THREE.Mesh(sharedGeometry(`cap:${def.width}`, () => new THREE.CircleGeometry(def.width / 2, 24)), asphaltMat);
+        cap.rotation.x = -Math.PI / 2;
+        cap.position.set((end * len) / 2, 0.185, 0);
+        cap.receiveShadow = true;
+        group.add(cap);
+      }
+      // Bordures et marquages s'arrêtent avant les carrefours.
+      const inner = Math.max(0, len - def.width * 1.2);
       const curbMat = solid(0xb9bcc0);
       for (const side of [-1, 1]) {
-        const curb = new THREE.Mesh(new THREE.PlaneGeometry(len, 1.4), curbMat);
+        if (inner < 1) break;
+        const curb = new THREE.Mesh(new THREE.PlaneGeometry(inner, 1.4), curbMat);
         curb.rotation.x = -Math.PI / 2;
         curb.position.set(0, 0.2, side * (def.width / 2 - 0.7));
         curb.receiveShadow = true;
         group.add(curb);
       }
       const marking = lineTex.clone();
-      marking.repeat.set(Math.max(1, len / 12), 1);
+      marking.repeat.set(Math.max(1, inner / 12), 1);
       marking.needsUpdate = true;
       const line = new THREE.Mesh(
-        new THREE.PlaneGeometry(len, r.type === 'avenue' ? 0.9 : 0.5),
+        new THREE.PlaneGeometry(Math.max(0.01, inner), r.type === 'avenue' ? 0.9 : 0.5),
         new THREE.MeshBasicMaterial({ map: marking, transparent: true, color: r.type === 'avenue' ? 0xfacc15 : 0xffffff }),
       );
       line.rotation.x = -Math.PI / 2;
@@ -500,6 +678,10 @@ export class CityScene {
       g.position.set((seg.x1 + seg.x2) / 2 - HALF, 0.5, (seg.y1 + seg.y2) / 2 - HALF);
       g.rotation.y = -Math.atan2(seg.y2 - seg.y1, seg.x2 - seg.x1);
       this.previewGroup.add(g);
+    } else if (p.kind === 'path') {
+      for (let i = 0; i < p.points.length - 1; i++) {
+        this.setPreviewSegment(p.road, { x1: p.points[i]!.x, y1: p.points[i]!.y, x2: p.points[i + 1]!.x, y2: p.points[i + 1]!.y }, p.ok);
+      }
     } else if (p.kind === 'cursor') {
       const dot = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, 1, 20), new THREE.MeshBasicMaterial({ color: 0xffffff }));
       dot.position.set(p.x - HALF, 0.6, p.y - HALF);
@@ -520,6 +702,20 @@ export class CityScene {
         }
       }
     }
+  }
+
+  private setPreviewSegment(road: RoadType, seg: Segment, ok: boolean) {
+    const len = Math.max(1, segmentLength(seg));
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(len + ROADS[road].width, ROADS[road].width),
+      new THREE.MeshBasicMaterial({ color: ok ? 0x22c55e : 0xef4444, transparent: true, opacity: 0.6, depthWrite: false }),
+    );
+    m.rotation.x = -Math.PI / 2;
+    const g = new THREE.Group();
+    g.add(m);
+    g.position.set((seg.x1 + seg.x2) / 2 - HALF, 0.5, (seg.y1 + seg.y2) / 2 - HALF);
+    g.rotation.y = -Math.atan2(seg.y2 - seg.y1, seg.x2 - seg.x1);
+    this.previewGroup.add(g);
   }
 
   /** Heure de jeu (0–24) : position du soleil, éclairage, fenêtres et lampadaires. */
@@ -616,6 +812,8 @@ export class CityScene {
         o.rotation.y += dt * 2;
       }
     }
+    this.moveCars(dt);
+    this.moveVehicles(dt);
     this.renderer.render(this.scene, this.camera);
   };
 
@@ -642,6 +840,18 @@ function smoothNoise(grid: Float32Array, x: number, y: number) {
   const a = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * sx;
   const b = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * sx;
   return a + (b - a) * sy;
+}
+
+/** Petit véhicule (bus, tram, rame) : caisse colorée et vitres. */
+function box3(w: number, h: number, d: number, color: number) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), solid(color, { metalness: 0.2, roughness: 0.5 }));
+  body.position.y = h / 2;
+  body.castShadow = true;
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(w * 0.92, h * 0.35, d * 1.02), solid(0x1e293b, { roughness: 0.2, metalness: 0.4 }));
+  glass.position.y = h * 0.7;
+  g.add(body, glass);
+  return g;
 }
 
 function distToSeg(x: number, y: number, s: Segment) {

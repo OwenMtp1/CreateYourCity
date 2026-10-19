@@ -1,7 +1,7 @@
 // Vue 3D de construction : outils, accrochage, aperçu validé par les règles partagées.
 import { useEffect, useRef, useState } from 'react';
 import {
-  closestPointOnSegment, footprint, gameHour, pointSegmentDistance, REGIONAL_ACCESS, ROADS,
+  closestPointOnSegment, curvePoints, footprint, gameHour, pointSegmentDistance, REGIONAL_ACCESS, ROADS, roundaboutPoints, validateRoadPath,
   validateBuilding, validateRoad, type BuildingType, type CityLayers, type CityState, type Point, type RoadType, type ValidationResult,
 } from '@cyc/shared';
 import { client } from '../net/client.ts';
@@ -9,9 +9,11 @@ import { useGame } from '../state.ts';
 import { fmtMoney } from '../ui/format.ts';
 import { CityScene, type CityLayer } from './CityScene.ts';
 
+export type RoadMode = 'straight' | 'curve' | 'roundabout';
+
 export type Tool =
   | { kind: 'select' }
-  | { kind: 'road'; road: RoadType }
+  | { kind: 'road'; road: RoadType; mode?: RoadMode; radius?: number }
   | { kind: 'building'; building: BuildingType; rotation: 0 | 90 }
   | { kind: 'demolish' };
 
@@ -35,6 +37,8 @@ export function CityView3D(props: Props) {
   const propsRef = useRef(props);
   propsRef.current = props;
   const roadStart = useRef<Point | null>(null);
+  /** Point de contrôle d'une courbe (deuxième clic). */
+  const roadControl = useRef<Point | null>(null);
   const shift = useRef(false);
   const cursor = useRef<{ sx: number; sy: number } | null>(null);
   const [hint, setHint] = useState<{ x: number; y: number; text: string; ok: boolean } | null>(null);
@@ -53,6 +57,7 @@ export function CityView3D(props: Props) {
   }, [tick, dayNight]);
   useEffect(() => {
     if (tool.kind !== 'road') roadStart.current = null;
+    roadControl.current = null;
     setHint(null);
     sceneRef.current?.setPreview(null);
   }, [tool]);
@@ -108,6 +113,20 @@ export function CityView3D(props: Props) {
       const q = snap(p, false);
       result = validateBuilding(c, t.building, q.x, q.y, t.rotation);
       scene.setPreview({ kind: 'building', type: t.building, x: q.x, y: q.y, rotation: t.rotation, ok: result.ok });
+    } else if (t.kind === 'road' && t.mode === 'roundabout') {
+      const q = snap(p, false);
+      const pts = roundaboutPoints(q, t.radius ?? 30);
+      const v = validateRoadPath(c, t.road, pts);
+      result = v.ok ? { ok: true, cost: v.cost } : v;
+      scene.setPreview({ kind: 'path', road: t.road, points: pts, ok: v.ok });
+    } else if (t.kind === 'road' && t.mode === 'curve' && roadStart.current) {
+      const start = roadStart.current;
+      const control = roadControl.current;
+      const end = control ? snap(p, true) : snap(p, false);
+      const pts = control ? curvePoints(start, control, end) : [start, end];
+      const v = validateRoadPath(c, t.road, pts);
+      result = v.ok ? { ok: true, cost: v.cost } : v;
+      scene.setPreview({ kind: 'path', road: t.road, points: pts, ok: v.ok });
     } else if (t.kind === 'road') {
       const start = roadStart.current;
       if (start) {
@@ -123,7 +142,10 @@ export function CityView3D(props: Props) {
       scene.setPreview({ kind: 'demolish', target: hitTest(p) });
     }
     if (result) setHint({ x: cur.sx, y: cur.sy, text: result.ok ? `Coût : ${fmtMoney(result.cost)}` : result.reason, ok: result.ok });
-    else if (t.kind === 'road') setHint({ x: cur.sx, y: cur.sy, text: 'Cliquez pour commencer la route (Maj : angle droit)', ok: true });
+    else if (t.kind === 'road') setHint({ x: cur.sx, y: cur.sy, text: t.mode === 'curve' ? 'Courbe : cliquez le départ, puis le point de courbure, puis l\'arrivée' : 'Cliquez pour commencer la route (Maj : angle droit)', ok: true });
+    if (result && t.kind === 'road' && t.mode === 'curve' && roadStart.current && !roadControl.current) {
+      setHint({ x: cur.sx, y: cur.sy, text: 'Cliquez le point de courbure', ok: true });
+    }
     else if (t.kind === 'demolish') setHint({ x: cur.sx, y: cur.sy, text: 'Démolition sans remboursement', ok: false });
     else setHint(null);
   };
@@ -135,7 +157,7 @@ export function CityView3D(props: Props) {
       if (e.type !== 'keydown' || ['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
       const { tool: t, setTool, grid: g, setGrid } = propsRef.current;
       if (e.key === 'Escape') {
-        if (roadStart.current) roadStart.current = null;
+        if (roadStart.current) { roadStart.current = null; roadControl.current = null; }
         else setTool({ kind: 'select' });
       } else if ((e.key === 'r' || e.key === 'R') && t.kind === 'building') {
         setTool({ ...t, rotation: t.rotation === 0 ? 90 : 0 });
@@ -169,6 +191,7 @@ export function CityView3D(props: Props) {
     const { tool: t, setSelected } = propsRef.current;
     if (d.button === 2) {
       roadStart.current = null;
+      roadControl.current = null;
       scene?.setPreview(null);
       return;
     }
@@ -186,6 +209,24 @@ export function CityView3D(props: Props) {
         return;
       }
       case 'road': {
+        if (t.mode === 'roundabout') {
+          const q = snap(p, false);
+          await client.cityCommand({ type: 'buildRoadPath', road: t.road, points: roundaboutPoints(q, t.radius ?? 30) });
+          refresh();
+          return;
+        }
+        if (t.mode === 'curve') {
+          if (!roadStart.current) roadStart.current = snap(p, true);
+          else if (!roadControl.current) roadControl.current = snap(p, false);
+          else {
+            const end = snap(p, true);
+            const ok = await client.cityCommand({ type: 'buildRoadPath', road: t.road, points: curvePoints(roadStart.current, roadControl.current, end) });
+            roadControl.current = null;
+            roadStart.current = ok ? end : roadStart.current;
+          }
+          refresh();
+          return;
+        }
         const start = roadStart.current;
         if (!start) {
           roadStart.current = snap(p, true);

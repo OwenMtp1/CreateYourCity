@@ -1,12 +1,15 @@
 // Simulation agrégée d'une ville pour un tick. Fonction déterministe : même état d'entrée,
 // même résultat (aucun aléa, aucune horloge). Toutes les formules sont exprimées par jour de
 // jeu puis multipliées par DT_DAYS.
-import { BUILDINGS, ROADS, SERVICE_KINDS, type ServiceKind } from '../catalog.ts';
-import { DAYS_PER_YEAR, DT_DAYS, ECONOMY, LOAN_ANNUAL_RATE, POPULATION, TRAFFIC } from '../constants.ts';
+import { BUILDINGS, ROADS, SERVICE_KINDS, TRANSIT_MODES, type ServiceKind, type TransitMode } from '../catalog.ts';
+import { DAYS_PER_YEAR, DT_DAYS, ECONOMY, LOAN_ANNUAL_RATE, POPULATION, TRAFFIC, TRANSIT } from '../constants.ts';
 import { segmentLength } from '../geometry.ts';
 import type { Building, CityLayers, CityState, CityStats } from '../types.ts';
 import { getLayout } from './layout.ts';
 import { DEFAULT_MODIFIERS, LAW_EFFECTS, PROJECT_EFFECTS, type CityModifiers } from './modifiers.ts';
+
+export const HISTORY_EVERY_TICKS = 24;
+export const HISTORY_LENGTH = 90;
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
@@ -82,33 +85,75 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   const goodsDemand = population * ECONOMY.goodsDemandPerResident;
   const sold = Math.min(goodsDemand, salesCapacity);
 
-  // --- Trafic agrégé par tronçon ----------------------------------------------------------
-  const roadTrips = new Map<number, number>();
-  let totalTrips = 0;
+  // --- Transports en commun : part modale des logements desservis, bornée par la capacité ---------
+  const stationCount: Record<TransitMode, number> = { bus: 0, tram: 0, metro: 0 };
+  let transitCapacity = 0;
   for (const b of ops) {
-    const def = BUILDINGS[b.type];
-    let trips = (residents.get(b.id) ?? 0) * TRAFFIC.tripsPerResidentPerDay + def.jobs * staffing * TRAFFIC.tripsPerWorkerPerDay;
-    if (def.goodsSalesCapacityPerDay && salesCapacity > 0) {
-      trips += ((sold * def.goodsSalesCapacityPerDay * staffing) / salesCapacity) * TRAFFIC.tripsPerGoodSold;
+    const t = BUILDINGS[b.type].transit;
+    if (t) stationCount[t.mode]++;
+  }
+  for (const b of ops) {
+    const t = BUILDINGS[b.type].transit;
+    if (t && stationCount[t.mode] >= TRANSIT.minStationsPerMode) transitCapacity += t.capacity * staffing;
+  }
+  const employmentRate = population > 0 ? employed / population : 0;
+  const potentialShare = new Map<number, number>();
+  let transitDemand = 0;
+  for (const [id, n] of residents) {
+    let share = 0;
+    for (const m of TRANSIT_MODES) {
+      if (stationCount[m] >= TRANSIT.minStationsPerMode && layout.transitCover.get(id)?.has(m)) share = Math.max(share, TRANSIT.modeShare[m]);
     }
-    const road = layout.access.get(b.id);
-    if (road == null) continue;
-    roadTrips.set(road, (roadTrips.get(road) ?? 0) + trips);
-    totalTrips += trips;
+    potentialShare.set(id, share);
+    transitDemand += n * employmentRate * 2 * share;
+  }
+  const transitFill = transitDemand > 0 ? Math.min(1, transitCapacity / transitDemand) : 0;
+
+  // --- Trafic : itinéraires sur le graphe routier (domicile-travail, achats, fret) ---------------
+  const routing = layout.routing;
+  const edgeLoad = new Float64Array(routing.edges.length);
+  let carTrips = 0, riders = 0;
+  for (const [id, n] of residents) {
+    const share = (potentialShare.get(id) ?? 0) * transitFill;
+    const commuteTrips = n * employmentRate * 2;
+    const shopTrips = population > 0 ? (sold * TRAFFIC.tripsPerGoodSold * n) / population : 0;
+    const car = (commuteTrips + shopTrips) * (1 - share);
+    riders += (commuteTrips + shopTrips) * share;
+    carTrips += car;
+    const cw = routing.commute.get(id);
+    if (cw) for (const [e, w] of cw) edgeLoad[e]! += commuteTrips * (1 - share) * w;
+    const sw = routing.shopping.get(id);
+    if (sw) for (const [e, w] of sw) edgeLoad[e]! += shopTrips * (1 - share) * w;
+  }
+  for (const b of ops) {
+    const fw = routing.freight.get(b.id);
+    if (!fw) continue;
+    const trips = (BUILDINGS[b.type].goodsProductionPerDay ?? 0) * staffing * TRAFFIC.freightTripsPerGood;
+    carTrips += trips;
+    for (const [e, w] of fw) edgeLoad[e]! += trips * w;
+  }
+  const roadRatio = new Map<number, number>();
+  let weighted = 0, weight = 0;
+  const roadById = new Map(city.roads.map((r) => [r.id, r]));
+  for (const e of routing.edges) {
+    const road = roadById.get(e.roadId);
+    if (!road) continue;
+    const ratio = edgeLoad[e.id]! / (ROADS[road.type].capacityTripsPerDay * roadCapacityFactor);
+    roadRatio.set(e.roadId, Math.max(roadRatio.get(e.roadId) ?? 0, ratio));
+    weighted += edgeLoad[e.id]! * e.length * segmentEfficiency(ratio);
+    weight += edgeLoad[e.id]! * e.length;
   }
   const roadLoad: Record<number, number> = {};
   const roadConnected: Record<number, boolean> = {};
-  let weightedEfficiency = 0;
   let congestedSegments = 0;
   for (const r of city.roads) {
-    const trips = roadTrips.get(r.id) ?? 0;
-    const ratio = trips / (ROADS[r.type].capacityTripsPerDay * roadCapacityFactor);
+    const ratio = roadRatio.get(r.id) ?? 0;
     roadLoad[r.id] = ratio;
     roadConnected[r.id] = layout.roadConnected.get(r.id) === true;
-    weightedEfficiency += trips * segmentEfficiency(ratio);
     if (ratio > TRAFFIC.freeFlowRatio) congestedSegments++;
   }
-  const trafficEfficiency = totalTrips > 0 ? weightedEfficiency / totalTrips : 1;
+  const trafficEfficiency = weight > 0 ? weighted / weight : 1;
+  const totalTrips = carTrips + riders;
 
   // --- Production et comptes des entreprises ---------------------------------------------------
   let produced = 0, officeRevenue = 0, commercialWages = 0, industrialWages = 0;
@@ -132,7 +177,10 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   const contractResold = mod.contractIn.qty - contractUsed;
   const commercialProfit =
     sold * ECONOMY.retailPrice + officeRevenue + contractResold * mod.goodsExportPrice -
-    (mod.contractIn.cost + localUsed * ECONOMY.localWholesalePrice + imported * mod.goodsImportPrice + commercialWages);
+    (mod.contractIn.cost + mod.contractIn.tariff + localUsed * ECONOMY.localWholesalePrice +
+      imported * mod.goodsImportPrice * (1 + mod.tariffRate) + commercialWages);
+  // Droits de douane versés au budget national (achats au marché + contrats étrangers).
+  const tariffPaid = imported * mod.goodsImportPrice * mod.tariffRate + mod.contractIn.tariff;
   const industrialProfit =
     localUsed * ECONOMY.localWholesalePrice + exported * mod.goodsExportPrice +
     mod.contractOut.revenue * contractDeliveredRatio - industrialWages;
@@ -140,11 +188,13 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   // --- Services publics : affectation gloutonne, du plus proche au plus lointain ----------------
   const served: Record<ServiceKind, Map<number, number>> = { health: new Map(), education: new Map(), safety: new Map(), leisure: new Map() };
   const capacityByKind: Record<ServiceKind, number> = { health: 0, education: 0, safety: 0, leisure: 0 };
+  const serviceLoad: Record<number, number> = {};
   for (const b of ops) {
     const svc = BUILDINGS[b.type].service;
     if (!svc) continue;
     let remaining = svc.capacity * serviceCapacityFactor[svc.kind] * staffing * budgetEfficiency;
     capacityByKind[svc.kind] += remaining;
+    const initial = remaining;
     const map = served[svc.kind];
     for (const resId of layout.serviceReach.get(b.id) ?? []) {
       if (remaining <= 0) break;
@@ -154,6 +204,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
       map.set(resId, (map.get(resId) ?? 0) + take);
       remaining -= take;
     }
+    serviceLoad[b.id] = initial > 0 ? 1 - remaining / initial : 1;
   }
   // Couverture par bâtiment résidentiel. Sans habitants, on mesure la couverture potentielle
   // (bâtiment à portée d'un service doté de personnel) pondérée par la capacité de logement.
@@ -204,7 +255,8 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   const nationalTax = mod.nationalTaxRate * employed * wage;
   const commercialTax = city.taxes.commercial * Math.max(0, commercialProfit);
   const industrialTax = city.taxes.industrial * Math.max(0, industrialProfit);
-  const net = residentialTax + commercialTax + industrialTax - upkeep - utilityImports - loanInterest;
+  const transitFares = riders * TRANSIT.farePerRide;
+  const net = residentialTax + commercialTax + industrialTax + transitFares - upkeep - utilityImports - loanInterest;
   city.treasury += net * DT_DAYS;
 
   // --- Migrations -----------------------------------------------------------------------------
@@ -241,16 +293,26 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     water: { demandM3: waterDemand, localM3: waterLocal, importedM3: waterImported },
     goods: {
       demand: goodsDemand, sold, produced, imported, exported, contractIn: mod.contractIn.qty, contractDelivered, contractDeliveredRatio,
-      importPrice: mod.goodsImportPrice, exportPrice: mod.goodsExportPrice,
+      importPrice: mod.goodsImportPrice, exportPrice: mod.goodsExportPrice, tariffPaid,
     },
     services,
     serviceInequality,
     pollutionExposure,
     traffic: { trips: totalTrips, efficiency: trafficEfficiency, congestedSegments },
-    budget: { residentialTax, commercialTax, industrialTax, upkeep, utilityImports, loanInterest, net, nationalTax },
+    transit: { riders, capacity: transitCapacity, share: totalTrips > 0 ? riders / totalTrips : 0 },
+    budget: { residentialTax, commercialTax, industrialTax, upkeep, utilityImports, loanInterest, net, nationalTax, transitFares },
   };
 
-  return { buildingStatus, residentialCoverage, pollution, roadLoad, roadConnected };
+  if (city.tick % HISTORY_EVERY_TICKS === 0) {
+    const history = (city.history ??= []);
+    history.push({
+      tick: city.tick, population: city.population, treasury: city.treasury, net, unemployment: city.stats.unemploymentRate,
+      attractiveness: attract, traffic: trafficEfficiency,
+    });
+    if (history.length > HISTORY_LENGTH) history.splice(0, history.length - HISTORY_LENGTH);
+  }
+
+  return { buildingStatus, residentialCoverage, pollution, roadLoad, roadConnected, serviceLoad };
 }
 
 /** Avance une ville de n ticks (rattrapage déterministe). */

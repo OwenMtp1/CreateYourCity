@@ -47,12 +47,16 @@ export interface CityStats {
     /** Biens reçus par contrats, livrés aux contrats, et part des engagements honorée. */
     contractIn: number; contractDelivered: number; contractDeliveredRatio: number;
     importPrice: number; exportPrice: number;
+    /** Droits de douane payés par les commerces (versés au budget national). */
+    tariffPaid: number;
   };
   services: Record<ServiceKind, { coverage: number; capacity: number }>;
   /** Écart-type (pondéré par la population) de la couverture moyenne entre bâtiments résidentiels. */
   serviceInequality: number;
   pollutionExposure: number;
   traffic: { trips: number; efficiency: number; congestedSegments: number };
+  /** Transports en commun : voyages par jour, capacité, part des déplacements. */
+  transit: { riders: number; capacity: number; share: number };
   /** Flux budgétaires par jour de jeu. */
   budget: {
     residentialTax: number;
@@ -64,6 +68,7 @@ export interface CityStats {
     net: number;
     /** Impôt national payé par les habitants (hors budget municipal). */
     nationalTax: number;
+    transitFares: number;
   };
 }
 
@@ -86,6 +91,18 @@ export interface CityState {
   /** Incrémenté à chaque modification de l'agencement (invalide le cache d'analyse). */
   layoutVersion: number;
   stats: CityStats | null;
+  /** Échantillons d'historique (un toutes les 4 h de jeu, 15 jours au plus). */
+  history?: HistorySample[];
+}
+
+export interface HistorySample {
+  tick: number;
+  population: number;
+  treasury: number;
+  net: number;
+  unemployment: number;
+  attractiveness: number;
+  traffic: number;
 }
 
 /** Informations par bâtiment/tronçon pour les couches cartographiques. */
@@ -96,6 +113,8 @@ export interface CityLayers {
   pollution: Record<number, number>;
   /** Charge / capacité par tronçon de route. */
   roadLoad: Record<number, number>;
+  /** Taux d'utilisation (0..1) de chaque équipement de service. */
+  serviceLoad: Record<number, number>;
   roadConnected: Record<number, boolean>;
 }
 

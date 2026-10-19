@@ -3,13 +3,13 @@
 import { z } from 'zod';
 import { BUILDING_TYPES, ROAD_TYPES, type BuildingType, type RoadType } from './catalog.ts';
 import type { CityCommand } from './commands.ts';
-import type { CityLayers, CityState, CityStats, CitySummary, TaxRates } from './types.ts';
+import type { CityLayers, CityState, CityStats, CitySummary, HistorySample, TaxRates } from './types.ts';
 import type { WorldAction } from './world/actions.ts';
 import type { WorldView } from './world/view.ts';
 
 const id = z.string().min(1).max(80);
 const cityId = z.string().min(1).max(40);
-const unit = z.enum(['infantry', 'armor', 'artillery']);
+const unit = z.enum(['infantry', 'armor', 'artillery', 'navy', 'air']);
 const treatyType = z.enum(['alliance', 'non_aggression', 'defense', 'trade', 'intel', 'peace', 'city_transfer']);
 const amount = z.number().finite().positive().max(1e10);
 
@@ -32,7 +32,10 @@ export const worldActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('recruit'), cityId, unit, count: z.number().finite() }),
   z.object({
     type: z.literal('moveArmy'), armyId: z.number().int(), toCityId: cityId,
-    units: z.object({ infantry: z.number().finite().optional(), armor: z.number().finite().optional(), artillery: z.number().finite().optional() }).optional(),
+    units: z.object({
+      infantry: z.number().finite().optional(), armor: z.number().finite().optional(), artillery: z.number().finite().optional(),
+      navy: z.number().finite().optional(), air: z.number().finite().optional(),
+    }).optional(),
   }),
   z.object({ type: z.literal('disbandArmy'), armyId: z.number().int() }),
   z.object({ type: z.literal('runForLeader'), countryId: id, run: z.boolean() }),
@@ -43,6 +46,12 @@ export const worldActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('setLaw'), countryId: id, law: z.enum(['environment', 'minimum_wage', 'public_health', 'conscription']), enabled: z.boolean() }),
   z.object({ type: z.literal('fundProject'), countryId: id, project: z.enum(['highway', 'power_grid', 'university', 'national_defense']) }),
   z.object({ type: z.literal('nationalGrant'), countryId: id, toCityId: cityId, amount }),
+  z.object({ type: z.literal('createOrganization'), name: z.string().trim().min(3).max(40), kind: z.enum(['military', 'trade']) }),
+  z.object({ type: z.literal('inviteToOrganization'), orgId: z.number().int(), playerId: id }),
+  z.object({ type: z.literal('respondOrganization'), orgId: z.number().int(), accept: z.boolean() }),
+  z.object({ type: z.literal('leaveOrganization'), orgId: z.number().int() }),
+  z.object({ type: z.literal('expelFromOrganization'), orgId: z.number().int(), playerId: id }),
+  z.object({ type: z.literal('setTariff'), countryId: id, rate: z.number().finite() }),
   z.object({ type: z.literal('sendMessage'), to: id, text: z.string().trim().min(1).max(500) }),
 ]) satisfies z.ZodType<WorldAction>;
 
@@ -59,6 +68,11 @@ export const cityCommandSchema = z.discriminatedUnion('type', [
     type: z.literal('buildRoad'),
     road: z.enum(ROAD_TYPES as [RoadType, ...RoadType[]]),
     x1: coord, y1: coord, x2: coord, y2: coord,
+  }),
+  z.object({
+    type: z.literal('buildRoadPath'),
+    road: z.enum(ROAD_TYPES as [RoadType, ...RoadType[]]),
+    points: z.array(z.object({ x: coord, y: coord })).min(2).max(48),
   }),
   z.object({ type: z.literal('demolish'), target: z.enum(['building', 'road']), id: z.number().int().nonnegative() }),
   z.object({
@@ -142,6 +156,8 @@ export type ServerMessage =
   | {
       t: 'cityStats'; cityId: string; tick: number; treasury: number; debt: number; population: number; taxes: TaxRates;
       stats: CityStats | null;
+      /** Envoyé seulement quand un nouvel échantillon d'historique vient d'être ajouté. */
+      history?: HistorySample[];
     }
   | { t: 'layers'; cityId: string; layers: CityLayers }
   | { t: 'world'; world: WorldView }

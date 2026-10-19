@@ -9,9 +9,10 @@ import { changeOwner } from './military.ts';
 import { countryName, evaluateNation, getNation } from './nations.ts';
 import {
   activeTreaty, allied, atWar, cityName, citiesOf, distanceKm, eligibleVoters, EXPANSION, MILITARY, NATION,
-  NON_AGGRESSION_NOTICE_TICKS, nextId, playerName, pushEvent, TREATY_LABEL, UNITS,
+  hasBuilding, NON_AGGRESSION_NOTICE_TICKS, nextId, ORGANIZATION, playerName, pushEvent, TREATY_LABEL, UNIT_REQUIRES, UNITS,
 } from './rules.ts';
-import { UNIT_TYPES, type TreatyType, type UnitType, type World } from './types.ts';
+import { UNIT_TYPES, type OrganizationKind, type TreatyType, type UnitType, type World } from './types.ts';
+import { BUILDINGS } from '../catalog.ts';
 import { armySize } from './military.ts';
 
 export type WorldAction =
@@ -35,6 +36,13 @@ export type WorldAction =
   | { type: 'setLaw'; countryId: string; law: LawId; enabled: boolean }
   | { type: 'fundProject'; countryId: string; project: ProjectId }
   | { type: 'nationalGrant'; countryId: string; toCityId: string; amount: number }
+  | { type: 'createOrganization'; name: string; kind: OrganizationKind }
+  | { type: 'inviteToOrganization'; orgId: number; playerId: string }
+  | { type: 'respondOrganization'; orgId: number; accept: boolean }
+  | { type: 'leaveOrganization'; orgId: number }
+  | { type: 'expelFromOrganization'; orgId: number; playerId: string }
+  | { type: 'setTariff'; countryId: string; rate: number }
+  /** Destinataire : identifiant de joueur ou « org:<id> » pour le canal d'une organisation. */
   | { type: 'sendMessage'; to: string; text: string };
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
@@ -291,7 +299,8 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
 
     case 'recruit': {
       const city = ownCity(world, player, action.cityId);
-      if (!city.buildings.some((b) => b.type === 'barracks')) fail('Une caserne est nécessaire pour recruter.');
+      const required = UNIT_REQUIRES[action.unit];
+      if (!city.buildings.some((b) => b.type === required)) fail(`${BUILDINGS[required].label} nécessaire pour recruter : ${UNITS[action.unit].label.toLowerCase()}.`);
       const count = Math.floor(action.count);
       if (!(count >= 1 && count <= 1000)) fail('Effectif entre 1 et 1 000.');
       const enlisted = meta.armies.filter((a) => a.homeCityId === city.cityId).reduce((s, a) => s + armySize(a), 0);
@@ -304,7 +313,7 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
       city.treasury -= cost;
       let army = meta.armies.find((a) => a.ownerId === player && a.cityId === city.cityId && !a.movement);
       if (!army) {
-        army = { id: nextId(meta), ownerId: player, homeCityId: city.cityId, units: { infantry: 0, armor: 0, artillery: 0 }, cityId: city.cityId, movement: null, supplied: true, paid: true };
+        army = { id: nextId(meta), ownerId: player, homeCityId: city.cityId, units: emptyUnits(), cityId: city.cityId, movement: null, supplied: true, paid: true };
         meta.armies.push(army);
       }
       army.units[action.unit] += count;
@@ -321,13 +330,28 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
       if (owner && !allied(meta, owner, player) && !atWar(meta, owner, player)) {
         fail(`${cityName(action.toCityId)} appartient à ${name(owner)} : il faut une alliance ou un accord de défense pour y entrer, ou être en guerre.`);
       }
+      // Armée engagée en rase campagne : seule la retraite vers sa ville de départ est possible.
+      if (army!.engaged && army!.movement) {
+        if (action.toCityId !== army!.cityId) fail(`Armée engagée au combat : seule la retraite vers ${cityName(army!.cityId)} est possible.`);
+        const m = army!.movement;
+        army!.movement = { toCityId: army!.cityId, progressKm: Math.max(0, m.totalKm - m.progressKm), totalKm: m.totalKm };
+        army!.cityId = m.toCityId;
+        army!.retreating = true;
+        return;
+      }
       // Une armée en mouvement repart de sa ville de départ (demi-tour simplifié).
       const fromCity = army!.movement && army!.movement.progressKm > army!.movement.totalKm / 2 ? army!.movement.toCityId : army!.cityId;
       const d = distanceKm(fromCity, action.toCityId);
       if (d > MILITARY.maxMoveKm) fail(`Trop loin (${fmt(d)} km, maximum ${MILITARY.maxMoveKm} km par ordre).`);
+      const units = action.units ? Object.fromEntries(UNIT_TYPES.map((u) => [u, Math.floor(action.units![u] ?? 0)])) as Record<UnitType, number> : army!.units;
+      if (units.navy >= 0.5 && !hasBuilding(world.cities.get(action.toCityId), 'port')) {
+        fail('La flotte ne peut rejoindre qu\'une ville dotée d\'un port.');
+      }
+      const onlyAir = UNIT_TYPES.every((u) => u === 'air' || units[u] < 0.5) && units.air >= 0.5;
+      if (onlyAir && d > MILITARY.maxAirMoveKm) fail(`Rayon d'action de l'aviation : ${MILITARY.maxAirMoveKm} km.`);
       let moving = army!;
       if (action.units) {
-        const split = { infantry: 0, armor: 0, artillery: 0 } as Record<UnitType, number>;
+        const split = emptyUnits();
         for (const u of UNIT_TYPES) {
           const n = Math.floor(action.units[u] ?? 0);
           if (n < 0 || n > army!.units[u] + 1e-9) fail('Effectifs insuffisants pour ce détachement.');
@@ -435,7 +459,74 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
       return;
     }
 
+    case 'createOrganization': {
+      const orgName = action.name.trim();
+      if (orgName.length < 3 || orgName.length > 40) fail('Nom de 3 à 40 caractères.');
+      if (meta.organizations.filter((o) => o.members.includes(player)).length >= ORGANIZATION.maxPerPlayer) fail(`Limite de ${ORGANIZATION.maxPerPlayer} organisations.`);
+      if (meta.organizations.some((o) => o.name.toLowerCase() === orgName.toLowerCase())) fail('Ce nom est déjà pris.');
+      meta.organizations.push({ id: nextId(meta), name: orgName, kind: action.kind, founderId: player, members: [player], invites: [], createdTick: world.tick });
+      pushEvent(world, 'organization', `${name(player)} fonde ${ORG_LABEL[action.kind].toLowerCase()} « ${orgName} ».`);
+      return;
+    }
+
+    case 'inviteToOrganization': {
+      const org = findOrg(world, action.orgId);
+      if (!org.members.includes(player)) fail("Vous n'êtes pas membre de cette organisation.");
+      requirePlayer(world, action.playerId);
+      if (org.members.includes(action.playerId) || org.invites.includes(action.playerId)) fail('Déjà membre ou invité.');
+      if (org.members.length >= ORGANIZATION.maxMembers) fail(`Limite de ${ORGANIZATION.maxMembers} membres.`);
+      if (org.kind === 'military' && org.members.some((m) => atWar(meta, m, action.playerId))) fail('Un membre est en guerre avec ce joueur.');
+      org.invites.push(action.playerId);
+      pushEvent(world, 'organization', `${name(player)} invite ${name(action.playerId)} à rejoindre « ${org.name} ».`, [player, action.playerId], true);
+      return;
+    }
+
+    case 'respondOrganization': {
+      const org = findOrg(world, action.orgId);
+      if (!org.invites.includes(player)) fail("Aucune invitation pour vous dans cette organisation.");
+      org.invites = org.invites.filter((p) => p !== player);
+      if (!action.accept) return;
+      if (org.kind === 'military' && org.members.some((m) => atWar(meta, m, player))) fail('Vous êtes en guerre avec un membre.');
+      org.members.push(player);
+      pushEvent(world, 'organization', `${name(player)} rejoint « ${org.name} ».`);
+      return;
+    }
+
+    case 'leaveOrganization': {
+      const org = findOrg(world, action.orgId);
+      if (!org.members.includes(player)) fail("Vous n'êtes pas membre de cette organisation.");
+      org.members = org.members.filter((p) => p !== player);
+      if (org.founderId === player && org.members.length) org.founderId = org.members[0]!;
+      if (!org.members.length) meta.organizations = meta.organizations.filter((o) => o !== org);
+      pushEvent(world, 'organization', `${name(player)} quitte « ${org.name} ».`);
+      return;
+    }
+
+    case 'expelFromOrganization': {
+      const org = findOrg(world, action.orgId);
+      if (org.founderId !== player) fail('Seul le fondateur peut exclure un membre.');
+      if (!org.members.includes(action.playerId) || action.playerId === player) fail('Membre introuvable.');
+      org.members = org.members.filter((p) => p !== action.playerId);
+      pushEvent(world, 'organization', `${name(action.playerId)} est exclu(e) de « ${org.name} ».`);
+      return;
+    }
+
+    case 'setTariff': {
+      const nation = requireLeader(world, player, action.countryId);
+      if (!(action.rate >= 0 && action.rate <= NATION.maxTariff)) fail(`Droit de douane entre 0 et ${NATION.maxTariff * 100} %.`);
+      nation.tariff = Math.round(action.rate * 100) / 100;
+      pushEvent(world, 'law', `${countryName(action.countryId)} : droits de douane fixés à ${Math.round(nation.tariff * 100)} %.`);
+      return;
+    }
+
     case 'sendMessage': {
+      if (action.to.startsWith('org:')) {
+        const org = findOrg(world, Number(action.to.slice(4)));
+        if (!org.members.includes(player)) fail("Vous n'êtes pas membre de cette organisation.");
+        meta.messages.push({ id: nextId(meta), from: player, to: action.to, text: action.text, tick: world.tick, at: now.toISOString() });
+        if (meta.messages.length > 500) meta.messages.splice(0, meta.messages.length - 500);
+        return;
+      }
       requirePlayer(world, action.to);
       if (action.to === player) fail('Destinataire invalide.');
       meta.messages.push({ id: nextId(meta), from: player, to: action.to, text: action.text, tick: world.tick, at: now.toISOString() });
@@ -448,6 +539,8 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
 function declareWar(world: World, player: string, target: string) {
   const meta = world.meta;
   if (atWar(meta, player, target)) fail('Vous êtes déjà en guerre.');
+  const org = meta.organizations.find((o) => o.kind === 'military' && o.members.includes(player) && o.members.includes(target));
+  if (org) fail(`Vous êtes tous deux membres de « ${org.name} » : quittez-la d'abord.`);
   const blocking = activeTreaty(meta, player, target, ['alliance', 'defense', 'non_aggression']);
   if (blocking) fail(`${TREATY_LABEL[blocking.type]} en vigueur : dénoncez-le d'abord.`);
   meta.treaties = meta.treaties.filter((t) => !(((t.a === player && t.b === target) || (t.a === target && t.b === player)) && t.type !== 'peace'));
@@ -470,6 +563,16 @@ function proposeNationalTreaty(world: World, player: string, action: Extract<Wor
   });
   pushEvent(world, 'treaty', `${countryName(from)} propose la paix à ${countryName(to)}.`, [player, other!.leaderId!], true);
 }
+
+export const ORG_LABEL: Record<OrganizationKind, string> = { military: 'Alliance militaire', trade: 'Union commerciale' };
+
+function findOrg(world: World, id: number) {
+  const org = world.meta.organizations.find((o) => o.id === id);
+  if (!org) fail('Organisation introuvable.');
+  return org!;
+}
+
+const emptyUnits = (): Record<UnitType, number> => ({ infantry: 0, armor: 0, artillery: 0, navy: 0, air: 0 });
 
 export const LAW_LABEL: Record<LawId, string> = {
   environment: 'Normes environnementales',

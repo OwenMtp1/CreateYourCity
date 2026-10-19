@@ -2,10 +2,25 @@
 import { GAME_MINUTES_PER_TICK, DT_DAYS } from '../constants.ts';
 import { PROJECT_EFFECTS } from '../sim/modifiers.ts';
 import type { CityState } from '../types.ts';
-import { allied, armyPosition, atWar, cityName, distanceLatLonKm, MILITARY, playerName, pushEvent, UNITS } from './rules.ts';
-import { UNIT_TYPES, type Army, type World } from './types.ts';
+import { allied, armyPosition, atWar, cityName, distanceLatLonKm, hasBuilding, MILITARY, nextId, playerName, pushEvent, UNITS } from './rules.ts';
+import { LAND_UNITS, UNIT_TYPES, type Army, type UnitType, type World } from './types.ts';
 
-export const armySize = (a: Pick<Army, 'units'>) => UNIT_TYPES.reduce((s, u) => s + a.units[u], 0);
+export const armySize = (a: Pick<Army, 'units'>) => UNIT_TYPES.reduce((s, u) => s + (a.units[u] ?? 0), 0);
+export const landSize = (a: Pick<Army, 'units'>) => LAND_UNITS.reduce((s, u) => s + (a.units[u] ?? 0), 0);
+export const hasUnit = (a: Pick<Army, 'units'>, u: UnitType) => (a.units[u] ?? 0) >= MILITARY.minArmySize;
+
+/** Vitesse effective : unité la plus lente, ×3 par le rail entre deux gares amies, ÷2 en retraite. */
+export function effectiveSpeed(world: World, a: Army): number {
+  let speed = armySpeedKmh(a);
+  if (a.movement && !hasUnit(a, 'navy') && !hasUnit(a, 'air')) {
+    const from = world.cities.get(a.cityId);
+    const to = world.cities.get(a.movement.toCityId);
+    const friendly = (c: typeof from) => !!c && allied(world.meta, c.ownerId, a.ownerId) && hasBuilding(c, 'train_station');
+    if (friendly(from) && friendly(to)) speed *= MILITARY.railSpeedFactor;
+  }
+  if (a.retreating) speed *= MILITARY.retreatSpeedFactor;
+  return speed;
+}
 
 export function armySpeedKmh(a: Army): number {
   let speed = Infinity;
@@ -43,12 +58,13 @@ export function stepMilitary(world: World): void {
 
   // Déplacements, ravitaillement, solde.
   for (const army of meta.armies) {
-    if (army.movement) {
-      army.movement.progressKm += armySpeedKmh(army) * hoursPerTick;
+    if (army.movement && !(army.engaged && !army.retreating)) {
+      army.movement.progressKm += effectiveSpeed(world, army) * hoursPerTick;
       if (army.movement.progressKm >= army.movement.totalKm) {
         const dest = army.movement.toCityId;
         army.cityId = dest;
         army.movement = null;
+        army.retreating = false;
         const owner = world.cities.get(dest)?.ownerId;
         if (owner && atWar(meta, owner, army.ownerId)) {
           pushEvent(world, 'battle', `L'armée de ${playerName(meta, army.ownerId)} arrive devant ${cityName(dest)}.`, [army.ownerId, owner]);
@@ -58,7 +74,8 @@ export function stepMilitary(world: World): void {
     const pos = armyPosition(army.cityId, army.movement);
     let supplied = false;
     for (const c of world.cities.values()) {
-      if (allied(meta, c.ownerId, army.ownerId) && distanceLatLonKm(pos, c.cityId) <= MILITARY.supplyRangeKm) {
+      const range = hasBuilding(c, 'train_station') ? MILITARY.railSupplyRangeKm : MILITARY.supplyRangeKm;
+      if (allied(meta, c.ownerId, army.ownerId) && distanceLatLonKm(pos, c.cityId) <= range) {
         supplied = true;
         break;
       }
@@ -89,6 +106,8 @@ export function stepMilitary(world: World): void {
     for (const u of UNIT_TYPES) first.units[u] += army.units[u];
     for (const u of UNIT_TYPES) army.units[u] = 0;
   }
+
+  stepFieldBattles(world);
 
   // Combats et sièges, ville par ville.
   const byCity = new Map<string, Army[]>();
@@ -133,6 +152,9 @@ export function stepMilitary(world: World): void {
     }
     siege.progress += MILITARY.siegeRate * (power / fort) * DT_DAYS;
     attackers.forEach((a) => scale(a, MILITARY.siegeAttrition * DT_DAYS));
+    // Flotte et aviation bombardent, mais seules des troupes au sol prennent la ville.
+    const ground = attackers.filter((a) => a.ownerId === leader).reduce((s2, a) => s2 + landSize(a), 0);
+    if (siege.progress >= 1 && ground < 1) siege.progress = 0.99;
     if (siege.progress >= 1) {
       delete meta.sieges[cityId];
       captureCity(world, city, leader);
@@ -140,6 +162,66 @@ export function stepMilitary(world: World): void {
   }
 
   meta.armies = meta.armies.filter((a) => armySize(a) >= MILITARY.minArmySize);
+}
+
+/**
+ * Batailles en rase campagne : deux armées ennemies en marche (hors retraite) à moins de 30 km
+ * l'une de l'autre s'immobilisent et combattent sans bonus défensif.
+ */
+function stepFieldBattles(world: World) {
+  const meta = world.meta;
+  const armies = meta.armies.filter((a) => armySize(a) >= MILITARY.minArmySize);
+  const pos = new Map(armies.map((a) => [a.id, armyPosition(a.cityId, a.movement)]));
+  const engagedWith = new Map<number, Army[]>();
+  for (let i = 0; i < armies.length; i++) {
+    for (let j = i + 1; j < armies.length; j++) {
+      const a = armies[i]!, b = armies[j]!;
+      if (!atWar(meta, a.ownerId, b.ownerId)) continue;
+      // Seules deux armées en marche se rencontrent en rase campagne ; une garnison combat dans sa ville.
+      if (!a.movement || !b.movement) continue;
+      if (a.retreating || b.retreating) continue;
+      if (km(pos.get(a.id)!, pos.get(b.id)!) > MILITARY.engageKm) continue;
+      engagedWith.set(a.id, [...(engagedWith.get(a.id) ?? []), b]);
+      engagedWith.set(b.id, [...(engagedWith.get(b.id) ?? []), a]);
+    }
+  }
+  const losses = new Map<number, number>();
+  for (const a of armies) {
+    const enemies = engagedWith.get(a.id);
+    a.engaged = !!enemies;
+    if (!enemies) continue;
+    const att = enemies.reduce((s, e) => s + attackStrength(e), 0);
+    const def = Math.max(defenseStrength(a), 0.01);
+    losses.set(a.id, Math.min(1, MILITARY.combatRate * (att / def) * DT_DAYS));
+  }
+  for (const a of armies) if (losses.has(a.id)) scale(a, losses.get(a.id)!);
+
+  // Suivi des batailles (une par paire d'armées) pour le journal et l'affichage.
+  const active = new Set<string>();
+  for (const a of armies) {
+    for (const b of engagedWith.get(a.id) ?? []) {
+      if (a.id > b.id) continue;
+      const k = `${a.id}-${b.id}`;
+      active.add(k);
+      const pa = pos.get(a.id)!, pb = pos.get(b.id)!;
+      const position: [number, number] = [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2];
+      const existing = meta.battles.find((x) => x.armies.join('-') === k);
+      if (existing) existing.position = position;
+      else {
+        meta.battles.push({ id: nextId(meta), armies: [a.id, b.id], players: [a.ownerId, b.ownerId], position, sinceTick: world.tick });
+        pushEvent(world, 'battle', `Bataille entre les armées de ${playerName(meta, a.ownerId)} et de ${playerName(meta, b.ownerId)}.`, [a.ownerId, b.ownerId]);
+      }
+    }
+  }
+  meta.battles = meta.battles.filter((x) => active.has(x.armies.join('-')));
+}
+
+function km(p: [number, number], q: [number, number]) {
+  const rad = Math.PI / 180;
+  const dLat = (q[0] - p[0]) * rad;
+  const dLon = (q[1] - p[1]) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(p[0] * rad) * Math.cos(q[0] * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
 /** Changement de propriétaire par conquête. Les bâtiments et la trésorerie restent à la ville. */

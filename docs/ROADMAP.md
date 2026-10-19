@@ -24,11 +24,14 @@ Légende : ✅ fonctionnel et testé · 🟡 partiel ou simplifié · ⬜ à fai
 | ✅ | Logement, emploi, chômage, population agrégée, migrations | |
 | ✅ | Budget : impôts par secteur, entretien, dette et emprunts | |
 | 🟡 | Production et consommation | Biens génériques, électricité, eau. Pas de ressources naturelles ni de chaînes de production. |
-| 🟡 | Réseau routier et trafic | Raccordement réel et charge par tronçon d'accès. Pas d'itinéraires ni de transports publics. |
+| ✅ | Réseau routier et trafic | Graphe découpé aux carrefours, itinéraires domicile-travail, achats et fret (plus court chemin en temps), charge par tronçon, voitures animées qui ralentissent dans les bouchons |
+| ✅ | Routes courbes et ronds-points | Tracés multi-tronçons atomiques, jonctions arrondies |
+| ✅ | Transports en commun : bus, tram, métro | Part modale des logements desservis, capacité, recettes, lignes et véhicules en 3D |
+| ✅ | Tutoriel guidé, conseillers chiffrés, statistiques historiques | Conseils à règles fixes (aucune IA), courbes sur 15 jours de jeu |
 | ✅ | Services publics : santé, éducation, sécurité, loisirs | Capacité, portée, couverture par bâtiment, inégalités |
 | ✅ | Couches 3D : raccordement, trafic, couverture des services, pollution | |
 | ✅ | Rendu 3D : bâtiments procéduraux, ciel, cycle jour/nuit, eau, ombres, arbres, lampadaires | Mode « graphismes économiques » pour les machines modestes |
-| ⬜ | Quartiers nommés, zonage, transports publics, terrain réel | |
+| ⬜ | Quartiers nommés, zonage, terrain réel, sons | |
 
 ## Phase 3 — monde multijoueur
 
@@ -41,7 +44,9 @@ Légende : ✅ fonctionnel et testé · 🟡 partiel ou simplifié · ⬜ à fai
 | ✅ | Visibilité conditionnée : détail des villes (alliance ou partage d'informations), armées vues dans un rayon de 500 km | |
 | ✅ | Expansion : annexion de villes neutres proches, cession de ville contre paiement, conquête | Plusieurs villes par joueur (12 au maximum) |
 | ✅ | Armées : recrutement (caserne, 5 % de la population), déplacement sur le globe, ravitaillement, solde, combat, siège, prise de ville | Résolution déterministe et agrégée |
-| ⬜ | Batailles en rase campagne, routes logistiques détaillées, unités navales et aériennes | |
+| ✅ | Routes commerciales sur le globe, coût de transport, ports et gares, droits de douane nationaux | Libre-échange par accord commercial ou union commerciale |
+| ✅ | Batailles en rase campagne, retraite, lignes de front, flotte (de port à port), aviation, ravitaillement et déplacements par le rail | Seules les troupes au sol prennent une ville |
+| ✅ | Organisations multinationales : alliances militaires et unions commerciales, invitations, exclusion, canal de discussion | |
 
 ## Phase 4 — politique nationale
 

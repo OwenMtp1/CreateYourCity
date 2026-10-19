@@ -13,10 +13,18 @@ export type BuildingType =
   | 'water_tower'
   | 'tower'
   | 'park'
-  | 'barracks';
+  | 'barracks'
+  | 'bus_station'
+  | 'tram_station'
+  | 'metro_station'
+  | 'train_station'
+  | 'port'
+  | 'airbase';
 
 export type RoadType = 'street' | 'avenue';
-export type BuildingCategory = 'residential' | 'commercial' | 'industrial' | 'service' | 'utility' | 'military';
+export type BuildingCategory = 'residential' | 'commercial' | 'industrial' | 'service' | 'utility' | 'transport' | 'military';
+export type TransitMode = 'bus' | 'tram' | 'metro';
+export const TRANSIT_MODES: readonly TransitMode[] = ['bus', 'tram', 'metro'];
 export type ServiceKind = 'health' | 'education' | 'safety' | 'leisure';
 export const SERVICE_KINDS: readonly ServiceKind[] = ['health', 'education', 'safety', 'leisure'];
 
@@ -45,6 +53,10 @@ export interface BuildingDef {
   pollution?: { radius: number; intensity: number };
   /** Les salaires sont payés par la ville via l'entretien (pas d'impôt sur les bénéfices). */
   publicSector?: boolean;
+  /** Station de transport en commun : rayon desservi et capacité en voyages par jour. */
+  transit?: { mode: TransitMode; radius: number; capacity: number };
+  /** Doit être construit à moins de 40 m d'une étendue d'eau (port). */
+  needsWater?: boolean;
 }
 
 export const BUILDINGS: Record<BuildingType, BuildingDef> = {
@@ -121,6 +133,40 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     type: 'barracks', label: 'Caserne', category: 'military',
     description: "Permet de recruter des unités et renforce la défense de la ville.",
     w: 60, h: 40, cost: 200_000, upkeepPerDay: 1_000, jobs: 40, housing: 0, powerMW: 0.3, waterM3PerDay: 15, publicSector: true,
+  },
+  bus_station: {
+    type: 'bus_station', label: 'Gare routière', category: 'transport',
+    description: 'Lignes de bus : une partie des habitants à 400 m laisse la voiture (2 stations minimum).',
+    w: 20, h: 20, cost: 60_000, upkeepPerDay: 500, jobs: 15, housing: 0, powerMW: 0.05, waterM3PerDay: 2,
+    transit: { mode: 'bus', radius: 400, capacity: 4_000 }, publicSector: true,
+  },
+  tram_station: {
+    type: 'tram_station', label: 'Station de tram', category: 'transport',
+    description: 'Tramway : rayon 500 m, part modale plus forte que le bus (2 stations minimum).',
+    w: 16, h: 30, cost: 150_000, upkeepPerDay: 900, jobs: 12, housing: 0, powerMW: 0.4, waterM3PerDay: 2,
+    transit: { mode: 'tram', radius: 500, capacity: 9_000 }, publicSector: true,
+  },
+  metro_station: {
+    type: 'metro_station', label: 'Station de métro', category: 'transport',
+    description: 'Métro : rayon 700 m, très forte capacité (2 stations minimum).',
+    w: 20, h: 20, cost: 400_000, upkeepPerDay: 1_800, jobs: 20, housing: 0, powerMW: 0.8, waterM3PerDay: 4,
+    transit: { mode: 'metro', radius: 700, capacity: 25_000 }, publicSector: true,
+  },
+  train_station: {
+    type: 'train_station', label: 'Gare ferroviaire', category: 'transport',
+    description: 'Réseau ferré : meilleurs prix sur le marché, transport des contrats moins cher, ravitaillement et déplacements militaires accélérés.',
+    w: 60, h: 30, cost: 500_000, upkeepPerDay: 2_000, jobs: 60, housing: 0, powerMW: 0.6, waterM3PerDay: 10, publicSector: true,
+  },
+  port: {
+    type: 'port', label: 'Port', category: 'transport',
+    description: "Au bord de l'eau : meilleurs prix sur le marché, transport des contrats moins cher, flotte de guerre.",
+    w: 60, h: 40, cost: 450_000, upkeepPerDay: 1_500, jobs: 80, housing: 0, powerMW: 0.5, waterM3PerDay: 10,
+    needsWater: true, publicSector: true,
+  },
+  airbase: {
+    type: 'airbase', label: 'Base aérienne', category: 'military',
+    description: "Permet de recruter l'aviation.",
+    w: 80, h: 60, cost: 600_000, upkeepPerDay: 3_000, jobs: 80, housing: 0, powerMW: 0.8, waterM3PerDay: 10, publicSector: true,
   },
 };
 

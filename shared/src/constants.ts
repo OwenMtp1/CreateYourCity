@@ -66,4 +66,13 @@ export const TRAFFIC = {
   tripsPerGoodSold: 2,
   freeFlowRatio: 0.8,
   minEfficiency: 0.4,
+  /** Déplacements de fret par unité de capacité de production. */
+  freightTripsPerGood: 0.2,
+} as const;
+
+/** Transports en commun : part modale maximale des habitants desservis, tarif par voyage. */
+export const TRANSIT = {
+  modeShare: { bus: 0.25, tram: 0.35, metro: 0.5 },
+  minStationsPerMode: 2,
+  farePerRide: 1.5,
 } as const;

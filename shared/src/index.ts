@@ -10,3 +10,5 @@ export * from './types.ts';
 export * from './sim/layout.ts';
 export * from './sim/tick.ts';
 export * from './sim/modifiers.ts';
+export * from './sim/advisors.ts';
+export * from './sim/routing.ts';

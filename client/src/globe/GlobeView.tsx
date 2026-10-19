@@ -12,7 +12,7 @@ export function relationOf(world: WorldView | null, me: string | undefined, othe
   if (other === me) return 'mine';
   if (!world) return 'other';
   if (world.wars.some((w) => (w.a === me && w.b === other) || (w.a === other && w.b === me))) return 'enemy';
-  const metaLike = { treaties: world.treaties, wars: world.wars } as Parameters<typeof allied>[0];
+  const metaLike = { treaties: world.treaties, wars: world.wars, organizations: world.organizations } as Parameters<typeof allied>[0];
   return allied(metaLike, me, other) ? 'ally' : 'other';
 }
 
@@ -60,7 +60,17 @@ export function GlobeView() {
       destination: a.movement ? (() => { const c = CITY_BY_ID.get(a.movement!.toCityId)!; return [c.lat, c.lon] as [number, number]; })() : null,
       relation: relationOf(world, player?.id, a.ownerId),
       size: a.approxSize,
+      kind: a.kind,
     }));
+    const ll = (cityId: string): [number, number] => { const c = CITY_BY_ID.get(cityId)!; return [c.lat, c.lon]; };
+    const routes = (world?.contracts ?? []).map((c) => ({ from: ll(c.sellerCityId), to: ll(c.buyerCityId), active: c.status === 'active' }));
+    // Front : paires de villes de deux joueurs en guerre, distantes de moins de 500 km.
+    const fronts: { from: [number, number]; to: [number, number] }[] = [];
+    for (const w of world?.wars ?? []) {
+      const ca = summaries.filter((s) => s.ownerId === w.a);
+      const cb = summaries.filter((s) => s.ownerId === w.b);
+      for (const x of ca) for (const y of cb) if (distanceKm(x.cityId, y.cityId) <= 500) fronts.push({ from: ll(x.cityId), to: ll(y.cityId) });
+    }
     return {
       owners,
       playedCountries: new Set(summaries.map((s) => s.countryId)),
@@ -68,6 +78,9 @@ export function GlobeView() {
       selectedCity: focusCityId,
       armies,
       sieges: (world?.sieges ?? []).map((s) => s.cityId),
+      routes,
+      fronts: fronts.slice(0, 200),
+      battles: (world?.battles ?? []).map((b) => b.position),
     };
   }, [summaries, world, player?.id, country, focusCityId]);
 
@@ -110,6 +123,8 @@ export function GlobeView() {
         <span><i className="lg lg-enemy" /> Ennemis</span>
         <span><i className="lg lg-owned" /> Autres joueurs</span>
         <span><i className="lg lg-free" /> Villes libres</span>
+        <span><i className="lg lg-route" /> Routes commerciales</span>
+        <span><i className="lg lg-front" /> Front</span>
       </div>
       <div className="map-credits">Données : Natural Earth (domaine public)</div>
       {(focusCityId || country) && <PlaceCard cityId={focusCityId} countryId={country} onFocus={focus} />}

@@ -19,6 +19,7 @@ export interface GlobeArmy {
   destination: [number, number] | null;
   relation: Relation;
   size: number;
+  kind: 'land' | 'naval' | 'air';
 }
 
 export interface GlobeData {
@@ -28,6 +29,12 @@ export interface GlobeData {
   selectedCity: string | null;
   armies: GlobeArmy[];
   sieges: string[];
+  /** Routes commerciales (contrats) : extrémités et statut. */
+  routes: { from: [number, number]; to: [number, number]; active: boolean }[];
+  /** Lignes de front entre villes ennemies proches. */
+  fronts: { from: [number, number]; to: [number, number] }[];
+  /** Batailles en rase campagne. */
+  battles: [number, number][];
 }
 
 export interface GlobePick { cityId?: string; countryId?: string }
@@ -92,7 +99,8 @@ export class GlobeScene {
   private readonly siegeGroup = new THREE.Group();
   private readonly labelLayer: HTMLDivElement;
   private readonly labelPool: HTMLDivElement[] = [];
-  private data: GlobeData = { owners: new Map(), playedCountries: new Set(), selectedCountry: null, selectedCity: null, armies: [], sieges: [] };
+  private data: GlobeData = { owners: new Map(), playedCountries: new Set(), selectedCountry: null, selectedCity: null, armies: [], sieges: [], routes: [], fronts: [], battles: [] };
+  private readonly routeGroup = new THREE.Group();
   private frame = 0;
   private disposed = false;
   private flight: { from: THREE.Vector3; to: THREE.Vector3; t: number } | null = null;
@@ -189,7 +197,7 @@ export class GlobeScene {
         transparent: true,
       }),
     );
-    this.scene.add(this.cityPoints, this.pillars, this.armyGroup, this.siegeGroup);
+    this.scene.add(this.cityPoints, this.pillars, this.armyGroup, this.siegeGroup, this.routeGroup);
 
     this.labelLayer = document.createElement('div');
     this.labelLayer.className = 'globe-labels';
@@ -338,8 +346,9 @@ export class GlobeScene {
       const p = latLonToVec(a.position[0], a.position[1], 1.004);
       const n = p.clone().normalize();
       const size = 0.006 + Math.min(0.012, Math.sqrt(a.size) * 0.0009);
+      const geom = a.kind === 'naval' ? new THREE.ConeGeometry(size * 0.9, size * 2.2, 3) : a.kind === 'air' ? new THREE.TetrahedronGeometry(size * 1.2, 0) : new THREE.OctahedronGeometry(size, 0);
       const marker = new THREE.Mesh(
-        new THREE.OctahedronGeometry(size, 0),
+        geom,
         new THREE.MeshStandardMaterial({ color: RELATION_COLOR[a.relation], emissive: RELATION_COLOR[a.relation], emissiveIntensity: 0.6, metalness: 0.2, roughness: 0.4 }),
       );
       marker.position.copy(n.clone().multiplyScalar(1.004 + size));
@@ -360,6 +369,36 @@ export class GlobeScene {
         line.computeLineDistances();
         this.armyGroup.add(line);
       }
+    }
+
+    // Routes commerciales et lignes de front : arcs au-dessus du globe.
+    this.clearGroup(this.routeGroup);
+    const arc = (from: [number, number], to: [number, number], lift: number) => {
+      const a = latLonToVec(from[0], from[1], 1).normalize();
+      const b = latLonToVec(to[0], to[1], 1).normalize();
+      const pts: THREE.Vector3[] = [];
+      for (let k = 0; k <= 40; k++) {
+        const f = k / 40;
+        pts.push(a.clone().lerp(b, f).normalize().multiplyScalar(1.003 + Math.sin(Math.PI * f) * lift * a.distanceTo(b)));
+      }
+      return new THREE.BufferGeometry().setFromPoints(pts);
+    };
+    for (const r of data.routes) {
+      const line = new THREE.Line(arc(r.from, r.to, 0.12), new THREE.LineBasicMaterial({ color: r.active ? 0x38bdf8 : 0x94a3b8, transparent: true, opacity: r.active ? 0.9 : 0.5 }));
+      line.userData.flow = r.active;
+      this.routeGroup.add(line);
+    }
+    for (const f of data.fronts) {
+      const line = new THREE.Line(arc(f.from, f.to, 0.01), new THREE.LineDashedMaterial({ color: 0xef4444, dashSize: 0.006, gapSize: 0.004, transparent: true, opacity: 0.85 }));
+      line.computeLineDistances();
+      this.routeGroup.add(line);
+    }
+    for (const b of data.battles) {
+      const p = latLonToVec(b[0], b[1], 1.006);
+      const burst = new THREE.Mesh(new THREE.IcosahedronGeometry(0.009, 0), new THREE.MeshBasicMaterial({ color: 0xff6b35, transparent: true, opacity: 0.9 }));
+      burst.position.copy(p);
+      burst.userData.pulse = true;
+      this.routeGroup.add(burst);
     }
 
     // Sièges : anneaux pulsants.
@@ -472,7 +511,7 @@ export class GlobeScene {
     if (this.regions) this.regions.visible = dist < 1.7;
     const t = this.timer.getElapsed();
     for (const m of this.armyGroup.children) if (m.userData.spin) m.rotateOnAxis(new THREE.Vector3(0, 1, 0), dt * 1.5);
-    for (const m of this.siegeGroup.children) {
+    for (const m of [...this.siegeGroup.children, ...this.routeGroup.children.filter((c) => c.userData.pulse)]) {
       const s = 1 + 0.35 * Math.sin(t * 4);
       m.scale.setScalar(s);
       ((m as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.4 * Math.sin(t * 4);

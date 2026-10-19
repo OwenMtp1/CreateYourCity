@@ -10,8 +10,10 @@ export interface CityModifiers {
   goodsImportPrice: number;
   /** Prix de vente des biens exportés (marché commun). */
   goodsExportPrice: number;
-  /** Biens livrés à cette ville par contrats (quantité/jour) et leur coût total/jour. */
-  contractIn: { qty: number; cost: number };
+  /** Biens livrés à cette ville par contrats (quantité/jour), coût total/jour (marchandise + transport) et droits de douane/jour. */
+  contractIn: { qty: number; cost: number; tariff: number };
+  /** Droit de douane national sur les achats au marché commun (0..0,5). */
+  tariffRate: number;
   /** Biens promis par cette ville à d'autres (quantité/jour) et recette totale/jour si tout est livré. */
   contractOut: { qty: number; revenue: number };
   nationalTaxRate: number;
@@ -22,7 +24,8 @@ export interface CityModifiers {
 export const DEFAULT_MODIFIERS: CityModifiers = {
   goodsImportPrice: ECONOMY.importGoodsPrice,
   goodsExportPrice: ECONOMY.exportGoodsPrice,
-  contractIn: { qty: 0, cost: 0 },
+  contractIn: { qty: 0, cost: 0, tariff: 0 },
+  tariffRate: 0,
   contractOut: { qty: 0, revenue: 0 },
   nationalTaxRate: 0,
   laws: {},

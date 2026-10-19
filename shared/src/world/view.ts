@@ -1,7 +1,7 @@
 // Vue personnalisée du monde envoyée à un joueur : ce qu'il a le droit de voir.
-import { armySize } from './military.ts';
+import { armySize, hasUnit, landSize } from './military.ts';
 import { allied, armyPosition, detailVisible, distanceLatLonKm, eligibleVoters, marketPrices } from './rules.ts';
-import type { DirectMessage, MarketState, NationState, Siege, TradeContract, Treaty, UnitType, War, World, WorldEvent } from './types.ts';
+import type { DirectMessage, FieldBattle, MarketState, NationState, Organization, Siege, TradeContract, Treaty, UnitType, War, World, WorldEvent } from './types.ts';
 import { UNIT_TYPES } from './types.ts';
 
 /** Rayon autour de ses villes dans lequel un joueur aperçoit les armées étrangères. */
@@ -19,6 +19,10 @@ export interface ArmyView {
   supplied: boolean | null;
   paid: boolean | null;
   homeCityId: string | null;
+  /** Nature dominante (visible même de loin). */
+  kind: 'land' | 'naval' | 'air';
+  engaged: boolean;
+  retreating: boolean;
 }
 
 export interface NationView extends Omit<NationState, 'votes' | 'impeach'> {
@@ -48,6 +52,8 @@ export interface WorldView {
   contracts: TradeContract[];
   armies: ArmyView[];
   sieges: Siege[];
+  battles: FieldBattle[];
+  organizations: Organization[];
   nations: NationView[];
   events: WorldEvent[];
   messages: DirectMessage[];
@@ -74,6 +80,8 @@ export function buildWorldView(world: World, viewer: string): WorldView {
       units: exact ? Object.fromEntries(UNIT_TYPES.map((u) => [u, a.units[u]])) as Record<UnitType, number> : null,
       approxSize: exact ? size : Math.max(10, Math.round(size / 10) * 10),
       supplied: exact ? a.supplied : null, paid: exact ? a.paid : null, homeCityId: exact ? a.homeCityId : null,
+      kind: landSize(a) >= 0.5 ? 'land' : hasUnit(a, 'navy') ? 'naval' : 'air',
+      engaged: !!a.engaged, retreating: !!a.retreating,
     });
   }
 
@@ -105,9 +113,15 @@ export function buildWorldView(world: World, viewer: string): WorldView {
     contracts: meta.contracts.filter((c) => c.sellerId === viewer || c.buyerId === viewer),
     armies,
     sieges: Object.values(meta.sieges),
+    battles: meta.battles,
+    // Les organisations sont publiques ; leurs invitations ne sont visibles que des membres et invités.
+    organizations: meta.organizations.map((o) => ({
+      ...o, invites: o.members.includes(viewer) || o.invites.includes(viewer) ? o.invites : [],
+    })),
     nations,
     events: meta.events.filter((e) => !e.private || e.players.includes(viewer)).slice(-60),
-    messages: meta.messages.filter((m) => m.from === viewer || m.to === viewer).slice(-100),
+    messages: meta.messages.filter((m) => m.from === viewer || m.to === viewer ||
+      (m.to.startsWith('org:') && meta.organizations.some((o) => `org:${o.id}` === m.to && o.members.includes(viewer)))).slice(-150),
     cityDetails,
   };
 }

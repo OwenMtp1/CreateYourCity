@@ -49,8 +49,10 @@ export interface TradeContract {
   deliveredRatio: number;
 }
 
-export type UnitType = 'infantry' | 'armor' | 'artillery';
-export const UNIT_TYPES: readonly UnitType[] = ['infantry', 'armor', 'artillery'];
+export type UnitType = 'infantry' | 'armor' | 'artillery' | 'navy' | 'air';
+export const UNIT_TYPES: readonly UnitType[] = ['infantry', 'armor', 'artillery', 'navy', 'air'];
+/** Seules les unités terrestres peuvent prendre une ville. */
+export const LAND_UNITS: readonly UnitType[] = ['infantry', 'armor', 'artillery'];
 
 export interface Army {
   id: number;
@@ -64,6 +66,32 @@ export interface Army {
   movement: { toCityId: string; progressKm: number; totalKm: number } | null;
   supplied: boolean;
   paid: boolean;
+  /** Engagée dans une bataille en rase campagne (n'avance plus). */
+  engaged?: boolean;
+  /** En retraite vers sa ville de départ (ignore les engagements, vitesse réduite). */
+  retreating?: boolean;
+}
+
+/** Bataille en rase campagne entre armées ennemies proches. */
+export interface FieldBattle {
+  id: number;
+  armies: number[];
+  players: string[];
+  position: [number, number];
+  sinceTick: number;
+}
+
+export type OrganizationKind = 'military' | 'trade';
+
+/** Organisation multinationale créée par des joueurs. */
+export interface Organization {
+  id: number;
+  name: string;
+  kind: OrganizationKind;
+  founderId: string;
+  members: string[];
+  invites: string[];
+  createdTick: number;
 }
 
 export interface Siege {
@@ -83,6 +111,8 @@ export interface NationState {
   /** électeurs favorables à la destitution */
   impeach: string[];
   taxRate: number;
+  /** Droit de douane sur les importations (marché commun, contrats étrangers non exemptés). */
+  tariff?: number;
   treasury: number;
   laws: Partial<Record<LawId, boolean>>;
   projects: Partial<Record<ProjectId, boolean>>;
@@ -99,7 +129,7 @@ export interface MarketState {
 
 export type WorldEventKind =
   | 'war' | 'peace' | 'treaty' | 'treaty_end' | 'capture' | 'battle' | 'expansion' | 'transfer'
-  | 'election' | 'resignation' | 'impeachment' | 'law' | 'project' | 'contract' | 'recruit' | 'funds';
+  | 'election' | 'resignation' | 'impeachment' | 'law' | 'project' | 'contract' | 'recruit' | 'funds' | 'organization';
 
 export interface WorldEvent {
   id: number;
@@ -130,6 +160,8 @@ export interface WorldMeta {
   contracts: TradeContract[];
   armies: Army[];
   sieges: Record<string, Siege>;
+  battles: FieldBattle[];
+  organizations: Organization[];
   nations: Record<string, NationState>;
   market: MarketState;
   events: WorldEvent[];
@@ -153,6 +185,8 @@ export function createWorldMeta(): WorldMeta {
     contracts: [],
     armies: [],
     sieges: {},
+    battles: [],
+    organizations: [],
     nations: {},
     market: { price: 14, supply: 0, demand: 0, history: [] },
     events: [],
@@ -164,5 +198,8 @@ export function migrateWorldMeta(raw: unknown): WorldMeta {
   const meta = raw as Partial<WorldMeta> | null;
   if (!meta || typeof meta !== 'object' || meta.schemaVersion === undefined) return createWorldMeta();
   if (meta.schemaVersion !== WORLD_SCHEMA_VERSION) throw new Error(`Version de monde ${meta.schemaVersion} non prise en charge`);
-  return { ...createWorldMeta(), ...meta } as WorldMeta;
+  const merged = { ...createWorldMeta(), ...meta } as WorldMeta;
+  // Armées sauvegardées avant l'ajout des unités navales et aériennes.
+  for (const a of merged.armies) for (const u of UNIT_TYPES) a.units[u] ??= 0;
+  return merged;
 }

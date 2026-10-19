@@ -10,10 +10,14 @@ import { fmtInt, fmtMoney } from '../ui/format.ts';
 import { BuildPanel, EconomyPanel, PopulationPanel, ServicesPanel } from '../ui/panels/city.tsx';
 import { ArmyPanel, DiplomacyPanel, LobbyPanel, NationPanel, TerritoryPanel, TradePanel } from '../ui/panels/world.tsx';
 import { StatusBadge } from '../ui/StatusBadge.tsx';
+import { AdvisorsPanel, StatsPanel, useAdvice } from '../ui/panels/insights.tsx';
+import { Tutorial } from '../ui/Tutorial.tsx';
 
-type Tab = 'build' | 'economy' | 'population' | 'services' | 'territory' | 'trade' | 'diplomacy' | 'army' | 'nation' | 'lobby';
+type Tab = 'build' | 'advisors' | 'stats' | 'economy' | 'population' | 'services' | 'territory' | 'trade' | 'diplomacy' | 'army' | 'nation' | 'lobby';
 const TABS: { id: Tab; icon: string; label: string; city?: boolean }[] = [
   { id: 'build', icon: '🏗️', label: 'Construire', city: true },
+  { id: 'advisors', icon: '🧭', label: 'Conseillers', city: true },
+  { id: 'stats', icon: '📈', label: 'Statistiques', city: true },
   { id: 'economy', icon: '💰', label: 'Économie', city: true },
   { id: 'population', icon: '👥', label: 'Population', city: true },
   { id: 'services', icon: '🏥', label: 'Services', city: true },
@@ -36,7 +40,13 @@ export function GameScreen() {
   const [layer, setLayer] = useState<CityLayer>('none');
   const [selected, setSelected] = useState<number | null>(null);
   const [dayNight, setDayNight] = useState(true);
+  const [visitedEconomy, setVisitedEconomy] = useState(false);
+  const [visitedGlobe, setVisitedGlobe] = useState(false);
+  const advice = useAdvice();
+  const alerts = advice.filter((a) => a.severity !== 'info').length;
   useEventNotifications();
+  useEffect(() => { if (tab === 'economy') setVisitedEconomy(true); }, [tab]);
+  useEffect(() => { if (view === 'globe' && cityCount > 0) setVisitedGlobe(true); }, [view, cityCount]);
 
   const showCity = view === 'city' && city;
   const tabDef = TABS.find((t) => t.id === tab);
@@ -61,6 +71,7 @@ export function GameScreen() {
           <button key={t.id} className={`rail-btn ${tab === t.id ? 'active' : ''}`} disabled={t.city && !city}
             onClick={() => setTab(tab === t.id ? null : t.id)} title={t.label}>
             {t.icon}<span>{t.label}</span>
+            {t.id === 'advisors' && alerts > 0 && <em className="badge">{alerts}</em>}
           </button>
         ))}
       </nav>
@@ -73,6 +84,8 @@ export function GameScreen() {
           <div className="drawer-body">
             {tab === 'build' && <BuildPanel tool={tool} setTool={(t) => { setTool(t); if (t.kind !== 'select') setState({ view: 'city' }); }} grid={grid} setGrid={setGrid}
               layer={layer} setLayer={setLayer} selected={selected} dayNight={dayNight} setDayNight={setDayNight} />}
+            {tab === 'advisors' && <AdvisorsPanel setTool={(t) => { setTool(t); setTab('build'); }} setSelected={setSelected} />}
+            {tab === 'stats' && <StatsPanel />}
             {tab === 'economy' && <EconomyPanel />}
             {tab === 'population' && <PopulationPanel />}
             {tab === 'services' && <ServicesPanel layer={layer} setLayer={setLayer} />}
@@ -84,6 +97,9 @@ export function GameScreen() {
             {tab === 'lobby' && <LobbyPanel />}
           </div>
         </aside>
+      )}
+      {showCity && (
+        <Tutorial setTool={setTool} openTab={(t) => setTab(t)} visitedEconomy={visitedEconomy} visitedGlobe={visitedGlobe} />
       )}
       {view === 'globe' && cityCount === 0 && (
         <div className="onboarding glass">

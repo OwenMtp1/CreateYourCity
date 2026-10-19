@@ -79,6 +79,8 @@ describe('serveur de jeu', () => {
     game.loop();
     expect(alice.last('tick')!.tick).toBe(TICKS_PER_DAY);
     expect(alice.last('cityStats')!.population).toBeGreaterThan(0);
+    // L'historique accompagne les statistiques dès qu'un échantillon est ajouté.
+    expect(alice.last('cityStats')!.history!.length).toBe(TICKS_PER_DAY / 24);
   });
 
   it('les deux joueurs voient la même horloge et la ville de l’autre en résumé', async () => {

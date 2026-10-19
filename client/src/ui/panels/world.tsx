@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { formatGameTime, TICKS_PER_DAY } from '@cyc/shared';
 import {
-  LAW_LABEL, MILITARY, NATION, TREATY_LABEL, UNITS, UNIT_TYPES, type TreatyType, type UnitType, type WorldView,
+  LAW_LABEL, MILITARY, NATION, ORG_LABEL, TRANSPORT, TREATY_LABEL, UNIT_REQUIRES, UNITS, UNIT_TYPES,
+  type OrganizationKind, type TreatyType, type UnitType, type WorldView,
 } from '@cyc/shared/game';
+import { BUILDINGS } from '@cyc/shared';
 import { CITY_BY_ID, COUNTRY_BY_ID } from '@cyc/shared/world';
 import type { LawId, ProjectId } from '@cyc/shared';
 import { PROJECT_LABEL } from '@cyc/shared/game';
@@ -112,6 +114,10 @@ export function TradePanel() {
       <Row label="Demande importée" value={`${fmtInt(m.demand)} /j`} />
       <p className="small muted">Le prix monte quand la demande dépasse l'offre (± 0,2 % par tick, entre 8 et 30 cr). Les surplus sont vendus et les déficits achetés automatiquement.</p>
 
+      <p className="small muted">
+        Transport des contrats : {TRANSPORT.costPer1000Km} cr par bien et par 1 000 km, divisé par deux si les deux villes ont un port ou une gare.
+        Les droits de douane nationaux s'appliquent aux achats au marché et aux contrats avec l'étranger, sauf accord commercial ou union commerciale.
+      </p>
       <h4>Contrats d'approvisionnement</h4>
       {world.contracts.length === 0 && <p className="small muted">Aucun contrat.</p>}
       <ul className="list">
@@ -183,7 +189,7 @@ export function DiplomacyPanel() {
   const others = (world?.players ?? []).filter((p) => p.id !== player?.id);
   useEffect(() => { if (!target && others[0]) setTarget(others[0].id); }, [others.length]);
   useEffect(() => { if (!payFrom) setPayFrom(Object.keys(myCities)[0] ?? ''); }, [Object.keys(myCities).join()]);
-  const messages = (world?.messages ?? []).filter((m) => m.from === target || m.to === target);
+  const messages = (world?.messages ?? []).filter((m) => !m.to.startsWith('org:') && (m.from === target || m.to === target));
   useEffect(() => endRef.current?.scrollIntoView({ block: 'end' }), [messages.length]);
   if (!world || !player) return null;
 
@@ -289,6 +295,8 @@ export function DiplomacyPanel() {
         ))}
       </ul>
 
+      <OrganizationsSection world={world} me={player.id} />
+
       <h4>Guerres</h4>
       {world.wars.length === 0 && <p className="small muted">Le monde est en paix.</p>}
       <ul className="list">
@@ -303,6 +311,89 @@ export function DiplomacyPanel() {
   );
 }
 
+function OrganizationsSection({ world, me }: { world: WorldView; me: string }) {
+  const players = usePlayers();
+  const [name, setName] = useState('');
+  const [kind, setKind] = useState<OrganizationKind>('military');
+  const [invite, setInvite] = useState<Record<number, string>>({});
+  const [open, setOpen] = useState<number | null>(null);
+  const [text, setText] = useState('');
+  const mine = world.organizations.filter((o) => o.members.includes(me));
+  const invited = world.organizations.filter((o) => o.invites.includes(me));
+  const others = world.organizations.filter((o) => !o.members.includes(me) && !o.invites.includes(me));
+  return (
+    <>
+      <h4>Organisations multinationales</h4>
+      <p className="small muted">
+        Alliance militaire : membres alliés (passage, défense commune, ravitaillement, renseignement), guerre interdite entre membres.
+        Union commerciale : pas de droits de douane entre membres.
+      </p>
+      {invited.map((o) => (
+        <div key={o.id} className="card compact">
+          <div>Invitation : <strong>{o.name}</strong> ({ORG_LABEL[o.kind]}, {o.members.length} membres)</div>
+          <div className="row">
+            <button className="primary small-btn" onClick={() => void client.action({ type: 'respondOrganization', orgId: o.id, accept: true })}>Rejoindre</button>
+            <button className="small-btn" onClick={() => void client.action({ type: 'respondOrganization', orgId: o.id, accept: false })}>Décliner</button>
+          </div>
+        </div>
+      ))}
+      <ul className="list">
+        {mine.map((o) => {
+          const msgs = world.messages.filter((m) => m.to === `org:${o.id}`);
+          const candidates = world.players.filter((p) => !o.members.includes(p.id) && !o.invites.includes(p.id));
+          return (
+            <li key={o.id} className="column">
+              <div><strong>{o.kind === 'military' ? '🛡️' : '🤝'} {o.name}</strong> <span className="small muted">· {ORG_LABEL[o.kind]}{o.founderId === me ? ' · fondateur' : ''}</span></div>
+              <div className="small">{o.members.map((m) => nameOf(players, m)).join(', ')}{o.invites.length ? ` · invités : ${o.invites.map((m) => nameOf(players, m)).join(', ')}` : ''}</div>
+              <div className="row wrap">
+                {candidates.length > 0 && (
+                  <>
+                    <select value={invite[o.id] ?? ''} onChange={(e) => setInvite({ ...invite, [o.id]: e.target.value })} style={{ width: 'auto' }}>
+                      <option value="">Inviter…</option>
+                      {candidates.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                    <button className="small-btn" disabled={!invite[o.id]} onClick={() => void client.action({ type: 'inviteToOrganization', orgId: o.id, playerId: invite[o.id]! })}>Inviter</button>
+                  </>
+                )}
+                <button className="small-btn" onClick={() => setOpen(open === o.id ? null : o.id)}>💬 Canal ({msgs.length})</button>
+                <button className="small-btn danger" onClick={() => { if (confirm(`Quitter « ${o.name} » ?`)) void client.action({ type: 'leaveOrganization', orgId: o.id }); }}>Quitter</button>
+              </div>
+              {o.founderId === me && o.members.length > 1 && (
+                <div className="row wrap small">
+                  Exclure :
+                  {o.members.filter((m) => m !== me).map((m) => (
+                    <button key={m} className="small-btn" onClick={() => { if (confirm(`Exclure ${nameOf(players, m)} ?`)) void client.action({ type: 'expelFromOrganization', orgId: o.id, playerId: m }); }}>{nameOf(players, m)}</button>
+                  ))}
+                </div>
+              )}
+              {open === o.id && (
+                <>
+                  <div className="chat">{msgs.map((m) => <div key={m.id} className="chat-msg"><strong>{nameOf(players, m.from)}</strong> : {m.text}</div>)}</div>
+                  <form className="row" onSubmit={async (e) => { e.preventDefault(); if (await client.action({ type: 'sendMessage', to: `org:${o.id}`, text })) setText(''); }}>
+                    <input value={text} onChange={(e) => setText(e.target.value)} maxLength={500} placeholder={`Message à « ${o.name} »`} />
+                    <button disabled={!text.trim()}>Envoyer</button>
+                  </form>
+                </>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <form className="row wrap" onSubmit={async (e) => { e.preventDefault(); if (await client.action({ type: 'createOrganization', name, kind })) setName(''); }}>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom de l'organisation" minLength={3} maxLength={40} style={{ flex: 1 }} />
+        <select value={kind} onChange={(e) => setKind(e.target.value as OrganizationKind)} style={{ width: 'auto' }}>
+          <option value="military">Alliance militaire</option>
+          <option value="trade">Union commerciale</option>
+        </select>
+        <button className="primary" disabled={name.trim().length < 3}>Fonder</button>
+      </form>
+      {others.length > 0 && (
+        <div className="small muted">Autres organisations : {others.map((o) => `${o.name} (${o.members.length})`).join(' · ')}</div>
+      )}
+    </>
+  );
+}
+
 // --- Armée ---------------------------------------------------------------------------------------
 
 export function ArmyPanel() {
@@ -311,7 +402,7 @@ export function ArmyPanel() {
   const myCities = useGame((s) => s.myCities);
   const focusCityId = useGame((s) => s.focusCityId);
   const players = usePlayers();
-  const withBarracks = Object.values(myCities).filter((c) => c.buildings.some((b) => b.type === 'barracks'));
+  const withBarracks = Object.values(myCities).filter((c) => c.buildings.some((b) => ['barracks', 'port', 'airbase'].includes(b.type)));
   const [cityId, setCityId] = useState('');
   const [unit, setUnit] = useState<UnitType>('infantry');
   const [count, setCount] = useState(10);
@@ -327,7 +418,7 @@ export function ArmyPanel() {
     <div className="stack">
       <h4>Recrutement</h4>
       {withBarracks.length === 0 ? (
-        <p className="small muted">Construisez une caserne (catégorie Défense) pour recruter.</p>
+        <p className="small muted">Construisez une caserne (troupes au sol), un port (flotte) ou une base aérienne (aviation) pour recruter.</p>
       ) : (
         <div className="stack card compact">
           <select value={cityId} onChange={(e) => setCityId(e.target.value)}>
@@ -335,7 +426,8 @@ export function ArmyPanel() {
           </select>
           <div className="unit-grid">
             {UNIT_TYPES.map((u) => (
-              <button key={u} className={unit === u ? 'build active' : 'build'} onClick={() => setUnit(u)}>
+              <button key={u} className={unit === u ? 'build active' : 'build'} onClick={() => setUnit(u)}
+                disabled={!recruitCity?.buildings.some((b) => b.type === UNIT_REQUIRES[u])} title={`Nécessite : ${BUILDINGS[UNIT_REQUIRES[u]].label}`}>
                 <strong>{UNITS[u].label}</strong>
                 <span className="small">{fmtMoney(UNITS[u].cost)} · {UNITS[u].upkeepPerDay}/j</span>
                 <span className="small muted">Att. {UNITS[u].attack} · Déf. {UNITS[u].defense} · {UNITS[u].speedKmh} km/h</span>
@@ -362,10 +454,15 @@ export function ArmyPanel() {
             </div>
             <div className="small muted">
               {a.movement ? `En route vers ${cityLabel(a.movement.toCityId)} (${fmtInt(a.movement.progressKm)}/${fmtInt(a.movement.totalKm)} km)` : `À ${cityLabel(a.cityId)}`}
+              {a.engaged && !a.retreating && <span className="neg"> · ⚔️ engagée au combat</span>}
+              {a.retreating && <span> · en retraite</span>}
               {a.supplied === false && <span className="neg"> · hors ravitaillement</span>}
               {a.paid === false && <span className="neg"> · solde impayée</span>}
             </div>
-            <div className="row">
+            <div className="row wrap">
+              {a.engaged && a.movement && !a.retreating && (
+                <button className="small-btn danger" onClick={() => void client.action({ type: 'moveArmy', armyId: a.id, toCityId: a.cityId })}>Battre en retraite</button>
+              )}
               <button className="small-btn" disabled={!focusCityId} title="Sélectionnez une destination sur le globe"
                 onClick={() => focusCityId && void client.action({ type: 'moveArmy', armyId: a.id, toCityId: focusCityId })}>
                 {focusCityId ? `Envoyer vers ${cityLabel(focusCityId)}` : 'Choisir une destination sur le globe'}
@@ -388,6 +485,19 @@ export function ArmyPanel() {
         ))}
       </ul>
 
+      {world.battles.length > 0 && (
+        <>
+          <h4>Batailles en cours</h4>
+          <ul className="list">
+            {world.battles.map((b) => (
+              <li key={b.id}>
+                <span>⚔️ {b.players.map((p) => nameOf(players, p)).join(' contre ')}</span>
+                <span className="small muted">depuis {formatGameTime(b.sinceTick)}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       {world.sieges.length > 0 && (
         <>
           <h4>Sièges en cours</h4>
@@ -402,8 +512,10 @@ export function ArmyPanel() {
         </>
       )}
       <p className="small muted">
-        Règles : ravitaillement à moins de {MILITARY.supplyRangeKm} km d'une ville amie (sinon −3 %/jour et force ×0,6) ; combats proportionnels
-        au rapport de forces, bonus défensif ×1,25 ; sans défenseur, siège jusqu'à la prise selon la fortification (commissariats, casernes).
+        Règles : ravitaillement à moins de {MILITARY.supplyRangeKm} km d'une ville amie ({MILITARY.railSupplyRangeKm} km avec une gare), sinon −3 %/jour et force ×0,6 ;
+        deux armées ennemies en marche à moins de {MILITARY.engageKm} km s'arrêtent et se battent (retraite possible vers le point de départ) ;
+        en ville, bonus défensif ×1,25 ; sans défenseur, siège selon la fortification. Flotte : de port à port. Aviation : {MILITARY.maxAirMoveKm} km par ordre.
+        Seules les troupes au sol prennent une ville. Entre deux gares amies, les troupes au sol vont trois fois plus vite.
       </p>
     </div>
   );
@@ -453,6 +565,8 @@ function NationDetail({ world, me, countryId }: { world: WorldView; me: string; 
   const voters = nation?.voters ?? [me];
   const isLeader = nation?.leaderId === me;
   const [tax, setTax] = useState(nation?.taxRate ?? 0);
+  const [tariff, setTariff] = useState(nation?.tariff ?? 0);
+  useEffect(() => setTariff(nation?.tariff ?? 0), [nation?.tariff]);
   const [grantCity, setGrantCity] = useState('');
   const [grant, setGrant] = useState(100_000);
   const [target, setTarget] = useState('');
@@ -469,6 +583,7 @@ function NationDetail({ world, me, countryId }: { world: WorldView; me: string; 
       <Row label="Électeurs (propriétaires de villes)" value={`${voters.length} · majorité ${majority}`} />
       <Row label="Budget national" value={fmtMoney(nation?.treasury ?? 0)} />
       <Row label="Impôt national" value={fmtPct(nation?.taxRate ?? 0, 1)} />
+      <Row label="Droits de douane" value={fmtPct(nation?.tariff ?? 0)} />
 
       <h4>Élection</h4>
       <ul className="list">
@@ -529,6 +644,10 @@ function NationDetail({ world, me, countryId }: { world: WorldView; me: string; 
             <input type="range" min={0} max={NATION.maxTaxRate} step={0.005} value={tax} onChange={(e) => setTax(Number(e.target.value))} />
           </label>
           <button onClick={() => void client.action({ type: 'setNationalTax', countryId, rate: tax })}>Fixer l'impôt national</button>
+          <label>Droits de douane : {fmtPct(tariff)}
+            <input type="range" min={0} max={NATION.maxTariff} step={0.05} value={tariff} onChange={(e) => setTariff(Number(e.target.value))} />
+          </label>
+          <button onClick={() => void client.action({ type: 'setTariff', countryId, rate: tariff })}>Fixer les droits de douane</button>
           <div className="row">
             <select value={grantCity} onChange={(e) => setGrantCity(e.target.value)}>
               <option value="">Subvention à…</option>

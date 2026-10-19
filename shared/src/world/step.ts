@@ -6,9 +6,18 @@ import { simulateTick } from '../sim/tick.ts';
 import type { CityLayers } from '../types.ts';
 import { stepMilitary } from './military.ts';
 import { evaluateNation } from './nations.ts';
-import { cityName, MARKET, marketPrices, playerName, pushEvent, TREATY_LABEL } from './rules.ts';
+import { cityName, distanceKm, freeTrade, hasBuilding, LOGISTICS, MARKET, marketPrices, playerName, pushEvent, TRANSPORT, TREATY_LABEL } from './rules.ts';
 import type { World } from './types.ts';
 
+
+/** Facteurs de prix liés à la meilleure infrastructure logistique de la ville. */
+function logistics(city: { buildings: { type: string }[] }) {
+  if (hasBuilding(city, 'port')) return LOGISTICS.port;
+  if (hasBuilding(city, 'train_station')) return LOGISTICS.train_station;
+  return { sell: 1, buy: 1 };
+}
+
+const hasLogistics = (city: { buildings: { type: string }[] } | undefined) => hasBuilding(city, 'port') || hasBuilding(city, 'train_station');
 
 /** Paramètres externes d'une ville à ce tick. */
 export function cityModifiers(world: World, cityId: string): CityModifiers {
@@ -16,16 +25,23 @@ export function cityModifiers(world: World, cityId: string): CityModifiers {
   if (!city) return DEFAULT_MODIFIERS;
   const meta = world.meta;
   const prices = marketPrices(meta.market.price);
+  const log = logistics(city);
   const nation = meta.nations[city.countryId];
-  const contractIn = { qty: 0, cost: 0 };
+  const tariffRate = nation?.tariff ?? 0;
+  const contractIn = { qty: 0, cost: 0, tariff: 0 };
   const contractOut = { qty: 0, revenue: 0 };
   for (const c of meta.contracts) {
     if (c.status !== 'active') continue;
     if (c.buyerCityId === cityId) {
       // Livraisons du tick précédent (le vendeur peut ne pas tout produire).
       const q = c.qtyPerDay * c.deliveredRatio;
+      const seller = world.cities.get(c.sellerCityId);
+      const discount = hasLogistics(city) && hasLogistics(seller) ? TRANSPORT.logisticsDiscount : 1;
+      const transport = (distanceKm(c.sellerCityId, cityId) / 1000) * TRANSPORT.costPer1000Km * discount;
       contractIn.qty += q;
-      contractIn.cost += q * c.pricePerUnit;
+      contractIn.cost += q * (c.pricePerUnit + transport);
+      const foreign = seller ? seller.countryId !== city.countryId : true;
+      if (foreign && !freeTrade(meta, c.buyerId, c.sellerId)) contractIn.tariff += q * c.pricePerUnit * tariffRate;
     }
     if (c.sellerCityId === cityId) {
       contractOut.qty += c.qtyPerDay;
@@ -33,10 +49,11 @@ export function cityModifiers(world: World, cityId: string): CityModifiers {
     }
   }
   return {
-    goodsImportPrice: prices.buy,
-    goodsExportPrice: prices.sell,
+    goodsImportPrice: prices.buy * log.buy,
+    goodsExportPrice: prices.sell * log.sell,
     contractIn,
     contractOut,
+    tariffRate,
     nationalTaxRate: nation?.taxRate ?? 0,
     laws: nation?.laws ?? {},
     projects: nation?.projects ?? {},
@@ -55,7 +72,7 @@ export function stepWorld(world: World): Map<string, CityLayers> {
   for (const id of ids) {
     const city = world.cities.get(id)!;
     const nation = meta.nations[city.countryId];
-    if (nation && city.stats) nation.treasury += city.stats.budget.nationalTax * DT_DAYS;
+    if (nation && city.stats) nation.treasury += (city.stats.budget.nationalTax + city.stats.goods.tariffPaid) * DT_DAYS;
   }
 
   // 3. Contrats : taux de livraison et échéances.
