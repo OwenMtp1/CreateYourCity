@@ -160,10 +160,8 @@ button.build { display: flex; flex-direction: column; align-items: flex-start; g
 .globe-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .globe-label { position: absolute; left: 0; top: 0; font-size: 12px; white-space: nowrap; color: #dbe5f1; text-shadow: 0 1px 3px #000, 0 0 6px #000; }
 .globe-label.sel { color: #fff; font-weight: 700; font-size: 13px; }
-.globe-label.mine { color: var(--mine); font-weight: 600; }
-.globe-label.ally { color: var(--ally); font-weight: 600; }
-.globe-label.enemy { color: var(--enemy); font-weight: 600; }
-.globe-label.other { color: var(--other); font-weight: 600; }
+.globe-label.occupied { color: #4ade80; font-weight: 600; }
+.globe-label.occupied.mine { font-weight: 700; }
 .globe-search { position: absolute; top: 72px; right: 10px; width: 300px; border-radius: 14px; padding: 0.5rem; z-index: 4; }
 .globe-search .list { margin-top: 0.4rem; }
 .place-card { position: absolute; top: 132px; right: 10px; width: 330px; max-height: calc(100% - 200px); overflow: auto; border-radius: 16px; padding: 1rem; z-index: 4; display: flex; flex-direction: column; gap: 0.5rem; }
@@ -172,10 +170,8 @@ button.build { display: flex; flex-direction: column; align-items: flex-start; g
 .map-credits { position: absolute; right: 14px; bottom: 10px; font-size: 0.68rem; color: var(--muted); z-index: 3; }
 .lg { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 0.3rem; vertical-align: -1px; }
 .lg-free { background: #e5e7eb; }
-.lg-owned { background: var(--other); }
-.lg-mine { background: var(--mine); }
-.lg-ally { background: var(--ally); }
-.lg-enemy { background: var(--enemy); }
+.lg-occupied { background: #22c55e; box-shadow: 0 0 0 1.5px #0d0d0d; }
+.map-toggle { font-size: inherit; cursor: pointer; white-space: nowrap; }
 
 /* Ville 3D */
 .city3d { position: absolute; inset: 0; touch-action: none; }

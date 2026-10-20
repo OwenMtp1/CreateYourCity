@@ -43,6 +43,8 @@ export interface GlobePick { cityId?: string; countryId?: string }
 interface CountryShape { id: string; feature: GeoPermissibleObjects }
 
 const RELATION_COLOR: Record<Relation, number> = { mine: 0xfbbf24, ally: 0x34d399, enemy: 0xf87171, other: 0xa78bfa };
+/** Couleur unique des villes occupées par un joueur. */
+const OCCUPIED_COLOR = 0x22c55e;
 const TEX_W = 4096;
 const TEX_H = 2048;
 
@@ -95,7 +97,6 @@ export class GlobeScene {
   private borders: THREE.LineSegments | null = null;
   private regions: THREE.LineSegments | null = null;
   private readonly cityPoints: THREE.Points;
-  private readonly pillars = new THREE.Group();
   private readonly armyGroup = new THREE.Group();
   private readonly siegeGroup = new THREE.Group();
   private readonly labelLayer: HTMLDivElement;
@@ -198,7 +199,7 @@ export class GlobeScene {
         transparent: true,
       }),
     );
-    this.scene.add(this.cityPoints, this.pillars, this.armyGroup, this.siegeGroup, this.routeGroup);
+    this.scene.add(this.cityPoints, this.armyGroup, this.siegeGroup, this.routeGroup);
 
     this.labelLayer = document.createElement('div');
     this.labelLayer.className = 'globe-labels';
@@ -283,13 +284,14 @@ export class GlobeScene {
     }
     ctx.restore();
     for (const c of this.countries) {
-      const played = this.data.playedCountries.has(c.id);
       const selected = this.data.selectedCountry === c.id;
-      if (!played && !selected) continue;
+      if (!selected) continue;
+      // Pays sélectionné : simple liseré clair, sans aplat.
       ctx.beginPath();
       path(c.feature);
-      ctx.fillStyle = selected ? 'rgba(251,191,36,0.38)' : 'rgba(96,165,250,0.32)';
-      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
     }
     this.texture.needsUpdate = true;
     // Carte spéculaire : l'océan brille, pas les terres.
@@ -316,7 +318,7 @@ export class GlobeScene {
     const c = new THREE.Color();
     WORLD_CITIES.forEach((city, i) => {
       const owner = data.owners.get(city.id);
-      if (owner) c.setHex(RELATION_COLOR[owner.relation]);
+      if (owner) c.setHex(OCCUPIED_COLOR);
       else if (city.id === data.selectedCity) c.setHex(0xffffff);
       else c.setRGB(0.88, 0.9, 0.94);
       color.setXYZ(i, c.r, c.g, c.b);
@@ -325,29 +327,14 @@ export class GlobeScene {
     color.needsUpdate = true;
     important.needsUpdate = true;
 
-    // Colonnes lumineuses sur les villes des joueurs.
-    this.clearGroup(this.pillars);
     const byId = new Map(WORLD_CITIES.map((x, i) => [x.id, i]));
-    for (const [cityId, owner] of data.owners) {
-      const i = byId.get(cityId);
-      if (i === undefined) continue;
-      const p = this.cityPositions[i]!;
-      const h = owner.relation === 'mine' ? 0.05 : 0.035;
-      const mesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.0022, 0.0035, h, 10),
-        new THREE.MeshBasicMaterial({ color: RELATION_COLOR[owner.relation], transparent: true, opacity: 0.85 }),
-      );
-      mesh.position.copy(p.clone().multiplyScalar(1 + h / 2));
-      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), p.clone().normalize());
-      this.pillars.add(mesh);
-    }
 
     // Armées et trajets.
     this.clearGroup(this.armyGroup);
     for (const a of data.armies) {
       const p = latLonToVec(a.position[0], a.position[1], 1.004);
       const n = p.clone().normalize();
-      const size = 0.006 + Math.min(0.012, Math.sqrt(a.size) * 0.0009);
+      const size = 0.0035 + Math.min(0.004, Math.sqrt(a.size) * 0.0003);
       const geom = a.kind === 'naval' ? new THREE.ConeGeometry(size * 0.9, size * 2.2, 3) : a.kind === 'air' ? new THREE.TetrahedronGeometry(size * 1.2, 0) : new THREE.OctahedronGeometry(size, 0);
       const marker = new THREE.Mesh(
         geom,
@@ -397,7 +384,7 @@ export class GlobeScene {
     }
     for (const b of data.battles) {
       const p = latLonToVec(b[0], b[1], 1.006);
-      const burst = new THREE.Mesh(new THREE.IcosahedronGeometry(0.009, 0), new THREE.MeshBasicMaterial({ color: 0xff6b35, transparent: true, opacity: 0.9 }));
+      const burst = new THREE.Mesh(new THREE.IcosahedronGeometry(0.0045, 0), new THREE.MeshBasicMaterial({ color: 0xff6b35, transparent: true, opacity: 0.9 }));
       burst.position.copy(p);
       burst.userData.pulse = true;
       this.routeGroup.add(burst);
@@ -410,7 +397,7 @@ export class GlobeScene {
       if (i === undefined) continue;
       const p = this.cityPositions[i]!;
       const ring = new THREE.Mesh(
-        new THREE.RingGeometry(0.008, 0.011, 40),
+        new THREE.RingGeometry(0.0045, 0.006, 40),
         new THREE.MeshBasicMaterial({ color: 0xff4d4d, transparent: true, opacity: 0.9, side: THREE.DoubleSide }),
       );
       ring.position.copy(p.clone().multiplyScalar(1.001));
@@ -558,7 +545,7 @@ export class GlobeScene {
     WORLD_CITIES.forEach((c, i) => { if (c.id === this.data.selectedCity) place(i, c.name, 'sel'); });
     WORLD_CITIES.forEach((c, i) => {
       const o = this.data.owners.get(c.id);
-      if (o && c.id !== this.data.selectedCity) place(i, `${c.name} · ${o.label}`, o.relation);
+      if (o && c.id !== this.data.selectedCity) place(i, `${c.name} · ${o.label}`, o.relation === 'mine' ? 'occupied mine' : 'occupied');
     });
     WORLD_CITIES.forEach((c, i) => {
       if (c.rank <= labelRank && !this.data.owners.has(c.id) && c.id !== this.data.selectedCity) place(i, c.name, '');

@@ -68,10 +68,7 @@ def shadow_text(base: Image.Image, xy, text, fnt, fill=(255, 255, 255, 255), blu
     base.alpha_composite(layer)
 
 
-LABEL_COLORS = {
-    'sel': (255, 255, 255, 255), 'mine': (251, 191, 36, 255), 'ally': (52, 211, 153, 255),
-    'enemy': (248, 113, 113, 255), 'other': (167, 139, 250, 255),
-}
+LABEL_COLORS = {'sel': (255, 255, 255, 255), 'occupied': (74, 222, 128, 255)}
 
 
 def draw_labels(img: Image.Image, labels):
@@ -82,7 +79,7 @@ def draw_labels(img: Image.Image, labels):
     for lab in labels:
         cls = lab.get('c', '')
         fnt = F_LABEL_CAP if cls else F_LABEL
-        color = LABEL_COLORS.get(cls, (219, 229, 241, 255))
+        color = LABEL_COLORS.get(cls.split(' ')[0], (219, 229, 241, 255))
         items.append((lab['x'], lab['y'] + 1, lab['t'], fnt, color))
         d.text((lab['x'], lab['y'] + 2), lab['t'], font=fnt, fill=(0, 0, 0, 255))
     layer = layer.filter(ImageFilter.GaussianBlur(2.2))

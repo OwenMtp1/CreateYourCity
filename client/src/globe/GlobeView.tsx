@@ -36,6 +36,16 @@ export function GlobeView() {
   const focusCityId = useGame((s) => s.focusCityId);
   const [country, setCountry] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  // Carte épurée par défaut : armées, routes et fronts n'apparaissent que sur demande.
+  const [overlays, setOverlays] = useState(() => {
+    try { return localStorage.getItem('cyc.mapOverlays') === '1'; } catch { return false; }
+  });
+  const toggleOverlays = () => {
+    setOverlays((v) => {
+      try { localStorage.setItem('cyc.mapOverlays', v ? '0' : '1'); } catch { /* stockage indisponible */ }
+      return !v;
+    });
+  };
 
   useEffect(() => {
     const scene = new GlobeScene(ref.current!, { interactive: true });
@@ -76,13 +86,13 @@ export function GlobeView() {
       playedCountries: new Set(summaries.map((s) => s.countryId)),
       selectedCountry: country,
       selectedCity: focusCityId,
-      armies,
-      sieges: (world?.sieges ?? []).map((s) => s.cityId),
-      routes,
-      fronts: fronts.slice(0, 200),
-      battles: (world?.battles ?? []).map((b) => b.position),
+      armies: overlays ? armies : [],
+      sieges: overlays ? (world?.sieges ?? []).map((s) => s.cityId) : [],
+      routes: overlays ? routes : [],
+      fronts: overlays ? fronts.slice(0, 200) : [],
+      battles: overlays ? (world?.battles ?? []).map((b) => b.position) : [],
     };
-  }, [summaries, world, player?.id, country, focusCityId]);
+  }, [summaries, world, player?.id, country, focusCityId, overlays]);
 
   useEffect(() => sceneRef.current?.setData(data), [data]);
 
@@ -118,13 +128,17 @@ export function GlobeView() {
         )}
       </div>
       <div className="map-legend glass">
-        <span><i className="lg lg-mine" /> Mes villes</span>
-        <span><i className="lg lg-ally" /> Alliés</span>
-        <span><i className="lg lg-enemy" /> Ennemis</span>
-        <span><i className="lg lg-owned" /> Autres joueurs</span>
-        <span><i className="lg lg-free" /> Villes libres</span>
-        <span><i className="lg lg-route" /> Routes commerciales</span>
-        <span><i className="lg lg-front" /> Front</span>
+        <span><i className="lg lg-occupied" /> Ville occupée</span>
+        <span><i className="lg lg-free" /> Ville libre</span>
+        <label className="check map-toggle">
+          <input type="checkbox" checked={overlays} onChange={toggleOverlays} /> Militaire et commerce
+        </label>
+        {overlays && (
+          <>
+            <span><i className="lg lg-route" /> Routes commerciales</span>
+            <span><i className="lg lg-front" /> Front</span>
+          </>
+        )}
       </div>
       <div className="map-credits">Données : Natural Earth (domaine public)</div>
       {(focusCityId || country) && <PlaceCard cityId={focusCityId} countryId={country} onFocus={focus} />}
