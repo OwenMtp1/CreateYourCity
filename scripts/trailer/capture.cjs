@@ -81,6 +81,37 @@ async function shoot(page, name, seconds, setup, opts = {}) {
   log(name, 'terminé', `${((Date.now() - t0) / 1000).toFixed(0)} s`);
 }
 
+/**
+ * Variante pour la ville : les images sont rendues par lots dans la page (CityScene.step), car
+ * avec le rendu logiciel la première image après chaque aller-retour coûte ~20 s contre ~1 s ensuite.
+ * Entre deux lots, `between(i, n)` laisse passer les messages du serveur (constructions).
+ */
+async function shootCity(page, name, seconds, setup, opts = {}) {
+  const dir = path.join(outDir, name);
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const n = Math.round(seconds * FPS);
+  const batch = opts.batch ?? 30;
+  const t0 = Date.now();
+  for (let i0 = 0; i0 < n; i0 += batch) {
+    if (opts.between) await opts.between(i0, n);
+    const frames = await page.evaluate(({ src, i0, i1, n, arg, fps }) => {
+      const setup = new Function(`return (${src})`)();
+      const c = window.__cyc.city;
+      const out = [];
+      for (let i = i0; i < i1; i++) {
+        setup({ t: n > 1 ? i / (n - 1) : 0, ...arg });
+        c.step(1 / fps);
+        out.push(c.renderer.domElement.toDataURL('image/jpeg', 0.93));
+      }
+      return out;
+    }, { src: setup.toString(), i0, i1: Math.min(n, i0 + batch), n, arg: opts.arg ?? {}, fps: FPS });
+    frames.forEach((d, k) => fs.writeFileSync(path.join(dir, `${String(i0 + k).padStart(5, '0')}.jpg`), Buffer.from(d.split(',')[1], 'base64')));
+    log(name, `${Math.min(n, i0 + batch)}/${n}`, `${((Date.now() - t0) / Math.min(n, i0 + batch) / 1000).toFixed(2)} s/image`);
+  }
+  log(name, 'terminé', `${((Date.now() - t0) / 1000).toFixed(0)} s`);
+}
+
 // --- Réglages caméra exécutés dans la page --------------------------------------------------
 
 const globeAt = ({ t, from, to }) => {
@@ -144,29 +175,29 @@ const SCENES = {
     await page.clock.runFor(2000);
     await sleep(2000);
     await page.clock.runFor(1000);
-    await shoot(page, 'c1-paris', 5.5, cityOrbit, { arg: { cx: -330, cz: 0, radius: 720, height: 420, a0: 200, a1: 255, ease: true } });
-    await shoot(page, 'c2-avenue', 4.5, cityTrack, { arg: { x0: -830, x1: -380, z: 0, height: 26, ahead: 120, side: 55 } });
+    await shootCity(page, 'c1-paris', 5.5, cityOrbit, { arg: { cx: -330, cz: 0, radius: 720, height: 420, a0: 200, a1: 255, ease: true } });
+    await shootCity(page, 'c2-avenue', 4.5, cityTrack, { arg: { x0: -830, x1: -380, z: 0, height: 26, ahead: 120, side: 55 } });
     const station = await page.evaluate((id) => {
       const city = window.__cyc.state().myCities[id];
       const s = city.buildings.filter((b) => b.type === 'metro_station' || b.type === 'tram_station');
       return s.length ? { x: s[0].x - 1000, z: s[0].y - 1000 } : { x: -400, z: 0 };
     }, PARIS);
-    await shoot(page, 'c3-transit', 4, cityOrbit, { arg: { cx: station.x, cz: station.z, radius: 160, height: 70, a0: 120, a1: 175 } });
-    await shoot(page, 'c4-night', 6, cityOrbit, { arg: { cx: -330, cz: 0, radius: 600, height: 300, a0: 300, a1: 340, hour: [15.5, 23.5] } });
+    await shootCity(page, 'c3-transit', 4, cityOrbit, { arg: { cx: station.x, cz: station.z, radius: 160, height: 70, a0: 120, a1: 175 } });
+    await shootCity(page, 'c4-night', 6, cityOrbit, { arg: { cx: -330, cz: 0, radius: 600, height: 300, a0: 300, a1: 340, hour: [15.5, 23.5] } });
     await page.evaluate((id) => {
       const c = window.__cyc.city;
       const s = window.__cyc.state();
       c.layerOverride = 'traffic';
       c.setCity(s.myCities[id], s.layers[id], 'traffic', null);
     }, PARIS);
-    await shoot(page, 'c5-traffic', 3.5, cityOrbit, { arg: { cx: -360, cz: 0, radius: 520, height: 520, a0: 230, a1: 250 } });
+    await shootCity(page, 'c5-traffic', 3.5, cityOrbit, { arg: { cx: -360, cz: 0, radius: 520, height: 520, a0: 230, a1: 250 } });
     await page.evaluate((id) => {
       const c = window.__cyc.city;
       const s = window.__cyc.state();
       c.layerOverride = 'health';
       c.setCity(s.myCities[id], s.layers[id], 'health', null);
     }, PARIS);
-    await shoot(page, 'c6-coverage', 2.5, cityOrbit, { arg: { cx: -360, cz: 0, radius: 520, height: 520, a0: 250, a1: 262 } });
+    await shootCity(page, 'c6-coverage', 2.5, cityOrbit, { arg: { cx: -360, cz: 0, radius: 520, height: 520, a0: 250, a1: 262 } });
     await page.context().close();
   },
 
@@ -207,11 +238,14 @@ const SCENES = {
       { type: 'build', building: 'office', x: 305, y: 1105, rotation: 0 },
     ];
     let k = 0;
-    await shoot(page, 'c7-build', 7, cityOrbit, {
+    await shootCity(page, 'c7-build', 7, cityOrbit, {
       arg: { cx: -790, cz: 0, radius: 300, height: 190, a0: 230, a1: 290 },
-      onFrame: async (i, n) => {
+      batch: 7,
+      between: async (i, n) => {
         const due = Math.floor((i / n) * (plan.length + 2));
         while (k < plan.length && k <= due) { cmd(plan[k]); k++; await sleep(160); }
+        await sleep(600);
+        await page.clock.runFor(300);
       },
     });
     ws.close();

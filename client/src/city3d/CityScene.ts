@@ -831,8 +831,15 @@ export class CityScene {
     if (this.disposed) return;
     this.frame = requestAnimationFrame(this.animate);
     this.timer.update();
-    const dt = this.timer.getDelta();
-    const t = this.timer.getElapsed();
+    this.step(this.timer.getDelta());
+  };
+
+  private elapsed = 0;
+
+  /** Avance les animations de `dt` secondes et dessine une image (aussi appelé par l'automatisation). */
+  step(dt: number) {
+    this.elapsed += dt;
+    const t = this.elapsed;
     this.controls.update();
     // Garder la cible dans les environs de la ville.
     const tg = this.controls.target;
@@ -864,7 +871,7 @@ export class CityScene {
     this.moveCars(dt);
     this.moveVehicles(dt);
     this.renderer.render(this.scene, this.camera);
-  };
+  }
 
   dispose() {
     this.disposed = true;
