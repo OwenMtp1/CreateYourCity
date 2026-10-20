@@ -134,7 +134,11 @@ export class CityScene {
 
   setCity(city: CityState, layers: CityLayers | null, requestedLayer: CityLayer, selected: number | null) {
     const layer = this.layerOverride ?? requestedLayer;
-    if (city.cityId !== this.cityId) this.loadTerrain(city.cityId);
+    this.lastCity = city;
+    if (city.cityId !== this.cityId) {
+      this.loadTerrain(city.cityId);
+      if (!this.street) this.viewFromAbove();
+    }
     // Bâtiments : ajouts, suppressions.
     const seen = new Set<number>();
     for (const b of city.buildings) {
@@ -818,6 +822,150 @@ export class CityScene {
 
   private readonly sunOffset = new THREE.Vector3(800, 1200, 600);
 
+  // --- Caméras : vue du dessus et vue de rue ---------------------------------------------------
+
+  private lastCity: CityState | null = null;
+
+  /** Vue du dessus (par défaut) cadrée sur la partie construite, ou sur l'accès régional d'une ville vide. */
+  viewFromAbove() {
+    if (this.street) this.exitStreetView();
+    const c = this.lastCity;
+    let minX: number = REGIONAL_ACCESS.x, maxX: number = REGIONAL_ACCESS.x + 300;
+    let minY: number = REGIONAL_ACCESS.y - 150, maxY: number = REGIONAL_ACCESS.y + 150;
+    const pts: Point[] = [];
+    for (const b of c?.buildings ?? []) pts.push({ x: b.x, y: b.y });
+    for (const r of c?.roads ?? []) pts.push({ x: r.x1, y: r.y1 }, { x: r.x2, y: r.y2 });
+    if (pts.length) {
+      minX = Math.min(...pts.map((q) => q.x)); maxX = Math.max(...pts.map((q) => q.x));
+      minY = Math.min(...pts.map((q) => q.y)); maxY = Math.max(...pts.map((q) => q.y));
+    }
+    const cx = (minX + maxX) / 2 - HALF;
+    const cz = (minY + maxY) / 2 - HALF;
+    const extent = Math.max(maxX - minX, (maxY - minY) * this.camera.aspect, 200);
+    const height = THREE.MathUtils.clamp(extent / (2 * Math.tan((this.camera.fov * Math.PI) / 360)) * 1.15, 220, 2400);
+    this.controls.target.set(cx, 0, cz);
+    // Presque à la verticale (~7°) : le nord reste en haut de l'écran et les hauteurs se lisent encore.
+    this.camera.position.set(cx, height, cz + height * 0.12);
+    this.camera.up.set(0, 1, 0);
+    this.controls.update();
+  }
+
+  /** Vue de rue : caméra libre au ras du sol (souris pour regarder, ZQSD/WASD pour se déplacer). */
+  street = false;
+  private yaw = 0;
+  private pitch = 0;
+  private readonly keys = new Set<string>();
+  /** Notifié à chaque entrée/sortie de la vue de rue ou de la capture de la souris. */
+  onStreetChange: ((state: { street: boolean; locked: boolean }) => void) | null = null;
+
+  private readonly onKey = (e: KeyboardEvent) => {
+    if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement | null)?.tagName ?? '')) return;
+    // e.code désigne la touche physique : ZQSD en AZERTY et WASD en QWERTY donnent les mêmes codes.
+    if (e.type === 'keydown') this.keys.add(e.code);
+    else this.keys.delete(e.code);
+    if (e.type === 'keydown' && ['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+  };
+  private readonly onBlur = () => this.keys.clear();
+  private readonly onMouseMove = (e: MouseEvent) => {
+    const locked = document.pointerLockElement === this.renderer.domElement;
+    // Sans capture de la souris (refusée, ou tactile), on regarde en glissant avec le bouton enfoncé.
+    if (!locked && !(e.buttons & 1)) return;
+    this.look(e.movementX, e.movementY);
+  };
+  private readonly onLockChange = () => {
+    this.onStreetChange?.({ street: this.street, locked: document.pointerLockElement === this.renderer.domElement });
+  };
+  private touchLast: { x: number; y: number } | null = null;
+  private readonly onTouchMove = (e: TouchEvent) => {
+    const t = e.touches[0];
+    if (!t) return;
+    if (this.touchLast) this.look(t.clientX - this.touchLast.x, t.clientY - this.touchLast.y);
+    this.touchLast = { x: t.clientX, y: t.clientY };
+  };
+  private readonly onTouchEnd = () => { this.touchLast = null; };
+
+  private look(dx: number, dy: number) {
+    this.yaw -= dx * 0.0025;
+    this.pitch = THREE.MathUtils.clamp(this.pitch - dy * 0.0025, -1.45, 1.45);
+    this.camera.quaternion.setFromEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+  }
+
+  enterStreetView() {
+    if (this.street) return;
+    this.street = true;
+    this.controls.enabled = false;
+    // Départ au centre de la vue actuelle, à hauteur d'yeux, dans la direction où regardait la caméra.
+    const tg = this.controls.target;
+    const dir = tg.clone().sub(this.camera.position).setY(0);
+    this.yaw = dir.lengthSq() > 1 ? Math.atan2(-dir.x, -dir.z) : 0;
+    this.pitch = 0;
+    this.camera.position.set(tg.x, 1.7, tg.z);
+    this.camera.quaternion.setFromEuler(new THREE.Euler(0, this.yaw, 0, 'YXZ'));
+    this.camera.near = 0.2;
+    this.camera.updateProjectionMatrix();
+    window.addEventListener('keydown', this.onKey);
+    window.addEventListener('keyup', this.onKey);
+    window.addEventListener('blur', this.onBlur);
+    document.addEventListener('mousemove', this.onMouseMove);
+    document.addEventListener('pointerlockchange', this.onLockChange);
+    this.renderer.domElement.addEventListener('touchmove', this.onTouchMove, { passive: true });
+    this.renderer.domElement.addEventListener('touchend', this.onTouchEnd);
+    this.onStreetChange?.({ street: true, locked: false });
+  }
+
+  /** Capture la souris (à appeler depuis un clic). */
+  lockPointer() {
+    if (!this.street || document.pointerLockElement === this.renderer.domElement) return;
+    try {
+      const r = this.renderer.domElement.requestPointerLock() as unknown as Promise<void> | undefined;
+      r?.catch?.(() => { /* refusé : on regarde en glissant */ });
+    } catch { /* idem */ }
+  }
+
+  exitStreetView() {
+    if (!this.street) return;
+    this.street = false;
+    if (document.pointerLockElement === this.renderer.domElement) document.exitPointerLock();
+    window.removeEventListener('keydown', this.onKey);
+    window.removeEventListener('keyup', this.onKey);
+    window.removeEventListener('blur', this.onBlur);
+    document.removeEventListener('mousemove', this.onMouseMove);
+    document.removeEventListener('pointerlockchange', this.onLockChange);
+    this.renderer.domElement.removeEventListener('touchmove', this.onTouchMove);
+    this.renderer.domElement.removeEventListener('touchend', this.onTouchEnd);
+    this.keys.clear();
+    this.camera.near = 1;
+    this.camera.updateProjectionMatrix();
+    // Retour en vue aérienne au-dessus de l'endroit visité.
+    const p = this.camera.position;
+    this.controls.target.set(p.x, 0, p.z);
+    this.camera.position.set(p.x, 420, p.z + 50);
+    this.controls.enabled = true;
+    this.controls.update();
+    this.onStreetChange?.({ street: false, locked: false });
+  }
+
+  private moveStreet(dt: number) {
+    const k = this.keys;
+    const run = k.has('ShiftLeft') || k.has('ShiftRight');
+    const speed = (run ? 28 : 7) * Math.min(dt, 0.25);
+    const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+    const right = new THREE.Vector3(-forward.z, 0, forward.x);
+    const move = new THREE.Vector3();
+    if (k.has('KeyW') || k.has('ArrowUp')) move.add(forward);
+    if (k.has('KeyS') || k.has('ArrowDown')) move.sub(forward);
+    if (k.has('KeyD') || k.has('ArrowRight')) move.add(right);
+    if (k.has('KeyA') || k.has('ArrowLeft')) move.sub(right);
+    if (move.lengthSq() > 0) this.camera.position.addScaledVector(move.normalize(), speed);
+    // Caméra libre : Espace monte, C descend (jamais sous la hauteur d'yeux).
+    if (k.has('Space') || k.has('KeyE')) this.camera.position.y += speed * 0.8;
+    if (k.has('KeyC') || k.has('KeyQ')) this.camera.position.y -= speed * 0.8;
+    const p = this.camera.position;
+    p.x = THREE.MathUtils.clamp(p.x, -HALF - 200, HALF + 200);
+    p.z = THREE.MathUtils.clamp(p.z, -HALF - 200, HALF + 200);
+    p.y = THREE.MathUtils.clamp(p.y, 1.7, 600);
+  }
+
   private resize() {
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
@@ -840,12 +988,19 @@ export class CityScene {
   step(dt: number) {
     this.elapsed += dt;
     const t = this.elapsed;
-    this.controls.update();
-    // Garder la cible dans les environs de la ville.
-    const tg = this.controls.target;
-    tg.x = THREE.MathUtils.clamp(tg.x, -HALF - 300, HALF + 300);
-    tg.z = THREE.MathUtils.clamp(tg.z, -HALF - 300, HALF + 300);
-    tg.y = 0;
+    let tg: THREE.Vector3;
+    if (this.street) {
+      this.moveStreet(dt);
+      // L'ombre couvre la zone devant le promeneur.
+      tg = this.camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize().multiplyScalar(120).add(this.camera.position).setY(0);
+    } else {
+      this.controls.update();
+      // Garder la cible dans les environs de la ville.
+      tg = this.controls.target;
+      tg.x = THREE.MathUtils.clamp(tg.x, -HALF - 300, HALF + 300);
+      tg.z = THREE.MathUtils.clamp(tg.z, -HALF - 300, HALF + 300);
+      tg.y = 0;
+    }
     // L'ombre suit la zone regardée.
     this.sun.position.copy(tg).add(this.sunOffset);
     this.sun.target.position.copy(tg);
@@ -876,6 +1031,7 @@ export class CityScene {
   dispose() {
     this.disposed = true;
     cancelAnimationFrame(this.frame);
+    this.exitStreetView();
     this.controls.dispose();
     this.envTarget?.dispose();
     this.pmrem.dispose();

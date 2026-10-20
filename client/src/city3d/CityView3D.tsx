@@ -43,12 +43,28 @@ export function CityView3D(props: Props) {
   const cursor = useRef<{ sx: number; sy: number } | null>(null);
   const [hint, setHint] = useState<{ x: number; y: number; text: string; ok: boolean } | null>(null);
   const tick = useGame((s) => s.tick);
+  const [street, setStreet] = useState<{ street: boolean; locked: boolean }>({ street: false, locked: false });
+  const streetRef = useRef(false);
+  streetRef.current = street.street;
 
   useEffect(() => {
     const scene = new CityScene(ref.current!);
     sceneRef.current = scene;
+    scene.onStreetChange = setStreet;
     return () => scene.dispose();
   }, []);
+
+  const toggleStreet = () => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    if (scene.street) scene.exitStreetView();
+    else {
+      propsRef.current.setTool({ kind: 'select' });
+      setHint(null);
+      scene.setPreview(null);
+      scene.enterStreetView();
+    }
+  };
 
   useEffect(() => sceneRef.current?.setCity(city, layers, layer, selected), [city, layers, layer, selected]);
   useEffect(() => sceneRef.current?.setGrid(grid), [grid]);
@@ -104,7 +120,7 @@ export function CityView3D(props: Props) {
   const refresh = () => {
     const scene = sceneRef.current;
     const cur = cursor.current;
-    if (!scene || !cur) return;
+    if (!scene || !cur || scene.street) return;
     const p = scene.screenToCity(cur.sx, cur.sy);
     const { tool: t, city: c } = propsRef.current;
     if (!p) return;
@@ -183,6 +199,7 @@ export function CityView3D(props: Props) {
   const onPointerUp = async (e: React.PointerEvent) => {
     const d = down.current;
     down.current = null;
+    if (streetRef.current) return;
     if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 5) return;
     const scene = sceneRef.current;
     const { sx, sy } = local(e);
@@ -252,16 +269,32 @@ export function CityView3D(props: Props) {
   return (
     <div
       ref={ref}
-      className={`city3d tool-${tool.kind}`}
-      onPointerDown={(e) => { down.current = { x: e.clientX, y: e.clientY, button: e.button }; }}
+      className={`city3d tool-${street.street ? 'street' : tool.kind}`}
+      onPointerDown={(e) => {
+        down.current = { x: e.clientX, y: e.clientY, button: e.button };
+        if (streetRef.current && e.pointerType === 'mouse' && e.button === 0) sceneRef.current?.lockPointer();
+      }}
       onPointerMove={(e) => { cursor.current = local(e); shift.current = e.shiftKey; refresh(); }}
       onPointerUp={(e) => void onPointerUp(e)}
       onPointerLeave={() => { cursor.current = null; setHint(null); sceneRef.current?.setPreview(null); }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {hint && <div className={`cursor-hint ${hint.ok ? '' : 'bad'}`} style={{ left: hint.x + 16, top: hint.y + 16 }}>{hint.text}</div>}
+      {hint && !street.street && <div className={`cursor-hint ${hint.ok ? '' : 'bad'}`} style={{ left: hint.x + 16, top: hint.y + 16 }}>{hint.text}</div>}
+      <div className="view-switch glass" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
+        <button className={street.street ? '' : 'active'} onClick={() => sceneRef.current?.viewFromAbove()} title="Revenir à la vue du dessus, cadrée sur la ville">
+          🛰️ Vue du dessus
+        </button>
+        <button className={street.street ? 'active' : ''} onClick={toggleStreet} title="Se promener dans la ville en caméra libre">
+          🚶 Vue de rue
+        </button>
+      </div>
+      {street.street && street.locked && <div className="street-crosshair" />}
       <div className="city-help glass">
-        Glisser : déplacer · Clic droit + glisser : pivoter · Molette : zoom · R : tourner · G : grille · Échap : annuler
+        {street.street
+          ? street.locked
+            ? 'Souris : regarder · ZQSD / WASD ou flèches : avancer · Maj : courir · Espace / C : monter / descendre · Échap : libérer la souris'
+            : 'Cliquez dans la vue pour regarder à la souris (ou glissez) · ZQSD / WASD ou flèches : avancer · Maj : courir · Espace / C : monter / descendre'
+          : 'Glisser : déplacer · Clic droit + glisser : pivoter / incliner · Molette : zoom · R : tourner · G : grille · Échap : annuler'}
       </div>
     </div>
   );

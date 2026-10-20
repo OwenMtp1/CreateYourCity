@@ -181,6 +181,13 @@ button.build { display: flex; flex-direction: column; align-items: flex-start; g
 .city3d.tool-demolish canvas { cursor: not-allowed; }
 .cursor-hint { position: absolute; pointer-events: none; background: var(--glass-strong); border: 1px solid rgba(52, 211, 153, 0.6); padding: 0.25rem 0.6rem; border-radius: 8px; font-size: 0.8rem; white-space: nowrap; z-index: 6; }
 .cursor-hint.bad { border-color: rgba(239, 68, 68, 0.7); }
+.city3d.tool-street canvas { cursor: crosshair; }
+.view-switch { position: absolute; right: 10px; top: 92px; display: flex; gap: 2px; padding: 3px; border-radius: 12px; z-index: 3; }
+.view-switch button { background: transparent; border: 1px solid transparent; border-radius: 9px; padding: 0.35rem 0.7rem; font-size: 0.8rem; color: var(--muted); }
+.view-switch button:hover { color: var(--text); }
+.view-switch button.active { background: rgba(255, 255, 255, 0.08); border-color: var(--border); color: var(--text); }
+.street-crosshair { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; pointer-events: none; z-index: 2;
+  background: linear-gradient(#fff, #fff) center / 2px 100% no-repeat, linear-gradient(#fff, #fff) center / 100% 2px no-repeat; opacity: 0.75; mix-blend-mode: difference; }
 .city-help { position: absolute; right: 10px; bottom: 10px; font-size: 0.74rem; color: var(--muted); padding: 0.35rem 0.7rem; border-radius: 10px; z-index: 3; }
 
 @media (max-width: 900px) {
