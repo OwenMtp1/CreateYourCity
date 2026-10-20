@@ -153,6 +153,9 @@ def main(frames_dir: str, out: str):
     os.makedirs(seq)
     k = 0
     for kind, src, dur, title, sub in TIMELINE:
+        if not os.path.exists(os.path.join(frames_dir, src)):
+            print(f'{src}: absent, ignoré', flush=True)
+            continue
         if kind == 'still':
             base = Image.open(os.path.join(frames_dir, src)).convert('RGBA').resize((W, H))
             n = int(dur * FPS)
