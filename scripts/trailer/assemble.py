@@ -137,6 +137,18 @@ def fade(img: Image.Image, i, n):
     return Image.blend(Image.new('RGBA', img.size, (0, 0, 0, 255)), img, k)
 
 
+def fix_status(img: Image.Image) -> Image.Image:
+    """L'horloge figée de la capture fait afficher « Hors ligne » : on rétablit « Connecté »."""
+    r, g, b, _ = img.getpixel((1051, 68))
+    if not (r > 180 and g < 120):
+        return img
+    d = ImageDraw.Draw(img)
+    d.rectangle((1043, 59, 1201, 78), fill=img.getpixel((1040, 68)))
+    d.ellipse((1047, 64, 1055, 72), fill=(52, 211, 153, 255))
+    d.text((1060, 68), 'Connecté', font=font('Medium', 12), fill=(226, 232, 240, 255), anchor='lm')
+    return img
+
+
 def ken_burns(src: Image.Image, i, n):
     """Lent zoom avant (1.0 → 1.08) centré légèrement à droite, sur les panneaux."""
     t = i / max(1, n - 1)
@@ -157,7 +169,7 @@ def main(frames_dir: str, out: str):
             print(f'{src}: absent, ignoré', flush=True)
             continue
         if kind == 'still':
-            base = Image.open(os.path.join(frames_dir, src)).convert('RGBA').resize((W, H))
+            base = fix_status(Image.open(os.path.join(frames_dir, src)).convert('RGBA').resize((W, H)))
             n = int(dur * FPS)
             frames = [None] * n
             labels = None
