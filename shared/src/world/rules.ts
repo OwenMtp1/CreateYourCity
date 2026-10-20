@@ -58,22 +58,38 @@ export const EXPANSION = {
   maxCitiesPerPlayer: 12,
 } as const;
 
-/** Annexion par la force : soldats (unités terrestres) stationnés dans la ville de départ. */
+/**
+ * Annexion par la force : le joueur envoie des soldats (unités terrestres) stationnés dans une de ses villes.
+ * Le trajet coûte des soldats ; la défense de la cible n'est connue qu'au moment de l'attaque.
+ */
 export const ANNEXATION = {
+  /** Soldats qui doivent arriver pour tenir une ville. */
   baseTroops: 30,
-  /** Un soldat de plus tous les 4 km. */
+  /** Un soldat perdu en route tous les 4 km. */
   troopsPerKm: 0.25,
-  /** Ville d'un joueur : soldats supplémentaires par soldat de la garnison et par point de fortification. */
+  /** Défense d'une ville de joueur, en soldats : garnison (×1,5) et fortifications (×0,5). */
   perDefender: 1.5,
   perFortification: 0.5,
-  /** Part des troupes engagées perdue dans l'opération. */
+  /** Pertes à l'arrivée : prise d'une ville libre ; part de la défense que coûte une victoire. */
   lossesNeutral: 0.05,
-  lossesOwned: 0.3,
+  battleCost: 0.6,
+  /** Part de la garnison tombée en repoussant un assaut, par soldat assaillant rapporté à la défense. */
+  defenderAttrition: 0.3,
 } as const;
 
-/** Soldats nécessaires pour annexer une ville située à `km` de la ville de départ. */
-export function annexationTroops(km: number, defense = 0): number {
-  return Math.ceil(ANNEXATION.baseTroops + ANNEXATION.troopsPerKm * km + defense);
+/** Soldats perdus en route sur `km` kilomètres. */
+export function travelLosses(km: number): number {
+  return Math.ceil(ANNEXATION.troopsPerKm * km);
+}
+
+/** Minimum de soldats à envoyer pour qu'assez arrivent tenir une ville libre. */
+export function annexationTroops(km: number): number {
+  return ANNEXATION.baseTroops + travelLosses(km);
+}
+
+/** Portée d'une annexion par la force : illimitée depuis une ville dotée d'un port ou d'une base aérienne. */
+export function annexationRangeKm(from: { buildings: { type: string }[] } | undefined): number {
+  return hasBuilding(from, 'port') || hasBuilding(from, 'airbase') ? Infinity : EXPANSION.maxDistanceKm;
 }
 
 export const MARKET = {

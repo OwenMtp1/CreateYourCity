@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createCityState, type CityState } from '../src/index.ts';
 import {
-  annexationTroops, applyWorldAction, checkExpansion, checkForcedAnnexation, commitExpansion, commitForcedAnnexation,
+  annexationTroops, applyWorldAction, travelLosses, checkExpansion, checkForcedAnnexation, commitExpansion, commitForcedAnnexation,
   createWorldMeta, distanceKm, forcedAnnexationPlan, landSize, UNIT_TYPES, type Army, type World,
 } from '../src/world/index.ts';
 import { WORLD_CITIES } from '../src/world.ts';
@@ -10,6 +10,7 @@ const id = (name: string) => WORLD_CITIES.find((c) => c.name === name && c.count
 const PARIS = id('Paris');
 const ORLEANS = id('Orléans');
 const LYON = id('Lyon');
+const MARSEILLE = id('Marseille');
 const FRANCE = WORLD_CITIES.find((c) => c.id === PARIS)!.countryId;
 
 function world(): World {
@@ -42,51 +43,74 @@ describe('annexion', () => {
     expect(w.meta.nations[FRANCE]!.treasury).toBe(cost);
   });
 
-  it('par la force : il faut plus de soldats pour une ville lointaine', () => {
+  it('par la force : plus la ville est loin, plus on perd de soldats en route', () => {
     const near = distanceKm(PARIS, ORLEANS);
     const far = distanceKm(PARIS, LYON);
-    expect(far).toBeGreaterThan(near);
-    expect(annexationTroops(far)).toBeGreaterThan(annexationTroops(near));
+    expect(travelLosses(far)).toBeGreaterThan(travelLosses(near));
     const w = world();
     own(w, PARIS, 'alice');
-    expect(() => forcedAnnexationPlan(w, 'alice', PARIS, ORLEANS)).toThrow(/Armée insuffisante/);
+    expect(() => forcedAnnexationPlan(w, 'alice', PARIS, ORLEANS)).toThrow(/Aucun soldat/);
     troops(w, 'alice', PARIS, annexationTroops(near));
-    expect(() => forcedAnnexationPlan(w, 'alice', PARIS, LYON)).toThrow(/Armée insuffisante/);
+    expect(() => forcedAnnexationPlan(w, 'alice', PARIS, LYON)).toThrow(/perdus en route/);
     const { plan, city } = checkForcedAnnexation(w, 'alice', PARIS, ORLEANS);
+    expect(plan.travelLoss).toBe(travelLosses(near));
     const treasury = w.cities.get(PARIS)!.treasury;
     commitForcedAnnexation(w, 'alice', PARIS, city, plan);
     expect(w.cities.get(ORLEANS)!.ownerId).toBe('alice');
     expect(w.cities.get(PARIS)!.treasury).toBe(treasury);
     expect(soldiersAt(w, 'alice', PARIS)).toBeLessThan(1);
     expect(soldiersAt(w, 'alice', ORLEANS)).toBeGreaterThan(0);
-    expect(soldiersAt(w, 'alice', ORLEANS)).toBeLessThan(plan.required);
+    expect(soldiersAt(w, 'alice', ORLEANS)).toBeLessThan(plan.arriving);
   });
 
-  it("seules les troupes nécessaires partent, le reste garde la ville d'origine", () => {
+  it("seuls les soldats envoyés partent, le reste garde la ville d'origine", () => {
     const w = world();
     own(w, PARIS, 'alice');
-    const need = annexationTroops(distanceKm(PARIS, ORLEANS));
-    troops(w, 'alice', PARIS, need * 3);
-    const { plan, city } = checkForcedAnnexation(w, 'alice', PARIS, ORLEANS);
+    troops(w, 'alice', PARIS, 500);
+    const { plan, city } = checkForcedAnnexation(w, 'alice', PARIS, ORLEANS, 200);
     commitForcedAnnexation(w, 'alice', PARIS, city, plan);
-    expect(soldiersAt(w, 'alice', PARIS)).toBeCloseTo(need * 2, 5);
+    expect(soldiersAt(w, 'alice', PARIS)).toBeCloseTo(300, 5);
   });
 
-  it("la ville d'un joueur exige aussi de vaincre sa garnison, et l'attaque déclare la guerre", () => {
+  it("un port ou une base aérienne permet d'aller n'importe où, au prix de soldats perdus en route", () => {
+    const w = world();
+    const paris = own(w, PARIS, 'alice');
+    troops(w, 'alice', PARIS, 2000);
+    const km = distanceKm(PARIS, MARSEILLE);
+    expect(km).toBeGreaterThan(500);
+    expect(() => forcedAnnexationPlan(w, 'alice', PARIS, MARSEILLE)).toThrow(/port ni base aérienne/);
+    paris.buildings.push({ id: 999, type: 'airbase', x: 500, y: 500, rotation: 0 } as never);
+    const plan = forcedAnnexationPlan(w, 'alice', PARIS, MARSEILLE, 1000);
+    expect(plan.travelLoss).toBe(travelLosses(km));
+    expect(plan.arriving).toBe(1000 - travelLosses(km));
+  });
+
+  it("une défense plus forte (inconnue avant l'attaque) anéantit les troupes envoyées", () => {
+    const w = world();
+    own(w, PARIS, 'alice');
+    own(w, ORLEANS, 'bob');
+    troops(w, 'bob', ORLEANS, 200);
+    troops(w, 'alice', PARIS, 300);
+    expect(applyWorldAction(w, 'alice', { type: 'annexByForce', fromCityId: PARIS, cityId: ORLEANS, troops: 250 }).ok).toBe(true);
+    expect(w.cities.get(ORLEANS)!.ownerId).toBe('bob');
+    expect(soldiersAt(w, 'alice', PARIS)).toBeCloseTo(50, 5);
+    expect(soldiersAt(w, 'alice', ORLEANS)).toBe(0);
+    expect(soldiersAt(w, 'bob', ORLEANS)).toBeLessThan(200);
+    expect(soldiersAt(w, 'bob', ORLEANS)).toBeGreaterThan(100);
+    expect(w.meta.wars.some((x) => x.a === 'alice' && x.b === 'bob')).toBe(true);
+    expect(w.meta.events.some((e) => e.kind === 'battle' && /repousse/.test(e.text))).toBe(true);
+  });
+
+  it('une attaque plus forte que la défense prend la ville', () => {
     const w = world();
     own(w, PARIS, 'alice');
     own(w, ORLEANS, 'bob');
     troops(w, 'bob', ORLEANS, 100);
-    const base = annexationTroops(distanceKm(PARIS, ORLEANS));
-    troops(w, 'alice', PARIS, base + 50);
-    const r = applyWorldAction(w, 'alice', { type: 'annexByForce', fromCityId: PARIS, cityId: ORLEANS });
-    expect(r.ok).toBe(false);
-    expect(r.ok ? '' : r.error).toMatch(/garnison/);
-    troops(w, 'alice', PARIS, 400);
+    troops(w, 'alice', PARIS, 600);
     expect(applyWorldAction(w, 'alice', { type: 'annexByForce', fromCityId: PARIS, cityId: ORLEANS }).ok).toBe(true);
     expect(w.cities.get(ORLEANS)!.ownerId).toBe('alice');
-    expect(w.meta.wars.some((x) => (x.a === 'alice' && x.b === 'bob'))).toBe(true);
     expect(w.meta.armies.some((a) => a.ownerId === 'bob' && a.cityId === ORLEANS)).toBe(false);
+    expect(soldiersAt(w, 'alice', ORLEANS)).toBeGreaterThan(0);
   });
 
   it('on ne peut annexer un allié qu\'en le trahissant, ce qui rompt tous les accords', () => {

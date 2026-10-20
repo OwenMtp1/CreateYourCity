@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CITY_BY_ID, COUNTRY_BY_ID, WORLD_CITIES } from '@cyc/shared/world';
-import { allied, annexationTroops, distanceKm, EXPANSION, LAND_UNITS, type WorldView } from '@cyc/shared/game';
+import { allied, ANNEXATION, annexationRangeKm, annexationTroops, distanceKm, EXPANSION, hasBuilding, LAND_UNITS, travelLosses, type WorldView } from '@cyc/shared/game';
 import { client } from '../net/client.ts';
 import { getState, setState, useGame } from '../state.ts';
 import { fmtInt, fmtMoney } from '../ui/format.ts';
@@ -327,8 +327,9 @@ function useTroopsAt(cityId: string): number {
 }
 
 /**
- * Annexion par la force depuis une de mes villes : plus la cible est loin, plus il faut de soldats.
- * La ville d'un autre joueur demande en plus de vaincre sa garnison ; celle d'un allié, de le trahir.
+ * Annexion par la force depuis une de mes villes : le trajet coûte des soldats (plus la cible est loin, plus
+ * on en perd). Sans port ni base aérienne, portée limitée. La défense d'une ville de joueur reste inconnue :
+ * si elle est plus forte, toutes les troupes envoyées sont perdues. Annexer un allié, c'est le trahir.
  */
 function ForceAnnex({ cityId, source, setSource, owner, ownerName }: {
   cityId: string; source: string; setSource?: (id: string) => void; owner?: string; ownerName?: string;
@@ -337,41 +338,58 @@ function ForceAnnex({ cityId, source, setSource, owner, ownerName }: {
   const player = useGame((s) => s.player);
   const myCities = useGame((s) => s.myCities);
   const troops = useTroopsAt(source);
+  const [sent, setSent] = useState<number | null>(null);
   if (!source || !player) return null;
   const km = distanceKm(source, cityId);
-  const need = annexationTroops(km);
-  const tooFar = km > EXPANSION.maxDistanceKm;
+  const range = annexationRangeKm(myCities[source]);
+  const tooFar = km > range;
+  const send = Math.min(troops, Math.max(0, Math.floor(sent ?? troops)));
+  const loss = travelLosses(km);
+  const arriving = Math.max(0, send - loss);
+  const enough = arriving >= ANNEXATION.baseTroops;
   const between = (t: { a: string; b: string }) => (t.a === player.id && t.b === owner) || (t.a === owner && t.b === player.id);
   const bonded = !!owner && !!world && (
     world.treaties.some((t) => t.status === 'active' && t.type !== 'city_transfer' && between(t))
     || world.organizations.some((o) => o.members.includes(player.id) && o.members.includes(owner)));
   const go = () => {
     if (!owner) {
-      void client.act({ t: 'expandCity', fromCityId: source, cityId, force: true });
+      void client.act({ t: 'expandCity', fromCityId: source, cityId, force: true, troops: send });
       return;
     }
+    const risk = `Ses défenses sont inconnues : si elles sont plus fortes, vos ${fmtInt(send)} soldats seront tous perdus.`;
     const msg = bonded
-      ? `Trahir ${ownerName} ? Tous vos accords avec ce joueur (traités, organisations communes, contrats) seront rompus et vous entrerez en guerre.`
-      : `Attaquer ${ownerName} et annexer sa ville ? Cela vaut déclaration de guerre.`;
-    if (confirm(msg)) void client.action({ type: 'annexByForce', fromCityId: source, cityId, betray: bonded });
+      ? `Trahir ${ownerName} ? Tous vos accords avec ce joueur (traités, organisations communes, contrats) seront rompus et vous entrerez en guerre. ${risk}`
+      : `Attaquer ${ownerName} et annexer sa ville ? Cela vaut déclaration de guerre. ${risk}`;
+    if (confirm(msg)) void client.action({ type: 'annexByForce', fromCityId: source, cityId, troops: send, betray: bonded });
   };
+  const via = hasBuilding(myCities[source], 'airbase') ? '✈️ base aérienne' : hasBuilding(myCities[source], 'port') ? '⚓ port' : null;
   return (
     <div className="force-annex stack">
       <strong className="small">⚔️ Annexer par la force</strong>
       {setSource && Object.keys(myCities).length > 1 && (
         <label className="small">Depuis
-          <select value={source} onChange={(e) => setSource(e.target.value)}>
+          <select value={source} onChange={(e) => { setSource(e.target.value); setSent(null); }}>
             {Object.keys(myCities).map((id) => <option key={id} value={id}>{CITY_BY_ID.get(id)?.name} ({fmtInt(distanceKm(id, cityId))} km)</option>)}
           </select>
         </label>
       )}
-      <span className="small muted">
-        {tooFar ? `Trop loin (${fmtInt(km)} km, maximum ${EXPANSION.maxDistanceKm} km).`
-          : `${fmtInt(km)} km : ${fmtInt(need)} soldats minimum${owner ? ' + garnison et fortifications' : ''} · ${fmtInt(troops)} stationnés à ${CITY_BY_ID.get(source)?.name}.`}
-      </span>
+      {tooFar ? (
+        <span className="small muted">Trop loin ({fmtInt(km)} km) : sans port ni base aérienne à {CITY_BY_ID.get(source)?.name}, la portée est de {EXPANSION.maxDistanceKm} km.</span>
+      ) : (
+        <>
+          <label className="small">Soldats envoyés ({fmtInt(troops)} stationnés à {CITY_BY_ID.get(source)?.name})
+            <input type="number" min={0} max={troops} step={10} value={send} onChange={(e) => setSent(Number(e.target.value))} />
+          </label>
+          <span className="small muted">
+            {fmtInt(km)} km{via ? ` via ${via}` : ''} : ~{fmtInt(loss)} perdus en route, {fmtInt(arriving)} arrivent
+            {owner ? ' · défense de la ville inconnue' : ` (${ANNEXATION.baseTroops} minimum pour tenir la ville)`}.
+          </span>
+        </>
+      )}
+      {owner && <span className="small dictator-note">Si sa défense est plus forte que vos troupes arrivées, vous perdez tous les soldats envoyés et la ville reste à {ownerName}.</span>}
       {bonded && <span className="small dictator-note">🗡 {ownerName} est votre allié ou partenaire : l'annexer est une trahison qui rompt tous vos accords.</span>}
-      <button className={bonded ? 'danger' : ''} disabled={tooFar || troops < need} onClick={go}>
-        {bonded ? `🗡 Trahir et annexer` : `⚔️ Envoyer ${fmtInt(need)}${owner ? '+' : ''} soldats`}
+      <button className={bonded || owner ? 'danger' : ''} disabled={tooFar || !enough} onClick={go}>
+        {tooFar ? 'Hors de portée' : !enough ? `Il faut au moins ${fmtInt(annexationTroops(km))} soldats` : bonded ? `🗡 Trahir et attaquer (${fmtInt(send)})` : `⚔️ Envoyer ${fmtInt(send)} soldats`}
       </button>
     </div>
   );

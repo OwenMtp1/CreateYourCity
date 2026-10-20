@@ -270,7 +270,7 @@ export class GameServer {
         }
         case 'expandCity': {
           const world = this.currentLobby(s);
-          await this.expandCity(world, player, msg.fromCityId, msg.cityId, msg.force ?? false);
+          await this.expandCity(world, player, msg.fromCityId, msg.cityId, msg.force ?? false, msg.troops);
           this.requestSave(world);
           return reply(true);
         }
@@ -422,12 +422,12 @@ export class GameServer {
     });
   }
 
-  private async expandCity(world: LobbyWorld, player: PlayerIdentity, fromCityId: string, cityId: string, force: boolean) {
+  private async expandCity(world: LobbyWorld, player: PlayerIdentity, fromCityId: string, cityId: string, force: boolean, troops?: number) {
     if (force) {
-      const { plan, city } = checkForcedAnnexation(world.world, player.id, fromCityId, cityId);
+      const { plan, city } = checkForcedAnnexation(world.world, player.id, fromCityId, cityId, troops);
       await this.insertCity(world, player, city, async () => {
         commitForcedAnnexation(world.world, player.id, fromCityId, city, plan);
-        await this.log(world, player.id, 'annexCity', { fromCityId, cityId, troops: plan.required });
+        await this.log(world, player.id, 'annexCity', { fromCityId, cityId, troops: plan.sent });
       });
       return;
     }
