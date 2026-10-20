@@ -279,7 +279,8 @@ const SCENES = {
     const dir = path.join(outDir, 'ui');
     fs.mkdirSync(dir, { recursive: true });
     const still = async (name, rail, after) => {
-      await page.locator('.rail-btn', { hasText: rail }).first().dispatchEvent('click');
+      const btn = page.locator('.rail-btn', { hasText: rail }).first();
+      if (!(await btn.getAttribute('class')).includes('active')) await btn.dispatchEvent('click');
       await page.clock.runFor(800);
       if (after) await after();
       await page.clock.runFor(800);
