@@ -256,12 +256,13 @@ const SCENES = {
     let k = 0;
     await shootCity(page, 'c7-build', 7, cityOrbit, {
       arg: { cx: -790, cz: 0, radius: 300, height: 190, a0: 230, a1: 290 },
-      batch: 7,
+      batch: 10,
       between: async (i, n) => {
+        // Pas de runFor long ici : chaque image d'animation de la page coûterait un rendu complet.
         const due = Math.floor((i / n) * (plan.length + 2));
         while (k < plan.length && k <= due) { cmd(plan[k]); k++; await sleep(160); }
-        await sleep(600);
-        await page.clock.runFor(300);
+        await sleep(900);
+        await page.clock.runFor(20);
       },
     });
     ws.close();
