@@ -893,7 +893,7 @@ export class CityScene {
       this.labelCache.set(key, tex);
     }
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
-    sprite.scale.set(28, 7, 1);
+    sprite.scale.set(44, 11, 1);
     sprite.renderOrder = 10;
     return sprite;
   }

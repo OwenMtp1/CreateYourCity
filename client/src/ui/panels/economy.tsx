@@ -58,7 +58,9 @@ export function GoodsCircuit() {
         </div>
         <div className={`side ${g.exported > 0.5 ? 'info' : ''}`}>
           📤 <strong>Exportations</strong> : {fmtInt(g.exported)} biens à {cr(g.exportPrice)}
-          {g.exported > 0.5 && <small> — vendus {cr(ECONOMY.localWholesalePrice - g.exportPrice)} moins cher qu'à vos commerces</small>}
+          {g.exported > 0.5 && (g.exportPrice < ECONOMY.localWholesalePrice
+            ? <small> — vendus {cr(ECONOMY.localWholesalePrice - g.exportPrice)} moins cher qu'à vos commerces</small>
+            : <small> — pénurie sur le marché commun : l'export rapporte plus que vos commerces ({cr(ECONOMY.localWholesalePrice)})</small>)}
         </div>
         {(g.contractIn > 0 || g.contractDelivered > 0) && (
           <div className="side">🤝 <strong>Contrats</strong> : {fmtInt(g.contractIn)} reçus · {fmtInt(g.contractDelivered)} livrés</div>
