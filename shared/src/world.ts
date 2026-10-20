@@ -12,6 +12,8 @@ export interface WorldCity {
   /** scalerank Natural Earth : 0 = ville majeure, 10 = petite ville. */
   rank: number;
   capital: boolean;
+  /** Mer à moins de 8 km : azimut vers la mer (0 = nord, 90 = est) et distance en km. */
+  coast?: { dir: number; dist: number };
 }
 
 export interface WorldCountry {

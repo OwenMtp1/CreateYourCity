@@ -6,7 +6,7 @@ import { MapControls } from 'three/addons/controls/MapControls.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import {
-  BUILDINGS, CITY_SIZE_M, footprint, generateTerrain, hashString, mulberry32, REGIONAL_ACCESS, ROADS, segmentLength,
+  BUILDINGS, CITY_SIZE_M, footprint, generateTerrain, hashString, mulberry32, REGIONAL_ACCESS, ROADS, seaBand, segmentLength,
   roadTerrain, terrainAt, TerrainKind, analyzeLayout, type BuildingType, type CityLayers, type CityLayout, type CityState, type Point, type RoadType, type Segment,
 } from '@cyc/shared';
 import { getQuality } from './quality.ts';
@@ -435,6 +435,7 @@ export class CityScene {
     this.layoutKey = '';
     this.scene.getObjectByName('terrain')?.removeFromParent();
     this.scene.getObjectByName('water')?.removeFromParent();
+    this.scene.getObjectByName('sea')?.removeFromParent();
     this.scene.getObjectByName('access')?.removeFromParent();
 
     const t = generateTerrain(cityId);
@@ -507,6 +508,21 @@ export class CityScene {
     water.name = 'water';
     water.receiveShadow = true;
     this.scene.add(water);
+
+    // Ville côtière : la mer se prolonge au-delà de l'espace constructible, du côté de la vraie mer.
+    const band = seaBand(cityId);
+    if (band) {
+      const sea = new THREE.Group();
+      sea.name = 'sea';
+      const plane = new THREE.Mesh(new THREE.PlaneGeometry(12000, 24000), new THREE.MeshStandardMaterial({ color: 0x2a6890, roughness: 0.08, metalness: 0.25 }));
+      plane.rotation.x = -Math.PI / 2;
+      plane.position.x = band.shoreline + 6000;
+      plane.receiveShadow = true;
+      sea.add(plane);
+      sea.rotation.y = -Math.atan2(band.dy, band.dx);
+      sea.position.y = -0.2;
+      this.scene.add(sea);
+    }
 
     // Accès régional : route nationale qui entre par l'ouest, portique jaune.
     const access = new THREE.Group();

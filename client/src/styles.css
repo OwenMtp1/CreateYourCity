@@ -348,3 +348,5 @@ button, select, input, a { touch-action: manipulation; }
 .dictator-note { color: #fca5a5; }
 .dictator-list { padding: 0.4rem 0.6rem; border-radius: 10px; border-left: 3px solid #ef4444; background: rgba(127, 29, 29, 0.2); }
 .hud-dictator { color: #fca5a5; font-weight: 600; }
+
+.coast-note { color: #7cc4f0; margin-top: 4px; }

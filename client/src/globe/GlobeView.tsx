@@ -196,6 +196,7 @@ function PlaceCard({ cityId, countryId, onFocus }: { cityId: string | null; coun
         <>
           <h3>{city.name}</h3>
           <div className="muted">{country?.nameFr}{city.capital ? ' · capitale' : ''} · {fmtInt(city.pop)} hab. réels</div>
+          {city.coast && <div className="small coast-note">🌊 Ville côtière : la mer borde la carte {seaSide(city.coast.dir)}, idéale pour un port.</div>}
           {owner ? (
             <>
               {owner.independent && (
@@ -302,4 +303,9 @@ function CountryCard({ countryId, onFocus }: { countryId: string; onFocus: (id: 
       </ul>
     </>
   );
+}
+
+const SIDES = ['au nord', 'au nord-est', "à l'est", 'au sud-est', 'au sud', 'au sud-ouest', "à l'ouest", 'au nord-ouest'];
+function seaSide(dir: number): string {
+  return SIDES[Math.round(dir / 45) % 8]!;
 }

@@ -3,6 +3,7 @@
 // des contraintes de placement (eau infranchissable sauf pont, collines plus chères).
 import { CITY_SIZE_M, REGIONAL_ACCESS, TERRAIN_CELL_M } from './constants.ts';
 import type { Rect, Segment } from './geometry.ts';
+import { CITY_BY_ID } from './world.ts';
 
 export const TerrainKind = { Land: 0, Hill: 1, Water: 2 } as const;
 export type TerrainKind = (typeof TerrainKind)[keyof typeof TerrainKind];
@@ -63,6 +64,8 @@ export function generateTerrain(cityId: string): Terrain {
   const hasLake = rand() < 0.3;
   const lake = { x: 300 + rand() * 1400, y: 300 + rand() * 1400, rx: 80 + rand() * 150, ry: 60 + rand() * 120 };
 
+  const sea = seaBand(cityId);
+
   for (let j = 0; j < size; j++) {
     for (let i = 0; i < size; i++) {
       const x = (i + 0.5) * TERRAIN_CELL_M;
@@ -82,6 +85,8 @@ export function generateTerrain(cityId: string): Terrain {
         kind = TerrainKind.Water;
       }
       if (hasLake && ((x - lake.x) / lake.rx) ** 2 + ((y - lake.y) / lake.ry) ** 2 < 1) kind = TerrainKind.Water;
+      // Mer des villes côtières ; une digue porte la route nationale si la mer est à l'ouest.
+      if (sea?.contains(x, y) && Math.abs(y - REGIONAL_ACCESS.y) > 45) kind = TerrainKind.Water;
       // L'accès régional reste toujours constructible.
       if (Math.hypot(x - REGIONAL_ACCESS.x, y - REGIONAL_ACCESS.y) < 200) kind = TerrainKind.Land;
       cells[j * size + i] = kind;
@@ -91,6 +96,60 @@ export function generateTerrain(cityId: string): Terrain {
   cache.set(cityId, terrain);
   return terrain;
 }
+
+export interface SeaBand {
+  /** Direction de la mer sur la carte (unitaire, y vers le sud). */
+  dx: number;
+  dy: number;
+  /** Distance du centre de la carte au rivage moyen, mesurée vers la mer. */
+  shoreline: number;
+  contains(x: number, y: number): boolean;
+}
+
+/**
+ * Bande de mer le long du bord de la carte tourné vers la mer réelle : plus large quand la côte est proche
+ * du centre-ville, avec un trait de côte ondulé. Renvoie null pour une ville continentale.
+ */
+export function seaBand(cityId: string): SeaBand | null {
+  const coast = CITY_BY_ID.get(cityId)?.coast;
+  if (!coast) return null;
+  const rand = mulberry32(hashString(cityId) ^ 0x5ea5ea);
+  const b = (coast.dir * Math.PI) / 180;
+  const dx = Math.sin(b);
+  const dy = -Math.cos(b); // le nord est en haut de la carte (y décroissant)
+  const half = CITY_SIZE_M / 2;
+  const width = Math.max(SEA.minWidth, Math.min(SEA.maxWidth, SEA.maxWidth - (coast.dist - 0.5) * 70));
+  // Position du rivage telle que la mer couvre la même surface qu'une bande droite de `width` mètres,
+  // quelle que soit l'orientation (une mer en diagonale occupe un coin de la carte).
+  const target = width / CITY_SIZE_M;
+  const n = 50;
+  const seaShare = (s: number) => {
+    let wet = 0;
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      if (((i + 0.5) / n - 0.5) * dx + ((j + 0.5) / n - 0.5) * dy > s / CITY_SIZE_M) wet++;
+    }
+    return wet / (n * n);
+  };
+  let lo = -half * 2, hi = half * 2;
+  for (let k = 0; k < 24; k++) {
+    const mid = (lo + hi) / 2;
+    if (seaShare(mid) > target) lo = mid; else hi = mid;
+  }
+  const shoreline = (lo + hi) / 2;
+  const waves = [0, 1, 2].map((k) => ({ amp: [45, 20, 8][k]!, freq: [0.003, 0.009, 0.025][k]! * (0.8 + rand() * 0.4), phase: rand() * Math.PI * 2 }));
+  return {
+    dx, dy, shoreline,
+    contains(x, y) {
+      const along = (x - half) * dx + (y - half) * dy;
+      const across = (x - half) * -dy + (y - half) * dx;
+      let edge = shoreline;
+      for (const w of waves) edge += w.amp * Math.sin(across * w.freq + w.phase);
+      return along > edge;
+    },
+  };
+}
+
+export const SEA = { minWidth: 160, maxWidth: 520 } as const;
 
 export function terrainAt(t: Terrain, x: number, y: number): TerrainKind {
   const i = Math.min(t.size - 1, Math.max(0, Math.floor(x / t.cell)));

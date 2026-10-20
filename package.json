@@ -15,7 +15,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "db:migrate": "npm run migrate --workspace server",
-    "geodata": "node scripts/build-geodata.mjs"
+    "geodata": "node scripts/build-geodata.mjs && node scripts/build-coasts.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
