@@ -11,11 +11,14 @@ import { BuildPanel, EconomyPanel, PopulationPanel, ServicesPanel } from '../ui/
 import { ArmyPanel, DiplomacyPanel, LobbyPanel, NationPanel, TerritoryPanel, TradePanel } from '../ui/panels/world.tsx';
 import { StatusBadge } from '../ui/StatusBadge.tsx';
 import { AdvisorsPanel, StatsPanel, useAdvice } from '../ui/panels/insights.tsx';
+import { BuildingInspector, BuildingsPanel } from '../ui/panels/buildings.tsx';
+import type { Building } from '@cyc/shared';
 import { Tutorial } from '../ui/Tutorial.tsx';
 
-type Tab = 'build' | 'advisors' | 'stats' | 'economy' | 'population' | 'services' | 'territory' | 'trade' | 'diplomacy' | 'army' | 'nation' | 'lobby';
+type Tab = 'build' | 'buildings' | 'advisors' | 'stats' | 'economy' | 'population' | 'services' | 'territory' | 'trade' | 'diplomacy' | 'army' | 'nation' | 'lobby';
 const TABS: { id: Tab; icon: string; label: string; city?: boolean }[] = [
   { id: 'build', icon: '🏗️', label: 'Construire', city: true },
+  { id: 'buildings', icon: '🏘️', label: 'Bâtiments', city: true },
   { id: 'advisors', icon: '🧭', label: 'Conseillers', city: true },
   { id: 'stats', icon: '📈', label: 'Statistiques', city: true },
   { id: 'economy', icon: '💰', label: 'Économie', city: true },
@@ -40,6 +43,12 @@ export function GameScreen() {
   const [layer, setLayer] = useState<CityLayer>('none');
   const [selected, setSelected] = useState<number | null>(null);
   const [dayNight, setDayNight] = useState(true);
+  /** Demande de recentrage de la caméra sur un bâtiment (n change à chaque demande). */
+  const [focus, setFocus] = useState<{ x: number; y: number; n: number } | null>(null);
+  const focusOn = (b: Building) => {
+    setState({ view: 'city' });
+    setFocus((f) => ({ x: b.x, y: b.y, n: (f?.n ?? 0) + 1 }));
+  };
   const [visitedEconomy, setVisitedEconomy] = useState(false);
   const [visitedGlobe, setVisitedGlobe] = useState(false);
   const advice = useAdvice();
@@ -57,7 +66,7 @@ export function GameScreen() {
       <div className="viewport">
         {showCity ? (
           <CityView3D city={city} layers={layers} tool={tool} setTool={setTool} grid={grid} setGrid={setGrid}
-            layer={layer} selected={selected} setSelected={setSelected} dayNight={dayNight} />
+            layer={layer} selected={selected} setSelected={setSelected} dayNight={dayNight} focus={focus} />
         ) : (
           <GlobeView />
         )}
@@ -83,7 +92,8 @@ export function GameScreen() {
           </header>
           <div className="drawer-body">
             {tab === 'build' && <BuildPanel tool={tool} setTool={(t) => { setTool(t); if (t.kind !== 'select') setState({ view: 'city' }); }} grid={grid} setGrid={setGrid}
-              layer={layer} setLayer={setLayer} selected={selected} dayNight={dayNight} setDayNight={setDayNight} />}
+              layer={layer} setLayer={setLayer} dayNight={dayNight} setDayNight={setDayNight} />}
+            {tab === 'buildings' && <BuildingsPanel selected={selected} onSelect={(b) => { setSelected(b.id); focusOn(b); }} />}
             {tab === 'advisors' && <AdvisorsPanel setTool={(t) => { setTool(t); setTab('build'); }} setSelected={setSelected} />}
             {tab === 'stats' && <StatsPanel />}
             {tab === 'economy' && <EconomyPanel />}
@@ -97,6 +107,9 @@ export function GameScreen() {
             {tab === 'lobby' && <LobbyPanel />}
           </div>
         </aside>
+      )}
+      {showCity && selected !== null && (
+        <BuildingInspector id={selected} onClose={() => setSelected(null)} onFocus={focusOn} />
       )}
       {showCity && (
         <Tutorial setTool={setTool} openTab={(t) => setTab(t)} visitedEconomy={visitedEconomy} visitedGlobe={visitedGlobe} />

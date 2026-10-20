@@ -16,23 +16,21 @@ const CATEGORY_LABEL: Record<BuildingCategory, string> = {
 };
 export const SERVICE_LABEL: Record<ServiceKind, string> = { health: 'Santé', education: 'Éducation', safety: 'Sécurité', leisure: 'Loisirs' };
 export { ICON };
-const STATUS_LABEL = { ok: 'En service', no_road: 'Aucune route à proximité', disconnected: "Route non reliée à l'accès régional" };
+export const STATUS_LABEL = { ok: 'En service', no_road: 'Aucune route à proximité', disconnected: "Route non reliée à l'accès régional" };
 const ICON: Record<string, string> = {
   house: '🏡', apartment: '🏢', tower: '🏙️', shop: '🛍️', office: '💼', factory: '🏭', clinic: '🏥', school: '🏫', police: '🚓',
-  power_plant: '⚡', water_tower: '💧', park: '🌳', barracks: '🎖️', street: '🛣️', avenue: '🛤️',
+  power_plant: '⚡', water_tower: '💧', park: '🌳', barracks: '🎖️', street: '🛣️', avenue: '🛤️', bridge: '🌉',
   bus_station: '🚌', tram_station: '🚋', metro_station: '🚇', train_station: '🚆', port: '⚓', airbase: '✈️',
   parking: '🅿️', parking_garage: '🚗',
 };
 
 export function BuildPanel(props: {
   tool: Tool; setTool: (t: Tool) => void; grid: boolean; setGrid: (g: boolean) => void;
-  layer: CityLayer; setLayer: (l: CityLayer) => void; selected: number | null; dayNight: boolean; setDayNight: (v: boolean) => void;
+  layer: CityLayer; setLayer: (l: CityLayer) => void; dayNight: boolean; setDayNight: (v: boolean) => void;
 }) {
-  const { tool, setTool, grid, setGrid, layer, setLayer, selected, dayNight, setDayNight } = props;
+  const { tool, setTool, grid, setGrid, layer, setLayer, dayNight, setDayNight } = props;
   const city = useGame(activeCity)!;
-  const layers = useGame((s) => (s.activeCityId ? s.layers[s.activeCityId] : undefined));
   const categories = [...new Set(BUILDING_TYPES.map((t) => BUILDINGS[t].category))];
-  const sel = selected !== null ? city.buildings.find((b) => b.id === selected) : undefined;
 
   return (
     <div className="stack">
@@ -87,7 +85,8 @@ export function BuildPanel(props: {
           </button>
         ))}
       </div>
-      <p className="small muted">Partez du portique jaune (accès régional, bord ouest) : un bâtiment ne fonctionne que desservi par une route raccordée.</p>
+      <p className="small muted">Partez du portique jaune (accès régional, bord ouest) : un bâtiment ne fonctionne que desservi par une route raccordée.
+        Pour franchir l'eau, utilisez le <strong>pont</strong> (rues et avenues ne peuvent pas traverser).</p>
 
       {categories.map((cat) => (
         <div key={cat}>
@@ -117,25 +116,12 @@ export function BuildPanel(props: {
         </div>
       ))}
 
-      {sel && (
-        <div className="card compact">
-          <h4>{ICON[sel.type]} {BUILDINGS[sel.type].label} #{sel.id}</h4>
-          <p className="small muted">{BUILDINGS[sel.type].description}</p>
-          <Row label="État" value={STATUS_LABEL[layers?.buildingStatus[sel.id] ?? 'ok']} />
-          {layers?.residentialCoverage[sel.id] && SERVICE_KINDS.map((k) => (
-            <Row key={k} label={`Couverture ${SERVICE_LABEL[k].toLowerCase()}`} value={fmtPct(layers.residentialCoverage[sel.id]![k] ?? 0)} />
-          ))}
-          {layers?.pollution[sel.id] !== undefined && <Row label="Exposition à la pollution" value={fmtPct(layers.pollution[sel.id]!)} />}
-          {BUILDINGS[sel.type].parking && <ParkingSettings key={sel.id} id={sel.id} spaces={BUILDINGS[sel.type].parking!.spaces} fee={sel.fee ?? 0} use={layers?.parkingUse?.[sel.id]} />}
-          <button className="danger" onClick={() => void client.cityCommand({ type: 'demolish', target: 'building', id: sel.id })}>Démolir</button>
-        </div>
-      )}
     </div>
   );
 }
 
 /** Réglage du tarif d'un parking : gratuit, ou payant avec un prix par stationnement. */
-function ParkingSettings({ id, spaces, fee, use }: { id: number; spaces: number; fee: number; use: number | undefined }) {
+export function ParkingSettings({ id, spaces, fee, use }: { id: number; spaces: number; fee: number; use: number | undefined }) {
   const [paid, setPaid] = useState(fee > 0);
   const [price, setPrice] = useState(fee > 0 ? fee : 2);
   const dirty = (paid ? price : 0) !== fee;

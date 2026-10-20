@@ -23,7 +23,7 @@ export type BuildingType =
   | 'parking'
   | 'parking_garage';
 
-export type RoadType = 'street' | 'avenue';
+export type RoadType = 'street' | 'avenue' | 'bridge';
 export type BuildingCategory = 'residential' | 'commercial' | 'industrial' | 'service' | 'utility' | 'transport' | 'military';
 export type TransitMode = 'bus' | 'tram' | 'metro';
 export const TRANSIT_MODES: readonly TransitMode[] = ['bus', 'tram', 'metro'];
@@ -201,6 +201,8 @@ export interface RoadDef {
 export const ROADS: Record<RoadType, RoadDef> = {
   street: { type: 'street', label: 'Rue', width: 10, costPerMeter: 40, upkeepPerMeterPerDay: 0.05, capacityTripsPerDay: 4_000 },
   avenue: { type: 'avenue', label: 'Avenue', width: 18, costPerMeter: 100, upkeepPerMeterPerDay: 0.12, capacityTripsPerDay: 12_000 },
+  /** Seul type de voie autorisé au-dessus de l'eau (tablier surélevé ; la partie sur l'eau coûte plus cher). */
+  bridge: { type: 'bridge', label: 'Pont', width: 14, costPerMeter: 120, upkeepPerMeterPerDay: 0.4, capacityTripsPerDay: 8_000 },
 };
 
 export const ROAD_TYPES = Object.keys(ROADS) as RoadType[];

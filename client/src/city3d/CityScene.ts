@@ -7,7 +7,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import {
   BUILDINGS, CITY_SIZE_M, footprint, generateTerrain, hashString, mulberry32, REGIONAL_ACCESS, ROADS, segmentLength,
-  terrainAt, TerrainKind, analyzeLayout, type BuildingType, type CityLayers, type CityLayout, type CityState, type Point, type RoadType, type Segment,
+  roadTerrain, terrainAt, TerrainKind, analyzeLayout, type BuildingType, type CityLayers, type CityLayout, type CityState, type Point, type RoadType, type Segment,
 } from '@cyc/shared';
 import { getQuality } from './quality.ts';
 import { buildModel, placeModel, sharedGeometry, solid, treeInstances, windowMaterials, type ModelInfo } from './models.ts';
@@ -66,6 +66,8 @@ export class CityScene {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
+    this.renderer.domElement.addEventListener('webglcontextlost', this.onContextLost);
+    this.renderer.domElement.addEventListener('webglcontextrestored', this.onContextRestored);
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
 
     this.sky.scale.setScalar(10000);
@@ -75,6 +77,7 @@ export class CityScene {
     u.mieCoefficient!.value = 0.004;
     u.mieDirectionalG!.value = 0.8;
     this.scene.add(this.sky);
+    this.scene.background = new THREE.Color(0x1d2b45);
     this.scene.fog = new THREE.Fog(0xb8cbe0, 2500, 9000);
 
     this.sun.castShadow = true;
@@ -238,6 +241,7 @@ export class CityScene {
       const dir = new THREE.Vector3().subVectors(b, a).normalize().multiplyScalar(c.dir);
       // Circulation à droite.
       pos.add(new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(-2.4));
+      if (this.bridges.length) pos.y = 0.9 + this.deckHeightAt(pos.x, pos.z);
       q.setFromAxisAngle(up, Math.atan2(-dir.z, dir.x));
       m.compose(pos, q, new THREE.Vector3(1, 1, 1));
       this.cars!.setMatrixAt(i, m);
@@ -470,6 +474,22 @@ export class CityScene {
   private roadRanges = new Map<number, { start: number; count: number }>();
   private asphaltMesh: THREE.Mesh | null = null;
   private roadSegs = new Map<number, { x1: number; y1: number; x2: number; y2: number; width: number }>();
+  /** Tabliers surélevés (coordonnées de scène) : hauteur des voitures sur les ponts. */
+  private bridges: { x1: number; z1: number; x2: number; z2: number; len: number; width: number; profile: (along: number) => number }[] = [];
+
+  /** Hauteur du tablier au point (x, z) de la scène (0 hors des ponts). */
+  private deckHeightAt(x: number, z: number): number {
+    let best = 0;
+    for (const b of this.bridges) {
+      const dx = b.x2 - b.x1, dz = b.z2 - b.z1;
+      const t = ((x - b.x1) * dx + (z - b.z1) * dz) / (b.len * b.len || 1);
+      if (t < 0 || t > 1) continue;
+      const px = b.x1 + dx * t, pz = b.z1 + dz * t;
+      if (Math.hypot(x - px, z - pz) > b.width / 2 + 1) continue;
+      best = Math.max(best, b.profile(t * b.len - b.len / 2));
+    }
+    return best;
+  }
 
   /**
    * Routes fusionnées en quelques maillages (asphalte, bordures, marquages, lampadaires instanciés) :
@@ -488,23 +508,54 @@ export class CityScene {
     const curbs: THREE.BufferGeometry[] = [];
     const marks: Record<'white' | 'yellow', THREE.BufferGeometry[]> = { white: [], yellow: [] };
     const lamps: THREE.Matrix4[] = [];
+    const concrete: THREE.BufferGeometry[] = [];
     let vertexCursor = 0;
-    const place = (g: THREE.BufferGeometry, r: { x1: number; y1: number; x2: number; y2: number }, along: number, side: number, y: number) => {
+    const terrain = generateTerrain(city.cityId);
+    this.bridges = [];
+    /**
+     * Place une géométrie le long d'un tronçon. Par défaut, un plan XY est couché au sol (face vers le haut) ;
+     * `flat = false` le laisse debout (bordure, poutre), `down = true` le couche face vers le bas (sous-face).
+     */
+    const place = (g: THREE.BufferGeometry, r: { x1: number; y1: number; x2: number; y2: number }, along: number, side: number, y: number, flat = true, down = false) => {
       const angle = Math.atan2(r.y2 - r.y1, r.x2 - r.x1);
       const m = new THREE.Matrix4()
         .makeTranslation((r.x1 + r.x2) / 2 - HALF, y, (r.y1 + r.y2) / 2 - HALF)
         .multiply(new THREE.Matrix4().makeRotationY(-angle))
-        .multiply(new THREE.Matrix4().makeTranslation(along, 0, side))
-        .multiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+        .multiply(new THREE.Matrix4().makeTranslation(along, 0, side));
+      if (flat) m.multiply(new THREE.Matrix4().makeRotationX(down ? Math.PI / 2 : -Math.PI / 2));
       return g.applyMatrix4(m);
     };
     for (const r of city.roads) {
       const def = ROADS[r.type];
       const len = segmentLength(r);
       this.roadSegs.set(r.id, { ...r, width: def.width });
+      // Pont (ou ancienne route au-dessus de l'eau) : tablier surélevé avec rampes aux extrémités.
+      const elevated = r.type === 'bridge' || roadTerrain(terrain, r).bridgeLength > 0;
+      const profile = elevated ? bridgeProfile(len) : null;
+      const h = (along: number) => (profile ? profile(along) : 0);
+      if (profile) {
+        this.bridges.push({ x1: r.x1 - HALF, z1: r.y1 - HALF, x2: r.x2 - HALF, z2: r.y2 - HALF, len, width: def.width, profile });
+        const segs = Math.max(2, Math.ceil(len / 5));
+        // Poutres latérales, sous-face, garde-corps et piles.
+        for (const side of [-1, 1]) {
+          concrete.push(place(lift(new THREE.PlaneGeometry(len, 1.4, segs, 1), (x, y) => h(x) - 0.7 + y, 'standing'), r, 0, side * def.width / 2, 0, false).toNonIndexed());
+          concrete.push(place(lift(new THREE.PlaneGeometry(len, 1.1, segs, 1), (x, y) => h(x) + 0.75 + y, 'standing'), r, 0, side * (def.width / 2 - 0.2), 0, false).toNonIndexed());
+        }
+        concrete.push(place(lift(new THREE.PlaneGeometry(len, def.width, segs, 1), (x) => h(x) - 1.4, 'down'), r, 0, 0, 0, true, true).toNonIndexed());
+        for (let a = -len / 2 + 12; a <= len / 2 - 12; a += 24) {
+          const top = h(a) - 1.4;
+          if (top < 1.5) continue;
+          const pile = new THREE.CylinderGeometry(1.1, 1.4, top + 4, 8);
+          pile.translate(0, (top - 4) / 2, 0);
+          concrete.push(place(pile, r, a, 0, 0, false).toNonIndexed());
+        }
+      }
       // Asphalte + raccords arrondis aux extrémités (jonctions et virages propres).
+      const deck = profile
+        ? place(lift(new THREE.PlaneGeometry(len, def.width, Math.max(2, Math.ceil(len / 5)), 1), (x) => h(x)), r, 0, 0, 0.18)
+        : place(new THREE.PlaneGeometry(len, def.width), r, 0, 0, 0.18);
       const parts = [
-        place(new THREE.PlaneGeometry(len, def.width), r, 0, 0, 0.18),
+        deck,
         place(new THREE.CircleGeometry(def.width / 2, 20), r, -len / 2, 0, 0.185),
         place(new THREE.CircleGeometry(def.width / 2, 20), r, len / 2, 0, 0.185),
       ].map((g) => g.toNonIndexed());
@@ -517,8 +568,9 @@ export class CityScene {
       // Bordures et marquages s'arrêtent avant les carrefours.
       const inner = Math.max(0, len - def.width * 1.2);
       if (inner >= 1) {
-        for (const side of [-1, 1]) curbs.push(place(new THREE.PlaneGeometry(inner, 1.4), r, 0, side * (def.width / 2 - 0.7), 0.2).toNonIndexed());
-        const line = new THREE.PlaneGeometry(inner, r.type === 'avenue' ? 0.9 : 0.5);
+        const segs = profile ? Math.max(2, Math.ceil(inner / 5)) : 1;
+        if (!profile) for (const side of [-1, 1]) curbs.push(place(new THREE.PlaneGeometry(inner, 1.4), r, 0, side * (def.width / 2 - 0.7), 0.2).toNonIndexed());
+        const line = lift(new THREE.PlaneGeometry(inner, r.type === 'avenue' ? 0.9 : 0.5, segs, 1), (x) => h(x));
         const uv = line.getAttribute('uv') as THREE.BufferAttribute;
         for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * Math.max(1, inner / 12));
         marks[r.type === 'avenue' ? 'yellow' : 'white'].push(place(line, r, 0, 0, 0.22).toNonIndexed());
@@ -531,7 +583,7 @@ export class CityScene {
         const base = new THREE.Matrix4()
           .makeTranslation((r.x1 + r.x2) / 2 - HALF, 0, (r.y1 + r.y2) / 2 - HALF)
           .multiply(new THREE.Matrix4().makeRotationY(-angle))
-          .multiply(new THREE.Matrix4().makeTranslation(along, 0, def.width / 2 + 0.6));
+          .multiply(new THREE.Matrix4().makeTranslation(along, h(along), profile ? def.width / 2 - 0.6 : def.width / 2 + 0.6));
         lamps.push(base);
       }
     }
@@ -545,6 +597,12 @@ export class CityScene {
     if (curbs.length) {
       const m = new THREE.Mesh(mergeGeometries(curbs)!, solid(0xb9bcc0));
       m.receiveShadow = true;
+      this.roadGroup.add(m);
+    }
+    if (concrete.length) {
+      for (const g of concrete) for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
+      const m = new THREE.Mesh(mergeGeometries(concrete)!, solid(0xc4c0b8, { side: THREE.DoubleSide }));
+      m.castShadow = m.receiveShadow = true;
       this.roadGroup.add(m);
     }
     const tex = dashTexture();
@@ -781,13 +839,16 @@ export class CityScene {
     this.sky.material.uniforms.sunPosition!.value.copy(dir);
     const day = THREE.MathUtils.smoothstep(elevation, -6, 12);
     this.night = 1 - day;
+    // Le shader de ciel devient noir une fois le soleil couché : la nuit, un ciel bleu nuit le remplace.
+    this.sky.visible = day > 0.08;
+    (this.scene.background as THREE.Color).setHSL(0.62, 0.45, 0.13 + 0.25 * day);
     // La nuit, un clair de lune bleuté garde la ville lisible.
-    this.sun.intensity = 0.7 + 1.5 * day;
+    this.sun.intensity = 1.0 + 1.2 * day;
     if (day > 0.2) this.sun.color.setHSL(0.09, 0.5 * (1 - day) + 0.15, 0.8 + 0.15 * day);
     else this.sun.color.setHSL(0.62, 0.35, 0.75);
-    this.hemi.intensity = 0.55 + 0.15 * day;
-    this.renderer.toneMappingExposure = 0.6 + 0.15 * day;
-    (this.scene.fog as THREE.Fog).color.setHSL(0.6, 0.35, 0.12 + 0.68 * day);
+    this.hemi.intensity = 0.8 + 0.1 * day;
+    this.renderer.toneMappingExposure = 0.78 + 0.07 * day;
+    (this.scene.fog as THREE.Fog).color.setHSL(0.6, 0.35, 0.2 + 0.6 * day);
     for (const m of windowMaterials) m.emissiveIntensity = 1.4 * this.night;
     this.lampMaterial.emissiveIntensity = 2.2 * this.night;
     // La nuit, la lumière directionnelle devient une lune haute (sinon le sol serait éclairé par-dessous).
@@ -795,30 +856,35 @@ export class CityScene {
     this.sunOffset.copy(light).multiplyScalar(1500);
     // Éclairage d'ambiance : dégradé ciel/horizon/sol sans disque solaire (le disque du shader
     // Sky dépasse la plage des textures demi-flottantes et rendrait l'environnement invalide).
-    const top = new THREE.Color().setHSL(0.58, 0.55, 0.08 + 0.5 * day);
-    const horizon = new THREE.Color().setHSL(0.08 + 0.5 * day, 0.35, 0.12 + 0.6 * day);
-    const bottom = new THREE.Color().setHSL(0.25, 0.2, 0.05 + 0.2 * day);
-    this.scene.environmentIntensity = 0.12 + 0.3 * day;
+    const top = new THREE.Color().setHSL(0.6, 0.5, 0.16 + 0.42 * day);
+    const horizon = new THREE.Color().setHSL(0.08 + 0.5 * day, 0.35, 0.2 + 0.52 * day);
+    const bottom = new THREE.Color().setHSL(0.25, 0.2, 0.1 + 0.15 * day);
+    this.scene.environmentIntensity = 0.3 + 0.12 * day;
     // L'environnement (coûteux à préfiltrer) n'est régénéré qu'une fois par heure de jeu.
     const envKey = Math.round(h);
-    if (envKey === this.lastEnvHour) return;
+    if (envKey === this.lastEnvHour || this.contextLost) return;
     this.lastEnvHour = envKey;
-    const envScene = new THREE.Scene();
-    envScene.add(new THREE.Mesh(
-      new THREE.SphereGeometry(100, 32, 16),
-      new THREE.ShaderMaterial({
-        side: THREE.BackSide,
-        uniforms: { top: { value: top }, horizon: { value: horizon }, bottom: { value: bottom } },
-        vertexShader: 'varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-        fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 bottom; varying vec3 vDir;
-          void main() { float h = vDir.y; vec3 c = h > 0.0 ? mix(horizon, top, pow(h, 0.6)) : mix(horizon, bottom, pow(-h, 0.4));
-          gl_FragColor = vec4(c, 1.0); }`,
-      }),
-    ));
-    this.envTarget?.dispose();
-    this.envTarget = this.pmrem.fromScene(envScene);
+    // Une seule scène d'environnement, réutilisée : seules ses couleurs changent (pas de fuite de mémoire
+    // graphique, qui finissait par faire perdre le contexte WebGL et noircir l'écran).
+    const u = this.envMaterial.uniforms;
+    u.top!.value.copy(top);
+    u.horizon!.value.copy(horizon);
+    u.bottom!.value.copy(bottom);
+    const previous = this.envTarget;
+    this.envTarget = this.pmrem.fromScene(this.envScene);
     this.scene.environment = this.envTarget.texture;
+    previous?.dispose();
   }
+
+  private readonly envMaterial = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    uniforms: { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, bottom: { value: new THREE.Color() } },
+    vertexShader: 'varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 bottom; varying vec3 vDir;
+      void main() { float h = vDir.y; vec3 c = h > 0.0 ? mix(horizon, top, pow(h, 0.6)) : mix(horizon, bottom, pow(-h, 0.4));
+      gl_FragColor = vec4(c, 1.0); }`,
+  });
+  private readonly envScene = new THREE.Scene().add(new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), this.envMaterial));
 
   private readonly sunOffset = new THREE.Vector3(800, 1200, 600);
 
@@ -847,6 +913,18 @@ export class CityScene {
     // Presque à la verticale (~7°) : le nord reste en haut de l'écran et les hauteurs se lisent encore.
     this.camera.position.set(cx, height, cz + height * 0.12);
     this.camera.up.set(0, 1, 0);
+    this.controls.update();
+  }
+
+  /** Recentre la vue aérienne sur un point de la ville (coordonnées de jeu), à distance de lecture. */
+  focusOn(x: number, y: number) {
+    if (this.street) this.exitStreetView();
+    const target = new THREE.Vector3(x - HALF, 0, y - HALF);
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    if (offset.length() > 320 || offset.length() < 60) offset.setLength(260);
+    if (offset.y < 80) offset.y = 120;
+    this.controls.target.copy(target);
+    this.camera.position.copy(target).add(offset);
     this.controls.update();
   }
 
@@ -979,7 +1057,10 @@ export class CityScene {
     if (this.disposed) return;
     this.frame = requestAnimationFrame(this.animate);
     this.timer.update();
-    this.step(this.timer.getDelta());
+    // Retour d'un onglet en arrière-plan : on n'avance pas les animations de plusieurs minutes d'un coup.
+    const dt = Math.min(this.timer.getDelta(), 0.1);
+    if (this.contextLost) return;
+    this.step(dt);
   };
 
   private elapsed = 0;
@@ -1034,10 +1115,35 @@ export class CityScene {
     this.exitStreetView();
     this.controls.dispose();
     this.envTarget?.dispose();
+    this.envMaterial.dispose();
     this.pmrem.dispose();
+    this.renderer.domElement.removeEventListener('webglcontextlost', this.onContextLost);
+    this.renderer.domElement.removeEventListener('webglcontextrestored', this.onContextRestored);
     this.renderer.dispose();
+    // Libère réellement le contexte : le navigateur n'en garde que quelques-uns (globe ⇄ ville répétés).
+    this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
   }
+
+  // --- Perte du contexte WebGL (pilote, mémoire, onglet en veille) ------------------------------
+
+  contextLost = false;
+  /** Notifié lors d'une perte ou d'une reprise du contexte (affichage d'un message, recréation). */
+  onContextChange: ((lost: boolean) => void) | null = null;
+  private readonly onContextLost = (e: Event) => {
+    // Sans preventDefault, le navigateur ne tente jamais de restaurer le contexte.
+    e.preventDefault();
+    this.contextLost = true;
+    this.onContextChange?.(true);
+  };
+  private readonly onContextRestored = () => {
+    this.contextLost = false;
+    // Three.js renvoie les ressources au GPU ; l'environnement (rendu hors écran) doit être recalculé.
+    this.lastSkyHour = -1;
+    this.lastEnvHour = -1;
+    this.envTarget = null;
+    this.onContextChange?.(false);
+  };
 }
 
 /** Bruit de valeur interpolé (grille 64×64 périodique). */
@@ -1086,4 +1192,31 @@ function dashTexture() {
   dash = new THREE.CanvasTexture(c);
   dash.wrapS = THREE.RepeatWrapping;
   return dash;
+}
+
+/** Profil d'un tablier : 0 aux extrémités, rampes adoucies, hauteur maximale au milieu (abscisse centrée). */
+function bridgeProfile(len: number): (along: number) => number {
+  const height = Math.min(8, Math.max(2.5, len * 0.12));
+  const ramp = Math.min(len / 2, 30);
+  return (along: number) => {
+    const d = Math.max(0, len / 2 - Math.abs(along));
+    const t = Math.min(1, d / ramp);
+    return height * t * t * (3 - 2 * t);
+  };
+}
+
+/**
+ * Décale verticalement les sommets d'un plan avant sa mise en place, x étant l'abscisse le long du tronçon :
+ * plan couché (`z` devient la hauteur), debout (`y`) ou couché face vers le bas (sous-face).
+ */
+function lift(g: THREE.PlaneGeometry, f: (x: number, y: number) => number, mode: 'lying' | 'standing' | 'down' = 'lying'): THREE.PlaneGeometry {
+  const pos = g.getAttribute('position') as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i);
+    if (mode === 'standing') pos.setY(i, f(x, y));
+    else pos.setZ(i, mode === 'down' ? -f(x, y) : f(x, y));
+  }
+  pos.needsUpdate = true;
+  g.computeVertexNormals();
+  return g;
 }

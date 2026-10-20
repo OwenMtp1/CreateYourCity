@@ -28,6 +28,8 @@ interface Props {
   selected: number | null;
   setSelected: (id: number | null) => void;
   dayNight: boolean;
+  /** Recentrage demandé sur un point de la ville (n change à chaque demande). */
+  focus?: { x: number; y: number; n: number } | null;
 }
 
 export function CityView3D(props: Props) {
@@ -47,12 +49,26 @@ export function CityView3D(props: Props) {
   const streetRef = useRef(false);
   streetRef.current = street.street;
 
+  // Contexte WebGL perdu et non rendu par le navigateur : la scène est recréée (nouvelle génération).
+  const [generation, setGeneration] = useState(0);
+  const [glLost, setGlLost] = useState(false);
+
   useEffect(() => {
     const scene = new CityScene(ref.current!);
     sceneRef.current = scene;
     scene.onStreetChange = setStreet;
-    return () => scene.dispose();
-  }, []);
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    scene.onContextChange = (lost) => {
+      setGlLost(lost);
+      clearTimeout(retry);
+      if (lost) retry = setTimeout(() => setGeneration((g) => g + 1), 3000);
+    };
+    setGlLost(false);
+    return () => {
+      clearTimeout(retry);
+      scene.dispose();
+    };
+  }, [generation]);
 
   const toggleStreet = () => {
     const scene = sceneRef.current;
@@ -66,11 +82,14 @@ export function CityView3D(props: Props) {
     }
   };
 
-  useEffect(() => sceneRef.current?.setCity(city, layers, layer, selected), [city, layers, layer, selected]);
-  useEffect(() => sceneRef.current?.setGrid(grid), [grid]);
+  useEffect(() => sceneRef.current?.setCity(city, layers, layer, selected), [city, layers, layer, selected, generation]);
+  useEffect(() => sceneRef.current?.setGrid(grid), [grid, generation]);
+  useEffect(() => {
+    if (props.focus) sceneRef.current?.focusOn(props.focus.x, props.focus.y);
+  }, [props.focus?.n]);
   useEffect(() => {
     sceneRef.current?.setTimeOfDay(gameHour(tick), dayNight);
-  }, [tick, dayNight]);
+  }, [tick, dayNight, generation]);
   useEffect(() => {
     if (tool.kind !== 'road') roadStart.current = null;
     roadControl.current = null;
@@ -289,6 +308,7 @@ export function CityView3D(props: Props) {
         </button>
       </div>
       {street.street && street.locked && <div className="street-crosshair" />}
+      {glLost && <div className="gl-lost glass">Affichage 3D interrompu par le navigateur — reprise en cours…</div>}
       <div className="city-help glass">
         {street.street
           ? street.locked

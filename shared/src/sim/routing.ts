@@ -7,7 +7,7 @@ import { REGIONAL_ACCESS, ROAD_JOIN_TOLERANCE } from '../constants.ts';
 import { buildingRect, closestPointOnSegment, rectCenter, segmentLength } from '../geometry.ts';
 import type { Building, CityState, Road } from '../types.ts';
 
-export const ROAD_SPEED_KMH = { street: 30, avenue: 50 } as const;
+export const ROAD_SPEED_KMH = { street: 30, avenue: 50, bridge: 50 } as const;
 
 export interface RouteEdge {
   id: number;

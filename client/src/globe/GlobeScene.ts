@@ -117,6 +117,8 @@ export class GlobeScene {
     this.renderer.setPixelRatio(low ? 1 : Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
+    this.renderer.domElement.addEventListener('webglcontextlost', this.onContextLost);
+    this.renderer.domElement.addEventListener('webglcontextrestored', this.onContextRestored);
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.01, 200);
     this.camera.position.copy(latLonToVec(30, 10, 3.2));
     this.scene.background = new THREE.Color(0x05070d);
@@ -474,7 +476,8 @@ export class GlobeScene {
     if (this.disposed) return;
     this.frame = requestAnimationFrame(this.animate);
     this.timer.update();
-    const dt = this.timer.getDelta();
+    const dt = Math.min(this.timer.getDelta(), 0.1);
+    if (this.contextLost) return;
     const dist = this.camera.position.length();
     if (this.flight) {
       this.flight.t = Math.min(1, this.flight.t + dt / 1.4);
@@ -557,8 +560,27 @@ export class GlobeScene {
     this.disposed = true;
     cancelAnimationFrame(this.frame);
     this.controls.dispose();
+    this.renderer.domElement.removeEventListener('webglcontextlost', this.onContextLost);
+    this.renderer.domElement.removeEventListener('webglcontextrestored', this.onContextRestored);
     this.renderer.dispose();
+    // Libère réellement le contexte : le navigateur n'en garde que quelques-uns (globe ⇄ ville répétés).
+    this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
     this.labelLayer.remove();
   }
+
+  contextLost = false;
+  /** Notifié lors d'une perte ou d'une reprise du contexte WebGL. */
+  onContextChange: ((lost: boolean) => void) | null = null;
+  private readonly onContextLost = (e: Event) => {
+    e.preventDefault();
+    this.contextLost = true;
+    this.onContextChange?.(true);
+  };
+  private readonly onContextRestored = () => {
+    this.contextLost = false;
+    // La texture politique (canevas) doit être renvoyée au GPU.
+    this.texture.needsUpdate = true;
+    this.onContextChange?.(false);
+  };
 }

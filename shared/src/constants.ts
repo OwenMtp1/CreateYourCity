@@ -76,7 +76,7 @@ export const TRAFFIC = {
  * (poids exp(−tarif / sensibilité)) ; les automobilistes n'y vont que faute de mieux.
  */
 export const PARKING = {
-  streetSpacesPerMeter: { street: 0.08, avenue: 0.05 },
+  streetSpacesPerMeter: { street: 0.08, avenue: 0.05, bridge: 0 },
   spacesPerCarTrip: 0.12,
   /** Stationnements successifs par place occupée et par jour (recettes). */
   turnoverPerDay: 3,

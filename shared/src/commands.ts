@@ -81,6 +81,9 @@ export function validateRoad(city: CityState, type: RoadType, seg: Segment): Val
   );
   if (duplicate) return { ok: false, reason: 'Cette route existe déjà.' };
   const terrain = roadTerrain(generateTerrain(city.cityId), seg);
+  if (terrain.bridgeLength > 0 && type !== 'bridge') {
+    return { ok: false, reason: "Une rue ou une avenue ne peut pas traverser l'eau : construisez un pont." };
+  }
   const cost = Math.round(terrain.weightedLength * def.costPerMeter);
   if (city.treasury < cost) return { ok: false, reason: `Fonds insuffisants (${fmt(cost)} cr requis).` };
   return { ok: true, cost };

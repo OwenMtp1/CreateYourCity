@@ -47,9 +47,18 @@ export function GlobeView() {
     });
   };
 
+  const [generation, setGeneration] = useState(0);
+  const [glLost, setGlLost] = useState(false);
   useEffect(() => {
     const scene = new GlobeScene(ref.current!, { interactive: true });
     sceneRef.current = scene;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    scene.onContextChange = (lost) => {
+      setGlLost(lost);
+      clearTimeout(retry);
+      if (lost) retry = setTimeout(() => setGeneration((g) => g + 1), 3000);
+    };
+    setGlLost(false);
     scene.onPick = (p) => {
       setState({ focusCityId: p.cityId ?? null });
       setCountry(p.countryId ?? null);
@@ -58,8 +67,11 @@ export function GlobeView() {
     const mine = Object.values(s.myCities)[0];
     const start = CITY_BY_ID.get(s.focusCityId ?? mine?.cityId ?? '');
     if (start) scene.flyTo(start.lat, start.lon, mine ? 1.6 : 2.4);
-    return () => scene.dispose();
-  }, []);
+    return () => {
+      clearTimeout(retry);
+      scene.dispose();
+    };
+  }, [generation]);
 
   const data: GlobeData = useMemo(() => {
     const owners = new Map<string, { relation: Relation; label: string }>();
@@ -94,7 +106,7 @@ export function GlobeView() {
     };
   }, [summaries, world, player?.id, country, focusCityId, overlays]);
 
-  useEffect(() => sceneRef.current?.setData(data), [data]);
+  useEffect(() => sceneRef.current?.setData(data), [data, generation]);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -140,6 +152,7 @@ export function GlobeView() {
           </>
         )}
       </div>
+      {glLost && <div className="gl-lost glass">Affichage 3D interrompu par le navigateur — reprise en cours…</div>}
       <div className="map-credits">Données : Natural Earth (domaine public)</div>
       {(focusCityId || country) && <PlaceCard cityId={focusCityId} countryId={country} onFocus={focus} />}
     </div>
