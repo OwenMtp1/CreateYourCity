@@ -1,7 +1,7 @@
 // Actions de niveau « monde » des joueurs : diplomatie, commerce, armée, territoire, nation.
 // Le serveur valide et applique ; toutes les règles sont ici et testées.
 import { createCityState } from '../city.ts';
-import { TICKS_PER_DAY } from '../constants.ts';
+import { INDEPENDENCE, TICKS_PER_DAY } from '../constants.ts';
 import { LAW_EFFECTS, type LawId, type ProjectId } from '../sim/modifiers.ts';
 import type { CityState } from '../types.ts';
 import { CITY_BY_ID } from '../world.ts';
@@ -9,7 +9,7 @@ import { changeOwner } from './military.ts';
 import { countryName, evaluateNation, getNation } from './nations.ts';
 import {
   activeTreaty, allied, atWar, cityName, citiesOf, distanceKm, eligibleVoters, EXPANSION, MILITARY, NATION,
-  hasBuilding, NON_AGGRESSION_NOTICE_TICKS, nextId, ORGANIZATION, playerName, pushEvent, TREATY_LABEL, UNIT_REQUIRES, UNITS,
+  hasBuilding, isIndependent, NON_AGGRESSION_NOTICE_TICKS, nextId, ORGANIZATION, playerName, pushEvent, TREATY_LABEL, UNIT_REQUIRES, UNITS,
 } from './rules.ts';
 import { UNIT_TYPES, type OrganizationKind, type TreatyType, type UnitType, type World } from './types.ts';
 import { BUILDINGS } from '../catalog.ts';
@@ -42,6 +42,9 @@ export type WorldAction =
   | { type: 'leaveOrganization'; orgId: number }
   | { type: 'expelFromOrganization'; orgId: number; playerId: string }
   | { type: 'setTariff'; countryId: string; rate: number }
+  /** Sécession : la ville devient une dictature indépendante (ou réintègre son pays). */
+  | { type: 'secede'; cityId: string }
+  | { type: 'rejoinCountry'; cityId: string }
   /** Destinataire : identifiant de joueur ou « org:<id> » pour le canal d'une organisation. */
   | { type: 'sendMessage'; to: string; text: string };
 
@@ -51,6 +54,11 @@ export type ActionResult = { ok: true } | { ok: false; error: string };
 export class RuleError extends Error {}
 const fail = (msg: string): never => { throw new RuleError(msg); };
 const fmt = (v: number) => Math.round(v).toLocaleString('fr-FR');
+/** « de Paris », « d'Orléans » (élision devant une voyelle ou un h). */
+const ofCity = (cityId: string) => {
+  const n = cityName(cityId);
+  return /^[aeiouyhàâäéèêëîïôöùûü]/i.test(n) ? `d'${n}` : `de ${n}`;
+};
 
 function ownCity(world: World, player: string, cityId: string): CityState {
   const c = world.cities.get(cityId);
@@ -254,6 +262,7 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
       const mine = ownCity(world, player, action.myCityId);
       const other = world.cities.get(action.otherCityId);
       if (!other || other.ownerId === player) fail("Choisissez une ville d'un autre joueur.");
+      if (isIndependent(mine) || isIndependent(other)) fail("Une dictature indépendante ne commerce pas avec l'extérieur.");
       if (atWar(meta, player, other!.ownerId)) fail('Pas de commerce avec un ennemi.');
       const qty = Math.floor(action.qtyPerDay);
       const days = Math.floor(action.days);
@@ -451,11 +460,43 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
       const nation = requireLeader(world, player, action.countryId);
       const city = world.cities.get(action.toCityId);
       if (!city || city.countryId !== action.countryId) fail('La ville doit se trouver dans le pays.');
+      if (isIndependent(city)) fail("Cette ville a fait sécession : elle ne reçoit plus de subventions nationales.");
       const amount = Math.floor(action.amount);
       if (!(amount > 0) || amount > nation.treasury) fail('Montant invalide ou budget insuffisant.');
       nation.treasury -= amount;
       city!.treasury += amount;
       pushEvent(world, 'funds', `${countryName(action.countryId)} verse une subvention de ${fmt(amount)} cr à ${cityName(city!.cityId)}.`);
+      return;
+    }
+
+    case 'secede': {
+      const city = ownCity(world, player, action.cityId);
+      if (isIndependent(city)) fail('Cette ville est déjà indépendante.');
+      if (city.rejoinedAtTick !== undefined && world.tick - city.rejoinedAtTick < INDEPENDENCE.cooldownTicks) {
+        fail(`Réintégrée récemment : nouvelle sécession possible dans ${Math.ceil((INDEPENDENCE.cooldownTicks - (world.tick - city.rejoinedAtTick)) / 6)} h de jeu.`);
+      }
+      // Membres du pays prévenus avant la sécession (le propriétaire en fait encore partie).
+      const members = eligibleVoters(world, city.countryId);
+      city.independentSince = world.tick;
+      // Plus aucun échange avec l'extérieur : les contrats de la ville tombent.
+      meta.contracts = meta.contracts.filter((c) => c.sellerCityId !== city.cityId && c.buyerCityId !== city.cityId);
+      evaluateNation(world, city.countryId);
+      pushEvent(world, 'independence',
+        `⚑ ${name(player)} proclame l'indépendance ${ofCity(city.cityId)} : dictature indépendante, hors du pays (${countryName(city.countryId)}).`,
+        [...new Set([...members, player])]);
+      return;
+    }
+
+    case 'rejoinCountry': {
+      const city = ownCity(world, player, action.cityId);
+      if (!isIndependent(city)) fail('Cette ville fait déjà partie de son pays.');
+      const since = world.tick - city.independentSince!;
+      if (since < INDEPENDENCE.cooldownTicks) fail(`Réintégration possible dans ${Math.ceil((INDEPENDENCE.cooldownTicks - since) / 6)} h de jeu.`);
+      delete city.independentSince;
+      city.rejoinedAtTick = world.tick;
+      evaluateNation(world, city.countryId);
+      pushEvent(world, 'independence', `${name(player)} réintègre ${cityName(city.cityId)} dans son pays (${countryName(city.countryId)}).`,
+        [...new Set([...eligibleVoters(world, city.countryId), player])]);
       return;
     }
 

@@ -2,7 +2,7 @@
 // même résultat (aucun aléa, aucune horloge). Toutes les formules sont exprimées par jour de
 // jeu puis multipliées par DT_DAYS.
 import { BUILDINGS, ROADS, SERVICE_KINDS, TRANSIT_MODES, type ServiceKind, type TransitMode } from '../catalog.ts';
-import { COMMERCE, DAYS_PER_YEAR, DT_DAYS, ECONOMY, LOAN_ANNUAL_RATE, PARKING, POPULATION, TRAFFIC, TRANSIT } from '../constants.ts';
+import { COMMERCE, DAYS_PER_YEAR, DT_DAYS, ECONOMY, INDEPENDENCE, LOAN_ANNUAL_RATE, PARKING, POPULATION, TRAFFIC, TRANSIT } from '../constants.ts';
 import { segmentLength } from '../geometry.ts';
 import type { Building, BuildingEconomy, CityLayers, CityState, CityStats, SupplyLink } from '../types.ts';
 import { getLayout } from './layout.ts';
@@ -77,8 +77,14 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     powerLocal += (def.powerOutputMW ?? 0) * staffing;
     waterLocal += (def.waterOutputM3PerDay ?? 0) * staffing;
   }
-  const powerImported = Math.max(0, powerDemand - powerLocal);
-  const waterImported = Math.max(0, waterDemand - waterLocal);
+  // Ville indépendante : pas de réseau régional. Un déficit provoque des coupures qui freinent
+  // les entreprises et les services (facteur `utilitySupply`) et font fuir les habitants.
+  const isolated = mod.isolated === true;
+  const powerImported = isolated ? 0 : Math.max(0, powerDemand - powerLocal);
+  const waterImported = isolated ? 0 : Math.max(0, waterDemand - waterLocal);
+  const powerCover = isolated && powerDemand > 0 ? Math.min(1, powerLocal / powerDemand) : 1;
+  const waterCover = isolated && waterDemand > 0 ? Math.min(1, waterLocal / waterDemand) : 1;
+  const utilitySupply = Math.min(powerCover, waterCover);
 
   // --- Biens : chaque commerce vend aux habitants de son quartier, du plus proche au plus lointain ---
   const goodsDemand = population * ECONOMY.goodsDemandPerResident;
@@ -90,7 +96,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   for (const b of ops) {
     const capacity = BUILDINGS[b.type].goodsSalesCapacityPerDay;
     if (!capacity) continue;
-    let left = capacity * staffing, sales = 0;
+    let left = capacity * staffing * utilitySupply, sales = 0;
     for (const resId of layout.shopReach.get(b.id) ?? []) {
       if (left <= 1e-9) break;
       const want = (residents.get(resId) ?? 0) * ECONOMY.goodsDemandPerResident - (purchased.get(resId) ?? 0);
@@ -107,7 +113,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
 
   // --- Approvisionnement : contrats, puis usines de la ville (les plus proches d'abord), puis importations ---
   const factories = ops.filter((b) => (BUILDINGS[b.type].goodsProductionPerDay ?? 0) > 0);
-  const potentialOutput = (f: Building) => (BUILDINGS[f.type].goodsProductionPerDay ?? 0) * staffing * industryFactor;
+  const potentialOutput = (f: Building) => (BUILDINGS[f.type].goodsProductionPerDay ?? 0) * staffing * industryFactor * utilitySupply;
   const contractUsed = Math.min(sold, mod.contractIn.qty);
   const supplyPlan = (outputOf: (f: Building) => number) => {
     const total = factories.reduce((a, f) => a + outputOf(f), 0);
@@ -145,7 +151,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   }
   for (const b of ops) {
     const t = BUILDINGS[b.type].transit;
-    if (t && stationCount[t.mode] >= TRANSIT.minStationsPerMode) transitCapacity += t.capacity * staffing;
+    if (t && stationCount[t.mode] >= TRANSIT.minStationsPerMode) transitCapacity += t.capacity * staffing * utilitySupply;
   }
   const employmentRate = population > 0 ? employed / population : 0;
   const potentialShare = new Map<number, number>();
@@ -282,15 +288,19 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   const importUnit = mod.goodsImportPrice * (1 + mod.tariffRate) + COMMERCE.importHandling;
   const contractUnit = mod.contractIn.qty > 0 ? (mod.contractIn.cost + mod.contractIn.tariff) / mod.contractIn.qty : 0;
   const economy: Record<number, BuildingEconomy> = {};
-  let imported = 0, exported = 0, commercialTax = 0, industrialTax = 0;
+  let imported = 0, exported = 0, commercialTax = 0, industrialTax = 0, lostSales = 0, unsoldGoods = 0;
   for (const b of ops) {
     const def = BUILDINGS[b.type];
     const wages = def.jobs * staffing * wage;
     if (def.goodsSalesCapacityPerDay) {
-      const q = shopSold.get(b.id) ?? 0;
-      const contract = sold > 0 ? (q * contractUsed) / sold : 0;
+      const wanted = shopSold.get(b.id) ?? 0;
+      const contract = sold > 0 ? (wanted * contractUsed) / sold : 0;
       const local = localIn.get(b.id) ?? { qty: 0, cost: 0 };
-      const imp = Math.max(0, q - contract - local.qty);
+      // Sans accès au marché commun, un commerce ne vend que ce que la ville produit.
+      const missing = Math.max(0, wanted - contract - local.qty);
+      const imp = isolated ? 0 : missing;
+      const q = isolated ? wanted - missing : wanted;
+      if (isolated) lostSales += missing;
       imported += imp;
       const purchases = local.cost + contract * contractUnit + imp * importUnit;
       const revenue = q * ECONOMY.retailPrice;
@@ -298,12 +308,12 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
       const tax = city.taxes.commercial * Math.max(0, profit);
       commercialTax += tax;
       economy[b.id] = {
-        revenue, costs: purchases + wages, profit, tax, customers: shopCustomers.get(b.id) ?? 0, sold: q, local: local.qty, contract,
+        revenue, costs: purchases + wages, profit, tax, customers: (shopCustomers.get(b.id) ?? 0) * (wanted > 0 ? q / wanted : 0), sold: q, local: local.qty, contract,
         imported: imp, unitCost: q > 0 ? purchases / q : 0,
       };
     } else if (def.officeRevenue) {
       const educated = layout.educatedOffices.has(b.id);
-      const revenue = def.jobs * staffing * ECONOMY.officeRevenuePerWorker * trafficEfficiency * officeFactor *
+      const revenue = def.jobs * staffing * ECONOMY.officeRevenuePerWorker * trafficEfficiency * officeFactor * utilitySupply *
         (educated ? 1 + COMMERCE.educatedOfficeBonus : 1);
       const profit = revenue - wages;
       const tax = city.taxes.commercial * Math.max(0, profit);
@@ -313,15 +323,19 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
       const out = potentialOutput(b) * trafficEfficiency;
       const share = plan.total > 0 ? out / plan.total : 0;
       const shipped = plan.shipped.get(b.id) ?? 0;
-      const exp = Math.max(0, out - contractDelivered * share - shipped);
+      const surplus = Math.max(0, out - contractDelivered * share - shipped);
+      // Ville indépendante : le surplus ne peut pas être exporté, il reste invendu.
+      const exp = isolated ? 0 : surplus;
+      if (isolated) unsoldGoods += surplus;
       exported += exp;
       const revenue = shipped * ECONOMY.localWholesalePrice + exp * mod.goodsExportPrice + mod.contractOut.revenue * contractDeliveredRatio * share;
       const profit = revenue - wages;
       const tax = city.taxes.industrial * Math.max(0, profit);
       industrialTax += tax;
-      economy[b.id] = { revenue, costs: wages, profit, tax, produced: out, shipped, exported: exp };
+      economy[b.id] = { revenue, costs: wages, profit, tax, produced: out, shipped, exported: exp, ...(isolated ? { unsold: surplus } : {}) };
     }
   }
+  sold -= lostSales;
   // Biens achetés par contrat mais invendus : revendus au marché commun (négoce municipal).
   const contractResold = mod.contractIn.qty - contractUsed;
   const trading = contractResold * (mod.goodsExportPrice - contractUnit);
@@ -337,7 +351,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   for (const b of ops) {
     const svc = BUILDINGS[b.type].service;
     if (!svc) continue;
-    let remaining = svc.capacity * serviceCapacityFactor[svc.kind] * staffing * budgetEfficiency;
+    let remaining = svc.capacity * serviceCapacityFactor[svc.kind] * staffing * budgetEfficiency * utilitySupply;
     capacityByKind[svc.kind] += remaining;
     const initial = remaining;
     const map = served[svc.kind];
@@ -421,7 +435,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   const jobScore = workforce > 0 ? Math.min(1, jobs / workforce) : jobs > 0 ? 1 : 0;
   const serviceScore = meanCoverage;
   const bonus = (law.minimum_wage ? LAW_EFFECTS.minimum_wage.attractivenessBonus : 0) -
-    (law.conscription ? LAW_EFFECTS.conscription.attractivenessMalus : 0) - parkingMalus;
+    (law.conscription ? LAW_EFFECTS.conscription.attractivenessMalus : 0) - parkingMalus - INDEPENDENCE.blackoutMalus * (1 - utilitySupply);
   const attract = attractiveness({
     jobScore, serviceScore, residentialTax: city.taxes.residential + mod.nationalTaxRate, trafficEfficiency,
     pollution: pollutionExposure, bonus,
@@ -458,6 +472,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     pollutionExposure,
     traffic: { trips: totalTrips, efficiency: trafficEfficiency, congestedSegments },
     transit: { riders, capacity: transitCapacity, share: totalTrips > 0 ? riders / totalTrips : 0 },
+    ...(isolated ? { isolation: { powerCover, waterCover, lostSales, unsoldGoods } } : {}),
     parking: { streetSpaces, lotSpaces, demand: parkingDemand, used: parkingUsed, coverage: parkingCoverage, revenue: parkingFees },
     budget: { residentialTax, commercialTax, industrialTax, upkeep, utilityImports, loanInterest, net, nationalTax, transitFares, parkingFees },
   };

@@ -61,6 +61,8 @@ export interface CityStats {
   serviceInequality: number;
   pollutionExposure: number;
   traffic: { trips: number; efficiency: number; congestedSegments: number };
+  /** Ville indépendante : couverture électricité/eau sans réseau régional, ventes perdues, biens invendus. */
+  isolation?: { powerCover: number; waterCover: number; lostSales: number; unsoldGoods: number };
   /** Transports en commun : voyages par jour, capacité, part des déplacements. */
   transit: { riders: number; capacity: number; share: number };
   /**
@@ -107,6 +109,13 @@ export interface CityState {
   history?: HistorySample[];
   /** Paliers atteints (population, trésorerie, réussites), dans l'ordre d'obtention. */
   milestones?: MilestoneReached[];
+  /**
+   * Dictature indépendante : tick de la proclamation (absent si la ville fait partie de son pays).
+   * Ni impôt, ni lois, ni projets, ni subventions nationales ; aucun échange avec l'extérieur.
+   */
+  independentSince?: number;
+  /** Tick de la dernière réintégration dans le pays (délai avant une nouvelle sécession). */
+  rejoinedAtTick?: number;
 }
 
 export interface MilestoneReached {
@@ -163,6 +172,8 @@ export interface BuildingEconomy {
   produced?: number;
   shipped?: number;
   exported?: number;
+  /** Ville indépendante : biens produits que personne n'achète (exportation impossible). */
+  unsold?: number;
   /** Bureaux : main-d'œuvre qualifiée (école à portée). */
   educated?: boolean;
   /** Logements : bonus de valeur foncière grâce aux loisirs (0 à 0,15). */
@@ -188,4 +199,6 @@ export interface CitySummary {
   /** Arrondie à la centaine (information générale). */
   population: number;
   buildingCount: number;
+  /** Dictature indépendante (sécession du pays), signalée à tous les joueurs. */
+  independent?: boolean;
 }

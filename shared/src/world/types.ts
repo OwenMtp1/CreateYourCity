@@ -129,7 +129,7 @@ export interface MarketState {
 
 export type WorldEventKind =
   | 'war' | 'peace' | 'treaty' | 'treaty_end' | 'capture' | 'battle' | 'expansion' | 'transfer'
-  | 'election' | 'resignation' | 'impeachment' | 'law' | 'project' | 'contract' | 'recruit' | 'funds' | 'organization';
+  | 'election' | 'resignation' | 'impeachment' | 'law' | 'project' | 'contract' | 'recruit' | 'funds' | 'organization' | 'independence';
 
 export interface WorldEvent {
   id: number;

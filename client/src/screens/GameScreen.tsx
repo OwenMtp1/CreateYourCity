@@ -14,7 +14,7 @@ import { AdvisorsPanel, StatsPanel, useAdvice } from '../ui/panels/insights.tsx'
 import { BuildingInspector, BuildingsPanel } from '../ui/panels/buildings.tsx';
 import type { Building } from '@cyc/shared';
 import { Tutorial } from '../ui/Tutorial.tsx';
-import { fmtShort, useIsMobile } from '../ui/mobile.ts';
+import { fmtShort, isMobile, useIsMobile } from '../ui/mobile.ts';
 
 type Tab = 'build' | 'buildings' | 'advisors' | 'stats' | 'economy' | 'population' | 'services' | 'territory' | 'trade' | 'diplomacy' | 'army' | 'nation' | 'lobby';
 const TABS: { id: Tab; icon: string; label: string; city?: boolean }[] = [
@@ -38,7 +38,8 @@ export function GameScreen() {
   const layers = useGame((s) => (s.activeCityId ? s.layers[s.activeCityId] ?? null : null));
   const view = useGame((s) => s.view);
   const cityCount = useGame((s) => Object.keys(s.myCities).length);
-  const [tab, setTab] = useState<Tab | null>(city ? 'build' : null);
+  // Sur téléphone, la carte s'affiche d'abord en entier (le panneau masquerait la moitié de l'écran).
+  const [tab, setTab] = useState<Tab | null>(city && !isMobile() ? 'build' : null);
   const [tool, setTool] = useState<Tool>({ kind: 'select' });
   const [grid, setGrid] = useState(false);
   const [layer, setLayer] = useState<CityLayer>('none');
@@ -193,6 +194,7 @@ function MobileHud() {
             </select>
           ) : <strong className="city-name">{CITY_BY_ID.get(city.cityId)?.name}</strong>
         ) : <strong className="brand">CreateYourCity</strong>}
+        {city?.independentSince !== undefined && <span className="hud-dictator" title="Dictature indépendante">⚑</span>}
         {city && (
           <>
             <span className={city.treasury < 0 ? 'neg' : ''}>💰 {fmtShort(city.treasury)}</span>
@@ -250,6 +252,7 @@ function Hud() {
               {ids.map((id) => <option key={id} value={id}>{CITY_BY_ID.get(id)?.name}</option>)}
             </select>
           ) : <strong>{CITY_BY_ID.get(city.cityId)?.name}</strong>}
+          {city.independentSince !== undefined && <span className="hud-dictator" title="Dictature indépendante : hors du pays, sans échanges extérieurs">⚑ Dictature</span>}
           <span className={city.treasury < 0 ? 'neg' : ''} title="Trésorerie de la ville">💰 {fmtMoney(city.treasury)}</span>
           <span title="Population">👥 {fmtInt(city.population)}</span>
           {city.stats && (

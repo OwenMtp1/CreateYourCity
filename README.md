@@ -37,6 +37,12 @@ Ouvrez <http://localhost:5173> dans deux navigateurs (ou une fenêtre privée) p
    montre le bénéfice de chaque entreprise, les livraisons, importations et exportations, et l'onglet Économie le
    schéma du circuit et les entreprises en perte. Bureaux +20 % près d'une école, logements +15 % d'impôt près d'un parc,
    entretien des services selon leur utilisation, **ponts** au-dessus de l'eau.
+   **Sécession** (onglet Territoire, « ⚑ Indépendance ») : une ville devient une dictature indépendante, hors de son pays —
+   ni impôt, ni lois, ni projets, ni subventions, ni vote ; aucune importation ni exportation, contrats annulés, pas de
+   réseau régional d'électricité et d'eau (coupures si la ville ne produit pas tout elle-même). Les membres du pays sont
+   prévenus et la ville est signalée en rouge (⚑) sur le globe ; réintégration possible après un jour de jeu.
+   **Version mobile** automatique sur téléphone : barre d'onglets en bas, panneaux en feuille, construction au doigt
+   avec confirmation, croix de déplacement en vue de rue ; installable sur l'écran d'accueil.
    **Parkings** (à ciel ouvert ou à étages) gratuits ou payants, tarif réglable dans l'inspecteur ; **paliers** (population,
    trésorerie, réussites) notifiés à l'écran et listés dans les statistiques. Vue **du dessus** par défaut, **vue de rue**
    en caméra libre (ZQSD/WASD, souris, Espace/C).

@@ -72,6 +72,14 @@ export const COMMERCE = {
   leisureTaxBonus: 0.15,
 } as const;
 
+/** Dictature indépendante : délai avant de réintégrer le pays (ou d'en sortir à nouveau), effet des coupures. */
+export const INDEPENDENCE = {
+  /** Un jour de jeu entre deux changements de statut. */
+  cooldownTicks: 144,
+  /** Perte d'attractivité maximale quand l'électricité ou l'eau manque totalement. */
+  blackoutMalus: 0.25,
+} as const;
+
 /** Démographie agrégée. */
 export const POPULATION = {
   baseOccupancy: 0.3,

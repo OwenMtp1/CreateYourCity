@@ -19,6 +19,8 @@ export interface CityModifiers {
   nationalTaxRate: number;
   laws: Partial<Record<LawId, boolean>>;
   projects: Partial<Record<ProjectId, boolean>>;
+  /** Ville indépendante : ni marché commun, ni contrats, ni réseau régional d'électricité et d'eau. */
+  isolated?: boolean;
 }
 
 export const DEFAULT_MODIFIERS: CityModifiers = {

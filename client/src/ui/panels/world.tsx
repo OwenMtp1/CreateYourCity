@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { formatGameTime, TICKS_PER_DAY } from '@cyc/shared';
+import { formatGameTime, INDEPENDENCE, TICKS_PER_DAY, type CityState } from '@cyc/shared';
 import {
   LAW_LABEL, MILITARY, NATION, ORG_LABEL, TRANSPORT, TREATY_LABEL, UNIT_REQUIRES, UNITS, UNIT_TYPES,
   type OrganizationKind, type TreatyType, type UnitType, type WorldView,
@@ -47,11 +47,13 @@ export function TerritoryPanel() {
             <li key={id} className={id === activeCityId ? 'active-row' : ''}>
               <span>
                 <strong>{cityLabel(id)}</strong> <span className="muted small">{countryLabel(c.countryId)}</span>
+                {c.independentSince !== undefined && <span className="chip chip-dictator" title="Dictature indépendante">⚑ Dictature</span>}
                 <br /><span className="small">{fmtInt(c.population)} hab. · {fmtMoney(c.treasury)}</span>
               </span>
               <span className="row">
                 <button className="small-btn" onClick={() => setState({ activeCityId: id, view: 'city' })}>Construire</button>
                 <button className="small-btn" onClick={() => showOnGlobe(id)}>Globe</button>
+                <IndependenceButton city={c} />
               </span>
             </li>
           );
@@ -538,6 +540,37 @@ const PROJECT_HELP: Record<ProjectId, string> = {
   national_defense: 'Fortifications +50 %',
 };
 
+/** Proclamer l'indépendance d'une ville (dictature) ou la réintégrer dans son pays. */
+function IndependenceButton({ city }: { city: CityState }) {
+  const tick = useGame((s) => s.tick);
+  const country = countryLabel(city.countryId);
+  const hours = (ticks: number) => Math.ceil(ticks / 6);
+  if (city.independentSince !== undefined) {
+    const wait = INDEPENDENCE.cooldownTicks - (tick - city.independentSince);
+    return (
+      <button className="small-btn" disabled={wait > 0} title={wait > 0 ? `Possible dans ${hours(wait)} h de jeu` : `Réintégrer ${country}`}
+        onClick={() => { if (confirm(`Réintégrer ${cityLabel(city.cityId)} à ${country} ?\n\nLa ville paiera de nouveau l'impôt national, suivra les lois du pays, retrouvera le marché commun, le réseau régional et les subventions, et vous redeviendrez électeur.`)) void client.action({ type: 'rejoinCountry', cityId: city.cityId }); }}>
+        {wait > 0 ? `Réintégrer (${hours(wait)} h)` : 'Réintégrer'}
+      </button>
+    );
+  }
+  const wait = city.rejoinedAtTick !== undefined ? INDEPENDENCE.cooldownTicks - (tick - city.rejoinedAtTick) : 0;
+  return (
+    <button className="small-btn danger" disabled={wait > 0} title={wait > 0 ? `Possible dans ${hours(wait)} h de jeu` : 'Proclamer une dictature indépendante'}
+      onClick={() => {
+        if (confirm(`Proclamer l'indépendance de ${cityLabel(city.cityId)} ?\n\n`
+          + `⚑ La ville devient une dictature indépendante, hors de ${country} :\n`
+          + `• plus d'impôt national ni de droits de douane, les lois et projets du pays ne s'appliquent plus ;\n`
+          + `• plus aucune subvention, et vous ne votez plus (ni ne dirigez) dans ce pays ;\n`
+          + `• plus d'importations ni d'exportations, contrats annulés, plus d'électricité ni d'eau du réseau régional : la ville doit tout produire elle-même ;\n`
+          + `• tous les membres de ${country} en sont avertis et la ville est signalée sur le globe.\n\n`
+          + `Réintégration possible après un jour de jeu.`)) void client.action({ type: 'secede', cityId: city.cityId });
+      }}>
+      {wait > 0 ? `⚑ (${hours(wait)} h)` : '⚑ Indépendance'}
+    </button>
+  );
+}
+
 export function NationPanel() {
   const world = useGame((s) => s.world);
   const player = useGame((s) => s.player);
@@ -561,6 +594,8 @@ export function NationPanel() {
 
 function NationDetail({ world, me, countryId }: { world: WorldView; me: string; countryId: string }) {
   const players = usePlayers();
+  const summaries = useGame((s) => s.summaries);
+  const seceded = summaries.filter((c) => c.countryId === countryId && c.independent);
   const nation = world.nations.find((n) => n.countryId === countryId);
   const voters = nation?.voters ?? [me];
   const isLeader = nation?.leaderId === me;
@@ -579,7 +614,20 @@ function NationDetail({ world, me, countryId }: { world: WorldView; me: string; 
   return (
     <>
       <h3>🏛️ {countryLabel(countryId)}</h3>
-      <Row label="Dirigeant national" value={nation?.leaderId ? nameOf(players, nation.leaderId) : 'Aucun : chaque ville est indépendante'} />
+      {!voters.includes(me) && (
+        <p className="small dictator-note">⚑ Vos villes de ce pays ont fait sécession : vous ne votez plus et n'êtes plus soumis à ses décisions.</p>
+      )}
+      {seceded.length > 0 && (
+        <div className="dictator-list">
+          <p className="small"><strong>⚑ Dictatures indépendantes ({seceded.length})</strong> — hors du pays : ni impôt, ni vote, ni échanges.</p>
+          <ul className="list">
+            {seceded.map((c) => (
+              <li key={c.cityId}><span>⚑ {cityLabel(c.cityId)}</span><span className="small muted">{c.ownerName} · ~{fmtInt(c.population)} hab.</span></li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <Row label="Dirigeant national" value={nation?.leaderId ? nameOf(players, nation.leaderId) : 'Aucun dirigeant élu'} />
       <Row label="Électeurs (propriétaires de villes)" value={`${voters.length} · majorité ${majority}`} />
       <Row label="Budget national" value={fmtMoney(nation?.treasury ?? 0)} />
       <Row label="Impôt national" value={fmtPct(nation?.taxRate ?? 0, 1)} />

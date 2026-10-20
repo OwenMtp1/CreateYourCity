@@ -74,8 +74,8 @@ export function GlobeView() {
   }, [generation]);
 
   const data: GlobeData = useMemo(() => {
-    const owners = new Map<string, { relation: Relation; label: string }>();
-    for (const s of summaries) owners.set(s.cityId, { relation: relationOf(world, player?.id, s.ownerId), label: s.ownerName });
+    const owners = new Map<string, { relation: Relation; label: string; independent?: boolean }>();
+    for (const s of summaries) owners.set(s.cityId, { relation: relationOf(world, player?.id, s.ownerId), label: s.ownerName, independent: !!s.independent });
     const armies = (world?.armies ?? []).map((a) => ({
       id: a.id,
       position: a.position,
@@ -142,6 +142,7 @@ export function GlobeView() {
       <div className="map-legend glass">
         <span><i className="lg lg-occupied" /> Ville occupée</span>
         <span><i className="lg lg-free" /> Ville libre</span>
+        {summaries.some((s) => s.independent) && <span><i className="lg lg-dictator" /> ⚑ Dictature indépendante</span>}
         <label className="check map-toggle">
           <input type="checkbox" checked={overlays} onChange={toggleOverlays} /> Militaire et commerce
         </label>
@@ -197,7 +198,13 @@ function PlaceCard({ cityId, countryId, onFocus }: { cityId: string | null; coun
           <div className="muted">{country?.nameFr}{city.capital ? ' · capitale' : ''} · {fmtInt(city.pop)} hab. réels</div>
           {owner ? (
             <>
-              <p>Dirigée par <strong className={`rel-${relation}`}>{owner.ownerName}</strong>{relation === 'mine' ? ' (vous)' : ''}</p>
+              {owner.independent && (
+                <div className="dictator-banner">
+                  <strong>⚑ Dictature indépendante</strong>
+                  <span className="small">A fait sécession de {country?.nameFr ?? 'son pays'} : ni impôt national, ni vote, ni échanges avec l'extérieur.</span>
+                </div>
+              )}
+              <p>{owner.independent ? 'Dictateur' : 'Dirigée par'} <strong className={`rel-${relation}`}>{owner.ownerName}</strong>{relation === 'mine' ? ' (vous)' : ''}</p>
               <div className="small">~{fmtInt(owner.population)} habitants · {owner.buildingCount} constructions</div>
               {detail && (
                 <div className="small kv-grid">

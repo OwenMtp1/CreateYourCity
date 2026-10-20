@@ -236,6 +236,11 @@ export function changeOwner(world: World, city: CityState, newOwner: string) {
   const meta = world.meta;
   city.ownerId = newOwner;
   city.ownerName = playerName(meta, newOwner);
+  // Une dictature conquise ou cédée réintègre son pays.
+  if (city.independentSince !== undefined) {
+    delete city.independentSince;
+    city.rejoinedAtTick = world.tick;
+  }
   // Contrats et cessions en cours liés à cette ville deviennent caducs.
   meta.contracts = meta.contracts.filter((c) => c.sellerCityId !== city.cityId && c.buyerCityId !== city.cityId);
   meta.treaties = meta.treaties.filter((t) => !(t.type === 'city_transfer' && t.terms?.cityId === city.cityId));

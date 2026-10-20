@@ -292,6 +292,8 @@ export class GameServer {
           const res = applyWorldAction(world.world, player.id, msg.action, new Date(this.now()));
           if (!res.ok) return reply(false, res.error);
           this.syncLobby(world);
+          // Le statut de la ville (indépendance) fait partie de son état : on renvoie la ville complète.
+          if (msg.action.type === 'secede' || msg.action.type === 'rejoinCountry') this.sendCity(world, msg.action.cityId);
           reply(true);
           this.requestSave(world);
           if (msg.action.type !== 'sendMessage') await this.log(world, player.id, msg.action.type, msg.action);

@@ -34,6 +34,7 @@ export function summarizeCity(city: CityState): CitySummary {
     ownerName: city.ownerName,
     population: Math.round(city.population / 100) * 100,
     buildingCount: city.buildings.length,
+    ...(city.independentSince !== undefined ? { independent: true } : {}),
   };
 }
 

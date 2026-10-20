@@ -22,9 +22,19 @@ export function GoodsCircuit() {
   const factories = city.buildings.filter((b) => BUILDINGS[b.type].goodsProductionPerDay).length;
   const shops = city.buildings.filter((b) => BUILDINGS[b.type].goodsSalesCapacityPerDay).length;
 
+  const iso = city.stats!.isolation;
   return (
     <div className="circuit">
       <h4>Circuit des biens (par jour)</h4>
+      {iso && (
+        <div className="dictator-banner">
+          <strong>⚑ Dictature indépendante : autarcie</strong>
+          <span className="small">
+            Ni importations ni exportations, pas de réseau régional. Électricité {Math.round(iso.powerCover * 100)} % · eau {Math.round(iso.waterCover * 100)} %
+            {iso.lostSales > 0.5 ? ` · ${fmtInt(iso.lostSales)} ventes perdues/j` : ''}{iso.unsoldGoods > 0.5 ? ` · ${fmtInt(iso.unsoldGoods)} biens invendus/j` : ''}
+          </span>
+        </div>
+      )}
       <div className="circuit-grid">
         <div className={`node ${factories ? '' : 'empty'}`}>
           <span className="node-icon">🏭</span>

@@ -86,3 +86,10 @@ Toutes ces règles sont dans `shared/src/world/` (constantes dans `world/rules.t
 - **Effets de voisinage** : bureaux à portée d'une école +20 % de chiffre d'affaires ; logements couverts en loisirs
   jusqu'à +15 % d'impôt sur le revenu ; entretien des services publics 40 % fixe + 60 % selon l'utilisation de leur
   capacité nominale ; tours d'habitation plus gourmandes en électricité et en eau par logement.
+- **Dictature indépendante** (`secede` / `rejoinCountry`, `INDEPENDENCE` dans `shared/src/constants.ts`) : l'état est
+  porté par la ville (`independentSince`). Ses modificateurs ignorent le pays (impôt, droits de douane, lois, projets à
+  zéro) et la marquent isolée : pas de marché commun (importations et exportations impossibles, ventes perdues et
+  surplus invendus comptés), contrats annulés et refusés, pas de réseau régional (la couverture électricité/eau locale
+  bride entreprises, services et transports, jusqu'à −25 points d'attractivité). Le propriétaire ne vote plus dans ce
+  pays au titre de cette ville. Un jour de jeu entre deux changements de statut ; une ville conquise ou cédée réintègre
+  son pays. Événement public adressé à tous les électeurs du pays.

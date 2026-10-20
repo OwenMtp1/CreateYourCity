@@ -185,11 +185,16 @@ export function citiesOf(world: World, playerId: string): string[] {
   return [...world.cities.values()].filter((c) => c.ownerId === playerId).map((c) => c.cityId).sort();
 }
 
-/** Électeurs d'un pays : joueurs possédant au moins une ville dans ce pays. */
+/** Électeurs d'un pays : joueurs possédant au moins une ville du pays qui n'a pas fait sécession. */
 export function eligibleVoters(world: World, countryId: string): string[] {
   const set = new Set<string>();
-  for (const c of world.cities.values()) if (c.countryId === countryId) set.add(c.ownerId);
+  for (const c of world.cities.values()) if (c.countryId === countryId && c.independentSince === undefined) set.add(c.ownerId);
   return [...set].sort();
+}
+
+/** Dictature indépendante : ville sortie de son pays (ni impôt, ni lois, ni échanges extérieurs). */
+export function isIndependent(city: { independentSince?: number } | undefined): boolean {
+  return city?.independentSince !== undefined;
 }
 
 export function playerName(meta: WorldMeta, id: string): string {

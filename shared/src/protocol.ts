@@ -53,6 +53,8 @@ export const worldActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('expelFromOrganization'), orgId: z.number().int(), playerId: id }),
   z.object({ type: z.literal('setTariff'), countryId: id, rate: z.number().finite() }),
   z.object({ type: z.literal('sendMessage'), to: id, text: z.string().trim().min(1).max(500) }),
+  z.object({ type: z.literal('secede'), cityId: id }),
+  z.object({ type: z.literal('rejoinCountry'), cityId: id }),
 ]) satisfies z.ZodType<WorldAction>;
 
 const coord = z.number().finite().min(-10_000).max(10_000);

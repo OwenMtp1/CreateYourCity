@@ -26,6 +26,10 @@ export function cityModifiers(world: World, cityId: string): CityModifiers {
   const meta = world.meta;
   const prices = marketPrices(meta.market.price);
   const log = logistics(city);
+  // Dictature indépendante : hors du pays (ni impôt, ni lois, ni projets) et coupée de l'extérieur.
+  if (city.independentSince !== undefined) {
+    return { ...DEFAULT_MODIFIERS, goodsImportPrice: prices.buy, goodsExportPrice: prices.sell, isolated: true };
+  }
   const nation = meta.nations[city.countryId];
   const tariffRate = nation?.tariff ?? 0;
   const contractIn = { qty: 0, cost: 0, tariff: 0 };

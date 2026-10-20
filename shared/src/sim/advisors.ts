@@ -113,6 +113,22 @@ export function adviseCity(city: CityState, layers: CityLayers | null): Advice[]
   if (waterImportCost > BUILDINGS.water_tower.upkeepPerDay * 1.5) {
     add({ id: 'water', severity: 'info', title: `Eau importée : ${fmt(waterImportCost)} cr/jour`, detail: `Un château d'eau (2 000 m³/j, entretien ${fmt(BUILDINGS.water_tower.upkeepPerDay)} cr/j) serait rentable.`, build: 'water_tower' });
   }
+  // Dictature indépendante : aucun réseau régional ni marché, la ville doit tout produire elle-même.
+  if (s.isolation) {
+    const iso = s.isolation;
+    if (iso.powerCover < 0.999) {
+      add({ id: 'blackout-power', severity: 'critical', title: `Coupures d'électricité : ${pct(iso.powerCover)} des besoins couverts`, detail: `Ville indépendante : plus de réseau régional. Les entreprises et services tournent au ralenti et les habitants partent. Construisez une centrale (15 MW).`, build: 'power_plant' });
+    }
+    if (iso.waterCover < 0.999) {
+      add({ id: 'blackout-water', severity: 'critical', title: `Pénurie d'eau : ${pct(iso.waterCover)} des besoins couverts`, detail: `Ville indépendante : plus d'eau du réseau régional. Construisez un château d'eau (2 000 m³/j).`, build: 'water_tower' });
+    }
+    if (iso.lostSales > 5) {
+      add({ id: 'isolated-shops', severity: 'warning', title: `${fmt(iso.lostSales)} ventes perdues par jour`, detail: `Sans importations, vos commerces ne vendent que ce que vos usines produisent. Construisez une usine près des commerces.`, build: 'factory' });
+    }
+    if (iso.unsoldGoods > 20) {
+      add({ id: 'isolated-factories', severity: 'info', title: `${fmt(iso.unsoldGoods)} biens invendus par jour`, detail: `Exportation impossible : construisez des commerces près des logements pour écouler la production.`, build: 'shop' });
+    }
+  }
   // Circuit des biens : habitants sans commerce, importations coûteuses, usines qui bradent leurs surplus.
   const g = s.goods;
   const unserved = g.unserved ?? Math.max(0, g.demand - g.sold);

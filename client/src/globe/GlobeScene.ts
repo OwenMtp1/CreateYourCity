@@ -24,7 +24,7 @@ export interface GlobeArmy {
 }
 
 export interface GlobeData {
-  owners: Map<string, { relation: Relation; label: string }>;
+  owners: Map<string, { relation: Relation; label: string; independent?: boolean }>;
   playedCountries: Set<string>;
   selectedCountry: string | null;
   selectedCity: string | null;
@@ -43,8 +43,9 @@ export interface GlobePick { cityId?: string; countryId?: string }
 interface CountryShape { id: string; feature: GeoPermissibleObjects }
 
 const RELATION_COLOR: Record<Relation, number> = { mine: 0xfbbf24, ally: 0x34d399, enemy: 0xf87171, other: 0xa78bfa };
-/** Couleur unique des villes occupées par un joueur. */
+/** Couleur unique des villes occupées par un joueur ; rouge pour les dictatures indépendantes. */
 const OCCUPIED_COLOR = 0x22c55e;
+const DICTATOR_COLOR = 0xef4444;
 const TEX_W = 4096;
 const TEX_H = 2048;
 
@@ -320,7 +321,7 @@ export class GlobeScene {
     const c = new THREE.Color();
     WORLD_CITIES.forEach((city, i) => {
       const owner = data.owners.get(city.id);
-      if (owner) c.setHex(OCCUPIED_COLOR);
+      if (owner) c.setHex(owner.independent ? DICTATOR_COLOR : OCCUPIED_COLOR);
       else if (city.id === data.selectedCity) c.setHex(0xffffff);
       else c.setRGB(0.88, 0.9, 0.94);
       color.setXYZ(i, c.r, c.g, c.b);
@@ -548,7 +549,7 @@ export class GlobeScene {
     WORLD_CITIES.forEach((c, i) => { if (c.id === this.data.selectedCity) place(i, c.name, 'sel'); });
     WORLD_CITIES.forEach((c, i) => {
       const o = this.data.owners.get(c.id);
-      if (o && c.id !== this.data.selectedCity) place(i, `${c.name} · ${o.label}`, o.relation === 'mine' ? 'occupied mine' : 'occupied');
+      if (o && c.id !== this.data.selectedCity) place(i, `${o.independent ? '⚑ ' : ''}${c.name} · ${o.label}`, `occupied${o.relation === 'mine' ? ' mine' : ''}${o.independent ? ' independent' : ''}`);
     });
     WORLD_CITIES.forEach((c, i) => {
       if (c.rank <= labelRank && !this.data.owners.has(c.id) && c.id !== this.data.selectedCity) place(i, c.name, '');
