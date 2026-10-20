@@ -2,6 +2,7 @@
 // armées et sièges. Classe impérative indépendante de React.
 import { geoContains, geoEquirectangular, geoPath, type GeoPermissibleObjects } from 'd3-geo';
 import * as THREE from 'three';
+import { captureMode, expose } from '../automation.ts';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { feature } from 'topojson-client';
 import type { Topology } from 'topojson-specification';
@@ -111,7 +112,7 @@ export class GlobeScene {
 
   constructor(private readonly container: HTMLElement, opts: { interactive: boolean }) {
     const low = getQuality() === 'low';
-    this.renderer = new THREE.WebGLRenderer({ antialias: !low, alpha: false });
+    this.renderer = new THREE.WebGLRenderer({ antialias: !low, alpha: false, preserveDrawingBuffer: captureMode() });
     this.renderer.setPixelRatio(low ? 1 : Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
@@ -217,6 +218,7 @@ export class GlobeScene {
     this.resize();
     void this.loadGeo();
     this.animate();
+    expose('globe', this);
   }
 
   private async loadGeo() {

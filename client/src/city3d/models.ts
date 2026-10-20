@@ -1,6 +1,7 @@
 // Modèles 3D procéduraux des constructions (aucun fichier externe). Matériaux et textures
 // partagés ; les fenêtres s'illuminent la nuit via l'intensité émissive.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BUILDINGS, mulberry32, hashString, type Building, type BuildingType } from '@cyc/shared';
 
 type WindowStyle = 'residential' | 'glass' | 'office' | 'shop' | 'brick' | 'plain';
@@ -418,7 +419,48 @@ export function buildModel(type: BuildingType, seed: number): { group: THREE.Gro
       break;
     }
   }
-  return { group: g, info };
+  return { group: mergeByMaterial(g), info };
+}
+
+/**
+ * Fusionne les éléments d'un modèle qui partagent un matériau (un appel de dessin par matériau
+ * au lieu d'un par élément). Les maillages multi-matériaux sont conservés tels quels.
+ */
+function mergeByMaterial(group: THREE.Group): THREE.Group {
+  group.updateMatrixWorld(true);
+  const buckets = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  const keep: THREE.Object3D[] = [];
+  group.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    if (Array.isArray(mesh.material)) {
+      keep.push(mesh);
+      return;
+    }
+    const g = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
+    const flat = g.index ? g.toNonIndexed() : g;
+    for (const name of Object.keys(flat.attributes)) if (!['position', 'normal', 'uv'].includes(name)) flat.deleteAttribute(name);
+    if (!flat.getAttribute('uv')) flat.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(flat.getAttribute('position').count * 2), 2));
+    const list = buckets.get(mesh.material) ?? [];
+    list.push(flat);
+    buckets.set(mesh.material, list);
+  });
+  const out = new THREE.Group();
+  for (const mesh of keep) {
+    const m = mesh as THREE.Mesh;
+    const clone = new THREE.Mesh(m.geometry, m.material);
+    m.matrixWorld.decompose(clone.position, clone.quaternion, clone.scale);
+    clone.castShadow = clone.receiveShadow = true;
+    out.add(clone);
+  }
+  for (const [material, geos] of buckets) {
+    const merged = mergeGeometries(geos);
+    if (!merged) continue;
+    const m = new THREE.Mesh(merged, material);
+    m.castShadow = m.receiveShadow = true;
+    out.add(m);
+  }
+  return out;
 }
 
 /** Rotation d'un bâtiment (emprise tournée de 90°). */

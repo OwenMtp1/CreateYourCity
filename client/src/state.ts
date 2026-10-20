@@ -1,5 +1,6 @@
 // État global du client (copie des données reçues du serveur, qui reste l'autorité).
 import { useSyncExternalStore } from 'react';
+import { expose } from './automation.ts';
 import type { ChatMessage, CityLayers, CityState, CitySummary, ClockInfo, LobbyInfo } from '@cyc/shared';
 import type { WorldView } from '@cyc/shared/game';
 
@@ -59,3 +60,6 @@ export function toast(text: string, kind: Toast['kind'] = 'info') {
 
 /** Ville active (vue de construction et panneaux municipaux). */
 export const activeCity = (s: GameState): CityState | null => (s.activeCityId ? s.myCities[s.activeCityId] ?? null : null);
+
+expose('state', getState);
+expose('setState', setState);

@@ -1,7 +1,9 @@
 // Scène 3D d'une ville : terrain, eau, ciel dynamique (cycle jour/nuit lié au temps de jeu),
 // routes, bâtiments procéduraux, arbres, couches d'information et aperçu de construction.
 import * as THREE from 'three';
+import { captureMode, expose } from '../automation.ts';
 import { MapControls } from 'three/addons/controls/MapControls.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import {
   BUILDINGS, CITY_SIZE_M, footprint, generateTerrain, hashString, mulberry32, REGIONAL_ACCESS, ROADS, segmentLength,
@@ -51,12 +53,13 @@ export class CityScene {
   private disposed = false;
   private readonly timer = new THREE.Timer();
   private lastSkyHour = -1;
+  private lastEnvHour = -1;
   private night = 0;
 
   private readonly low = getQuality() === 'low';
 
   constructor(private readonly container: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: !this.low });
+    this.renderer = new THREE.WebGLRenderer({ antialias: !this.low, preserveDrawingBuffer: captureMode() });
     this.renderer.setPixelRatio(this.low ? 1 : Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = !this.low;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -106,6 +109,7 @@ export class CityScene {
     this.resize();
     this.setTimeOfDay(11, false);
     this.animate();
+    expose('city', this);
   }
 
   /** Coordonnées ville (m) du point du sol sous le curseur. */
@@ -125,7 +129,11 @@ export class CityScene {
     return h / (2 * d * Math.tan((this.camera.fov * Math.PI) / 360));
   }
 
-  setCity(city: CityState, layers: CityLayers | null, layer: CityLayer, selected: number | null) {
+  /** Couche imposée (automatisation, bande-annonce). */
+  layerOverride: CityLayer | null = null;
+
+  setCity(city: CityState, layers: CityLayers | null, requestedLayer: CityLayer, selected: number | null) {
+    const layer = this.layerOverride ?? requestedLayer;
     if (city.cityId !== this.cityId) this.loadTerrain(city.cityId);
     // Bâtiments : ajouts, suppressions.
     const seen = new Set<number>();
@@ -454,88 +462,119 @@ export class CityScene {
     access.add(edge);
   }
 
+  /** Plage de sommets de chaque route dans la géométrie fusionnée de l'asphalte (couleur par route). */
+  private roadRanges = new Map<number, { start: number; count: number }>();
+  private asphaltMesh: THREE.Mesh | null = null;
+  private roadSegs = new Map<number, { x1: number; y1: number; x2: number; y2: number; width: number }>();
+
+  /**
+   * Routes fusionnées en quelques maillages (asphalte, bordures, marquages, lampadaires instanciés) :
+   * quelques appels de dessin au lieu de plusieurs par tronçon.
+   */
   private rebuildRoads(city: CityState, layers: CityLayers | null, layer: CityLayer) {
     for (const o of [...this.roadGroup.children]) {
       o.removeFromParent();
-      o.traverse((c) => {
-        const g = (c as THREE.Mesh).geometry;
-        if (g && !g.userData.shared) g.dispose();
-      });
+      const mesh = o as THREE.Mesh;
+      if (mesh.geometry && !mesh.geometry.userData.shared) mesh.geometry.dispose();
     }
-    const lineTex = dashTexture();
+    this.roadRanges.clear();
+    this.roadSegs.clear();
+    this.asphaltMesh = null;
+    const asphalt: THREE.BufferGeometry[] = [];
+    const curbs: THREE.BufferGeometry[] = [];
+    const marks: Record<'white' | 'yellow', THREE.BufferGeometry[]> = { white: [], yellow: [] };
+    const lamps: THREE.Matrix4[] = [];
+    let vertexCursor = 0;
+    const place = (g: THREE.BufferGeometry, r: { x1: number; y1: number; x2: number; y2: number }, along: number, side: number, y: number) => {
+      const angle = Math.atan2(r.y2 - r.y1, r.x2 - r.x1);
+      const m = new THREE.Matrix4()
+        .makeTranslation((r.x1 + r.x2) / 2 - HALF, y, (r.y1 + r.y2) / 2 - HALF)
+        .multiply(new THREE.Matrix4().makeRotationY(-angle))
+        .multiply(new THREE.Matrix4().makeTranslation(along, 0, side))
+        .multiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+      return g.applyMatrix4(m);
+    };
     for (const r of city.roads) {
       const def = ROADS[r.type];
       const len = segmentLength(r);
-      const angle = Math.atan2(r.y2 - r.y1, r.x2 - r.x1);
-      const cx = (r.x1 + r.x2) / 2 - HALF;
-      const cz = (r.y1 + r.y2) / 2 - HALF;
-      const group = new THREE.Group();
-      group.position.set(cx, 0, cz);
-      group.rotation.y = -angle;
-      group.userData.roadId = r.id;
-      const asphaltMat = new THREE.MeshStandardMaterial({ color: 0x3b3f45, roughness: 0.92 });
-      const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(len, def.width), asphaltMat);
-      asphalt.rotation.x = -Math.PI / 2;
-      asphalt.position.y = 0.18;
-      asphalt.receiveShadow = true;
-      group.add(asphalt);
-      // Raccords arrondis aux extrémités : jonctions et virages propres.
-      for (const end of [-1, 1]) {
-        const cap = new THREE.Mesh(sharedGeometry(`cap:${def.width}`, () => new THREE.CircleGeometry(def.width / 2, 24)), asphaltMat);
-        cap.rotation.x = -Math.PI / 2;
-        cap.position.set((end * len) / 2, 0.185, 0);
-        cap.receiveShadow = true;
-        group.add(cap);
-      }
+      this.roadSegs.set(r.id, { ...r, width: def.width });
+      // Asphalte + raccords arrondis aux extrémités (jonctions et virages propres).
+      const parts = [
+        place(new THREE.PlaneGeometry(len, def.width), r, 0, 0, 0.18),
+        place(new THREE.CircleGeometry(def.width / 2, 20), r, -len / 2, 0, 0.185),
+        place(new THREE.CircleGeometry(def.width / 2, 20), r, len / 2, 0, 0.185),
+      ].map((g) => g.toNonIndexed());
+      const merged = mergeGeometries(parts)!;
+      merged.deleteAttribute('uv');
+      const count = merged.getAttribute('position').count;
+      this.roadRanges.set(r.id, { start: vertexCursor, count });
+      vertexCursor += count;
+      asphalt.push(merged);
       // Bordures et marquages s'arrêtent avant les carrefours.
       const inner = Math.max(0, len - def.width * 1.2);
-      const curbMat = solid(0xb9bcc0);
-      for (const side of [-1, 1]) {
-        if (inner < 1) break;
-        const curb = new THREE.Mesh(new THREE.PlaneGeometry(inner, 1.4), curbMat);
-        curb.rotation.x = -Math.PI / 2;
-        curb.position.set(0, 0.2, side * (def.width / 2 - 0.7));
-        curb.receiveShadow = true;
-        group.add(curb);
+      if (inner >= 1) {
+        for (const side of [-1, 1]) curbs.push(place(new THREE.PlaneGeometry(inner, 1.4), r, 0, side * (def.width / 2 - 0.7), 0.2).toNonIndexed());
+        const line = new THREE.PlaneGeometry(inner, r.type === 'avenue' ? 0.9 : 0.5);
+        const uv = line.getAttribute('uv') as THREE.BufferAttribute;
+        for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * Math.max(1, inner / 12));
+        marks[r.type === 'avenue' ? 'yellow' : 'white'].push(place(line, r, 0, 0, 0.22).toNonIndexed());
       }
-      const marking = lineTex.clone();
-      marking.repeat.set(Math.max(1, inner / 12), 1);
-      marking.needsUpdate = true;
-      const line = new THREE.Mesh(
-        new THREE.PlaneGeometry(Math.max(0.01, inner), r.type === 'avenue' ? 0.9 : 0.5),
-        new THREE.MeshBasicMaterial({ map: marking, transparent: true, color: r.type === 'avenue' ? 0xfacc15 : 0xffffff }),
-      );
-      line.rotation.x = -Math.PI / 2;
-      line.position.y = 0.22;
-      group.add(line);
-      this.roadGroup.add(group);
       // Lampadaires tous les 40 m, d'un seul côté.
       const n = Math.floor(len / 40);
+      const angle = Math.atan2(r.y2 - r.y1, r.x2 - r.x1);
       for (let k = 0; k <= n; k++) {
         const along = -len / 2 + (n ? (k * len) / n : len / 2);
-        const lamp = new THREE.Group();
-        const pole = new THREE.Mesh(sharedGeometry('lamp-pole', () => new THREE.CylinderGeometry(0.12, 0.15, 6, 5)), solid(0x4b5563));
-        pole.position.y = 3;
-        const bulb = new THREE.Mesh(sharedGeometry('lamp-bulb', () => new THREE.SphereGeometry(0.45, 8, 6)), this.lampMaterial);
-        bulb.position.y = 6.1;
-        lamp.add(pole, bulb);
-        lamp.position.set(along, 0, def.width / 2 + 0.6);
-        group.add(lamp);
+        const base = new THREE.Matrix4()
+          .makeTranslation((r.x1 + r.x2) / 2 - HALF, 0, (r.y1 + r.y2) / 2 - HALF)
+          .multiply(new THREE.Matrix4().makeRotationY(-angle))
+          .multiply(new THREE.Matrix4().makeTranslation(along, 0, def.width / 2 + 0.6));
+        lamps.push(base);
       }
+    }
+    if (asphalt.length) {
+      const geo = mergeGeometries(asphalt)!;
+      geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(geo.getAttribute('position').count * 3), 3));
+      this.asphaltMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 }));
+      this.asphaltMesh.receiveShadow = true;
+      this.roadGroup.add(this.asphaltMesh);
+    }
+    if (curbs.length) {
+      const m = new THREE.Mesh(mergeGeometries(curbs)!, solid(0xb9bcc0));
+      m.receiveShadow = true;
+      this.roadGroup.add(m);
+    }
+    const tex = dashTexture();
+    for (const [color, list] of [[0xffffff, marks.white], [0xfacc15, marks.yellow]] as const) {
+      if (!list.length) continue;
+      this.roadGroup.add(new THREE.Mesh(mergeGeometries(list)!, new THREE.MeshBasicMaterial({ map: tex, transparent: true, color })));
+    }
+    if (lamps.length) {
+      const poles = new THREE.InstancedMesh(sharedGeometry('lamp-pole', () => new THREE.CylinderGeometry(0.12, 0.15, 6, 5)), solid(0x4b5563), lamps.length);
+      const bulbs = new THREE.InstancedMesh(sharedGeometry('lamp-bulb', () => new THREE.SphereGeometry(0.45, 8, 6)), this.lampMaterial, lamps.length);
+      lamps.forEach((m, i) => {
+        poles.setMatrixAt(i, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 3, 0)));
+        bulbs.setMatrixAt(i, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 6.1, 0)));
+      });
+      poles.castShadow = !this.low;
+      this.roadGroup.add(poles, bulbs);
     }
     this.colorRoads(city, layers, layer);
   }
 
+  /** Couleur de l'asphalte par route : trafic, ou route non raccordée. */
   private colorRoads(city: CityState, layers: CityLayers | null, layer: CityLayer) {
-    for (const g of this.roadGroup.children) {
-      const id = g.userData.roadId as number;
-      const asphalt = g.children[0] as THREE.Mesh;
-      const mat = asphalt.material as THREE.MeshStandardMaterial;
-      const connected = layers?.roadConnected[id] ?? true;
-      if (layer === 'traffic') mat.color.copy(ramp(1 - Math.min(1.2, layers?.roadLoad[id] ?? 0) / 1.2));
-      else mat.color.setHex(connected ? 0x3b3f45 : 0x6b4a3a);
+    if (!this.asphaltMesh) return;
+    const attr = this.asphaltMesh.geometry.getAttribute('color') as THREE.BufferAttribute;
+    const c = new THREE.Color();
+    for (const r of city.roads) {
+      const range = this.roadRanges.get(r.id);
+      if (!range) continue;
+      const connected = layers?.roadConnected[r.id] ?? true;
+      if (layer === 'traffic') c.copy(ramp(1 - Math.min(1.2, layers?.roadLoad[r.id] ?? 0) / 1.2));
+      else c.setHex(connected ? 0x3b3f45 : 0x6b4a3a);
+      for (let i = range.start; i < range.start + range.count; i++) attr.setXYZ(i, c.r, c.g, c.b);
     }
-    void city;
+    attr.needsUpdate = true;
   }
 
   /** Arbres décoratifs sur les terrains libres (plus denses sur les collines). */
@@ -695,10 +734,13 @@ export class CityScene {
           this.previewGroup.add(helper);
         }
       } else {
-        const g = this.roadGroup.children.find((x) => x.userData.roadId === p.target!.id);
-        if (g) {
-          const box = new THREE.Box3().setFromObject(g);
-          this.previewGroup.add(new THREE.Box3Helper(box.expandByScalar(1), new THREE.Color(0xef4444)));
+        const r = this.roadSegs.get(p.target.id);
+        if (r) {
+          const box = new THREE.Box3(
+            new THREE.Vector3(Math.min(r.x1, r.x2) - HALF - r.width / 2, 0, Math.min(r.y1, r.y2) - HALF - r.width / 2),
+            new THREE.Vector3(Math.max(r.x1, r.x2) - HALF + r.width / 2, 3, Math.max(r.y1, r.y2) - HALF + r.width / 2),
+          );
+          this.previewGroup.add(new THREE.Box3Helper(box, new THREE.Color(0xef4444)));
         }
       }
     }
@@ -719,8 +761,11 @@ export class CityScene {
   }
 
   /** Heure de jeu (0–24) : position du soleil, éclairage, fenêtres et lampadaires. */
+  /** Heure imposée (automatisation, bande-annonce) : ignore l'heure du jeu tant qu'elle est définie. */
+  timeOverride: number | null = null;
+
   setTimeOfDay(hour: number, cycle: boolean) {
-    const h = cycle ? hour : 11;
+    const h = this.timeOverride ?? (cycle ? hour : 11);
     const key = Math.round(h * 4) / 4;
     if (key === this.lastSkyHour) return;
     this.lastSkyHour = key;
@@ -749,6 +794,11 @@ export class CityScene {
     const top = new THREE.Color().setHSL(0.58, 0.55, 0.08 + 0.5 * day);
     const horizon = new THREE.Color().setHSL(0.08 + 0.5 * day, 0.35, 0.12 + 0.6 * day);
     const bottom = new THREE.Color().setHSL(0.25, 0.2, 0.05 + 0.2 * day);
+    this.scene.environmentIntensity = 0.12 + 0.3 * day;
+    // L'environnement (coûteux à préfiltrer) n'est régénéré qu'une fois par heure de jeu.
+    const envKey = Math.round(h);
+    if (envKey === this.lastEnvHour) return;
+    this.lastEnvHour = envKey;
     const envScene = new THREE.Scene();
     envScene.add(new THREE.Mesh(
       new THREE.SphereGeometry(100, 32, 16),
@@ -764,7 +814,6 @@ export class CityScene {
     this.envTarget?.dispose();
     this.envTarget = this.pmrem.fromScene(envScene);
     this.scene.environment = this.envTarget.texture;
-    this.scene.environmentIntensity = 0.12 + 0.3 * day;
   }
 
   private readonly sunOffset = new THREE.Vector3(800, 1200, 600);
