@@ -189,7 +189,7 @@ def main(frames_dir: str, out: str):
     subprocess.run([sys.executable, os.path.join(HERE, 'music.py'), f'{seconds:.3f}', wav], check=True)
     subprocess.run([
         'ffmpeg', '-y', '-loglevel', 'error', '-framerate', str(FPS), '-i', os.path.join(seq, '%05d.jpg'), '-i', wav,
-        '-c:v', 'libx264', '-preset', 'slow', '-crf', '20', '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+        '-c:v', 'libx264', '-preset', 'slow', '-crf', '23', '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
         '-c:a', 'aac', '-b:a', '192k', '-shortest', out,
     ], check=True)
     print(f'{out}: {seconds:.1f} s', flush=True)
