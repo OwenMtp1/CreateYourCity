@@ -266,3 +266,75 @@ button.build { display: flex; flex-direction: column; align-items: flex-start; g
 @media (max-width: 900px) { .tutorial { left: 10px; right: 10px; width: auto; top: auto; bottom: 84px; } }
 .lg-route { background: #38bdf8; border-radius: 2px; height: 3px; vertical-align: 3px; }
 .lg-front { background: repeating-linear-gradient(90deg, #ef4444 0 4px, transparent 4px 7px); border-radius: 0; height: 3px; vertical-align: 3px; width: 14px; }
+
+/* --- Mobile ------------------------------------------------------------------------------
+   Barre d'état compacte, barre d'onglets en bas, panneaux en feuille glissante, confirmation des
+   constructions au doigt, croix de déplacement en vue de rue. Zones sûres des écrans à encoche. */
+body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+button, select, input, a { touch-action: manipulation; }
+.game { height: 100dvh; }
+.game.mobile { --tabbar-h: 60px; --safe-b: env(safe-area-inset-bottom, 0px); --safe-t: env(safe-area-inset-top, 0px); --top-ui: calc(52px + var(--safe-t)); }
+
+.hud-mobile { top: calc(6px + var(--safe-t)); left: 6px; right: 6px; padding: 0.35rem 0.5rem; flex-direction: column; align-items: stretch; gap: 0; border-radius: 12px; }
+.hud-mobile .hud-row { display: flex; align-items: center; gap: 0.55rem; font-size: 0.8rem; font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 0; }
+.hud-mobile .hud-row > * { flex: none; }
+.hud-mobile .city-name, .hud-mobile .brand { max-width: 30vw; overflow: hidden; text-overflow: ellipsis; }
+.hud-mobile select { width: auto; max-width: 32vw; padding: 0.15rem 0.3rem; font-size: 0.8rem; }
+.hud-mobile .status { font-size: 0; gap: 0; }
+.hud-mobile .hud-more { margin-left: auto; padding: 0 0.6rem; font-size: 1.1rem; line-height: 1.6; }
+.hud-details { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.8rem; margin-top: 0.35rem; padding-top: 0.4rem; border-top: 1px solid var(--border); font-size: 0.8rem; }
+
+.tabbar { position: absolute; left: 6px; right: 6px; bottom: calc(6px + var(--safe-b)); height: var(--tabbar-h); display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; padding: 4px; border-radius: 16px; z-index: 7; }
+.tab-btn { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-size: 1.3rem; line-height: 1.1; padding: 0.15rem 0; background: transparent; border-color: transparent; border-radius: 12px; min-height: 48px; }
+.tab-btn span { font-size: 0.62rem; color: var(--muted); }
+.tab-btn.active { background: rgba(251, 191, 36, 0.14); border-color: rgba(251, 191, 36, 0.5); box-shadow: none; }
+.tab-btn.active span { color: var(--accent); }
+.tab-btn .badge, .more-btn .badge { top: 2px; right: 14%; }
+
+.more-sheet { position: absolute; left: 6px; right: 6px; bottom: calc(var(--tabbar-h) + 12px + var(--safe-b)); display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 8px; border-radius: 16px; z-index: 8; animation: rise 0.16s ease-out; }
+.more-btn { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 66px; padding: 0.5rem 0.2rem; font-size: 0.74rem; background: rgba(15, 23, 42, 0.6); }
+.more-btn.active { border-color: rgba(251, 191, 36, 0.6); }
+.more-icon { font-size: 1.45rem; }
+@keyframes rise { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.game.mobile .drawer.sheet { left: 6px; right: 6px; width: auto; top: auto; bottom: calc(var(--tabbar-h) + 12px + var(--safe-b)); height: 52dvh; border-radius: 18px; animation: rise 0.18s ease-out; z-index: 6; }
+.game.mobile .drawer.sheet.full { height: calc(100dvh - var(--tabbar-h) - var(--top-ui) - 24px - var(--safe-b)); }
+.sheet-handle { flex: none; align-self: center; width: 64px; height: 20px; padding: 0; border: none; background: transparent; position: relative; }
+.sheet-handle::after { content: ''; position: absolute; left: 14px; right: 14px; top: 8px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.32); }
+.game.mobile .drawer header { padding: 0.15rem 0.9rem 0.5rem; }
+.game.mobile .drawer-body { padding-bottom: 0.8rem; -webkit-overflow-scrolling: touch; }
+.game.mobile .build-grid { grid-template-columns: 1fr 1fr; }
+.game.mobile button.build { min-height: 64px; }
+
+.game.mobile .inspector { left: 6px; right: 6px; width: auto; top: auto; bottom: calc(var(--tabbar-h) + 12px + var(--safe-b)); max-height: 50dvh; z-index: 6; animation: rise 0.18s ease-out; }
+.game.mobile .view-switch { top: var(--top-ui); right: 6px; }
+.game.mobile .view-switch button { padding: 0.3rem 0.5rem; font-size: 0.74rem; }
+.game.mobile .city-help { left: 6px; right: auto; top: calc(var(--top-ui) + 40px); bottom: auto; max-width: 62vw; font-size: 0.66rem; padding: 0.25rem 0.5rem; opacity: 0.85; }
+.game.mobile .onboarding { bottom: calc(var(--tabbar-h) + 18px + var(--safe-b)); }
+.game.mobile .tutorial { left: 6px; right: 6px; width: auto; top: var(--top-ui); bottom: auto; max-height: 55dvh; overflow: auto; }
+.tutorial-pill { position: absolute; left: 6px; top: var(--top-ui); z-index: 4; max-width: 56vw; padding: 0.35rem 0.75rem; border-radius: 999px; font-size: 0.74rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Globe sur mobile */
+.game.mobile .globe-search { top: var(--top-ui); left: 6px; right: 6px; width: auto; padding: 0.35rem; }
+.game.mobile .place-card { top: auto; left: 6px; right: 6px; width: auto; bottom: calc(var(--tabbar-h) + 12px + var(--safe-b)); max-height: 46dvh; }
+.game.mobile .map-legend { left: 6px; right: 6px; bottom: calc(var(--tabbar-h) + 12px + var(--safe-b)); justify-content: center; font-size: 0.7rem; gap: 0.6rem; }
+.game.mobile .map-credits { display: none; }
+
+/* Confirmation des constructions au doigt */
+.confirm-bar { position: absolute; left: 6px; right: 6px; bottom: calc(var(--tabbar-h, 0px) + 12px + var(--safe-b, 0px)); display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.5rem 0.45rem 0.8rem; border-radius: 14px; z-index: 6; animation: rise 0.15s ease-out; }
+.confirm-text { flex: 1; min-width: 0; font-size: 0.82rem; }
+.confirm-text.bad { color: #fca5a5; }
+.confirm-actions { display: flex; gap: 0.35rem; }
+.confirm-actions button { min-width: 46px; min-height: 46px; font-size: 1rem; }
+
+/* Croix de déplacement de la vue de rue */
+.street-pad { position: absolute; left: 12px; right: 12px; bottom: calc(var(--tabbar-h, 0px) + 18px + var(--safe-b, 0px)); display: flex; justify-content: space-between; align-items: flex-end; pointer-events: none; z-index: 5; }
+.pad-cross { pointer-events: auto; display: grid; grid-template-columns: repeat(3, 58px); grid-template-rows: repeat(3, 58px); grid-template-areas: ". up ." "left . right" ". down ."; }
+.pad-side { pointer-events: auto; display: flex; flex-direction: column; gap: 8px; }
+.pad-btn { width: 58px; height: 58px; border-radius: 50%; padding: 0; font-size: 1.25rem; color: #fff; background: rgba(15, 23, 42, 0.62); border: 1px solid rgba(255, 255, 255, 0.2); user-select: none; -webkit-user-select: none; touch-action: none; }
+.pad-btn:active { background: rgba(251, 191, 36, 0.4); }
+.pad-btn.up { grid-area: up; } .pad-btn.down { grid-area: down; } .pad-btn.left { grid-area: left; } .pad-btn.right { grid-area: right; }
+
+@media (max-width: 760px), (pointer: coarse) and (max-width: 1100px) {
+  .toasts { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+}

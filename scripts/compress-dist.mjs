@@ -5,7 +5,7 @@ import path from 'node:path';
 import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
 
 const root = path.resolve(process.argv[2] ?? 'client/dist');
-const EXT = new Set(['.html', '.js', '.css', '.json', '.svg', '.txt', '.map']);
+const EXT = new Set(['.html', '.js', '.css', '.json', '.svg', '.txt', '.map', '.webmanifest']);
 const MIN_BYTES = 1024;
 
 async function* walk(dir) {

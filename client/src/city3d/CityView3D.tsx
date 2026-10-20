@@ -6,6 +6,7 @@ import {
 } from '@cyc/shared';
 import { client } from '../net/client.ts';
 import { useGame } from '../state.ts';
+import { useIsMobile } from '../ui/mobile.ts';
 import { fmtMoney } from '../ui/format.ts';
 import { CityScene, type CityLayer } from './CityScene.ts';
 
@@ -48,6 +49,13 @@ export function CityView3D(props: Props) {
   const [street, setStreet] = useState<{ street: boolean; locked: boolean }>({ street: false, locked: false });
   const streetRef = useRef(false);
   streetRef.current = street.street;
+  const mobile = useIsMobile();
+  /** Dernière interaction au doigt (ou au stylet) : une construction demande alors une confirmation. */
+  const touch = useRef(false);
+  /** Action tactile en attente de confirmation (position du toucher). */
+  const [pending, setPending] = useState<{ sx: number; sy: number } | null>(null);
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
 
   // Contexte WebGL perdu et non rendu par le navigateur : la scène est recréée (nouvelle génération).
   const [generation, setGeneration] = useState(0);
@@ -95,12 +103,18 @@ export function CityView3D(props: Props) {
     roadControl.current = null;
     setHint(null);
     sceneRef.current?.setPreview(null);
+    // Rotation ou changement de type pendant une confirmation tactile : l'aperçu suit ; sinon on annule.
+    if (pendingRef.current && (tool.kind === 'building' || tool.kind === 'road')) {
+      cursor.current = pendingRef.current;
+      refresh();
+    } else setPending(null);
   }, [tool]);
 
   /** Accrochage : extrémités de routes, tracé existant, accès régional, puis grille. */
   const snap = (p: Point, forRoad: boolean): Point => {
     const { city: c, grid: g } = propsRef.current;
-    const tol = 14 / Math.max(0.05, sceneRef.current?.pixelsPerMeter() ?? 1);
+    // Au doigt, l'accrochage est plus tolérant (doigt moins précis qu'une souris).
+    const tol = (touch.current ? 30 : 14) / Math.max(0.05, sceneRef.current?.pixelsPerMeter() ?? 1);
     if (forRoad) {
       let best: Point | null = null;
       let bestD = tol;
@@ -215,23 +229,34 @@ export function CityView3D(props: Props) {
     return { sx: e.clientX - rect.left, sy: e.clientY - rect.top };
   };
 
-  const onPointerUp = async (e: React.PointerEvent) => {
-    const d = down.current;
-    down.current = null;
-    if (streetRef.current) return;
-    if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 5) return;
+  const cancel = () => {
+    roadStart.current = null;
+    roadControl.current = null;
+    setPending(null);
+    setHint(null);
+    sceneRef.current?.setPreview(null);
+  };
+
+  /**
+   * Applique l'outil au point touché. À la souris, la commande part tout de suite ; au doigt, l'aperçu
+   * s'affiche et la commande attend la confirmation (barre ✓ / ↻ / ✕), pour éviter les constructions involontaires.
+   */
+  const apply = async (sx: number, sy: number, confirmed: boolean) => {
     const scene = sceneRef.current;
-    const { sx, sy } = local(e);
     const p = scene?.screenToCity(sx, sy);
     if (!p) return;
     const { tool: t, setSelected } = propsRef.current;
-    if (d.button === 2) {
-      roadStart.current = null;
-      roadControl.current = null;
-      scene?.setPreview(null);
-      return;
-    }
-    if (d.button !== 0) return;
+    const commit = async (run: () => Promise<void>) => {
+      if (touch.current && !confirmed) {
+        setPending({ sx, sy });
+        cursor.current = { sx, sy };
+        refresh();
+        return;
+      }
+      setPending(null);
+      await run();
+      refresh();
+    };
     switch (t.kind) {
       case 'select': {
         const hit = hitTest(p);
@@ -240,50 +265,92 @@ export function CityView3D(props: Props) {
       }
       case 'building': {
         const q = snap(p, false);
-        await client.cityCommand({ type: 'build', building: t.building, x: q.x, y: q.y, rotation: t.rotation });
-        refresh();
+        await commit(async () => { await client.cityCommand({ type: 'build', building: t.building, x: q.x, y: q.y, rotation: t.rotation }); });
         return;
       }
       case 'road': {
         if (t.mode === 'roundabout') {
           const q = snap(p, false);
-          await client.cityCommand({ type: 'buildRoadPath', road: t.road, points: roundaboutPoints(q, t.radius ?? 30) });
-          refresh();
+          await commit(async () => { await client.cityCommand({ type: 'buildRoadPath', road: t.road, points: roundaboutPoints(q, t.radius ?? 30) }); });
           return;
         }
         if (t.mode === 'curve') {
           if (!roadStart.current) roadStart.current = snap(p, true);
           else if (!roadControl.current) roadControl.current = snap(p, false);
           else {
-            const end = snap(p, true);
-            const ok = await client.cityCommand({ type: 'buildRoadPath', road: t.road, points: curvePoints(roadStart.current, roadControl.current, end) });
-            roadControl.current = null;
-            roadStart.current = ok ? end : roadStart.current;
+            const start = roadStart.current, control = roadControl.current, end = snap(p, true);
+            await commit(async () => {
+              const ok = await client.cityCommand({ type: 'buildRoadPath', road: t.road, points: curvePoints(start, control, end) });
+              roadControl.current = null;
+              roadStart.current = ok ? end : roadStart.current;
+            });
+            return;
           }
+          cursor.current = { sx, sy };
           refresh();
           return;
         }
         const start = roadStart.current;
         if (!start) {
           roadStart.current = snap(p, true);
+          cursor.current = { sx, sy };
           refresh();
           return;
         }
         const end = roadEnd(start, p);
-        const ok = await client.cityCommand({ type: 'buildRoad', road: t.road, x1: start.x, y1: start.y, x2: end.x, y2: end.y });
-        // Tracé continu : la route suivante part de la fin de la précédente.
-        if (ok) roadStart.current = end;
-        refresh();
+        await commit(async () => {
+          const ok = await client.cityCommand({ type: 'buildRoad', road: t.road, x1: start.x, y1: start.y, x2: end.x, y2: end.y });
+          // Tracé continu : la route suivante part de la fin de la précédente.
+          if (ok) roadStart.current = end;
+        });
         return;
       }
       case 'demolish': {
         const hit = hitTest(p);
-        if (hit) await client.cityCommand({ type: 'demolish', target: hit.kind, id: hit.id });
-        refresh();
+        if (hit) await commit(async () => { await client.cityCommand({ type: 'demolish', target: hit.kind, id: hit.id }); });
         return;
       }
     }
   };
+
+  const onPointerUp = async (e: React.PointerEvent) => {
+    const d = down.current;
+    down.current = null;
+    if (streetRef.current) return;
+    if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > (e.pointerType === 'mouse' ? 5 : 12)) return;
+    touch.current = e.pointerType !== 'mouse';
+    if (d.button === 2) {
+      cancel();
+      return;
+    }
+    if (d.button !== 0) return;
+    const { sx, sy } = local(e);
+    await apply(sx, sy, false);
+  };
+
+  const confirmPending = () => {
+    const pd = pendingRef.current;
+    if (pd) void apply(pd.sx, pd.sy, true);
+  };
+  const rotatePending = () => {
+    const t = propsRef.current.tool;
+    if (t.kind === 'building') propsRef.current.setTool({ ...t, rotation: t.rotation === 0 ? 90 : 0 });
+  };
+
+  /** Croix de déplacement de la vue de rue (maintien = déplacement continu). */
+  const padKey = (code: string, label: string, cls = '') => (
+    <button
+      className={`pad-btn ${cls}`}
+      aria-label={label}
+      onPointerDown={(e) => { e.stopPropagation(); (e.target as HTMLElement).setPointerCapture?.(e.pointerId); sceneRef.current?.setVirtualKey(code, true); }}
+      onPointerUp={(e) => { e.stopPropagation(); sceneRef.current?.setVirtualKey(code, false); }}
+      onPointerCancel={() => sceneRef.current?.setVirtualKey(code, false)}
+      onLostPointerCapture={() => sceneRef.current?.setVirtualKey(code, false)}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <div
@@ -291,14 +358,38 @@ export function CityView3D(props: Props) {
       className={`city3d tool-${street.street ? 'street' : tool.kind}`}
       onPointerDown={(e) => {
         down.current = { x: e.clientX, y: e.clientY, button: e.button };
+        touch.current = e.pointerType !== 'mouse';
         if (streetRef.current && e.pointerType === 'mouse' && e.button === 0) sceneRef.current?.lockPointer();
       }}
-      onPointerMove={(e) => { cursor.current = local(e); shift.current = e.shiftKey; refresh(); }}
+      onPointerMove={(e) => {
+        // Au doigt, glisser déplace la carte : l'aperçu reste au point touché.
+        if (e.pointerType !== 'mouse') return;
+        cursor.current = local(e);
+        shift.current = e.shiftKey;
+        refresh();
+      }}
       onPointerUp={(e) => void onPointerUp(e)}
-      onPointerLeave={() => { cursor.current = null; setHint(null); sceneRef.current?.setPreview(null); }}
+      onPointerLeave={(e) => {
+        if (e.pointerType !== 'mouse') return;
+        cursor.current = null;
+        setHint(null);
+        sceneRef.current?.setPreview(null);
+      }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {hint && !street.street && <div className={`cursor-hint ${hint.ok ? '' : 'bad'}`} style={{ left: hint.x + 16, top: hint.y + 16 }}>{hint.text}</div>}
+      {hint && !street.street && !touch.current && <div className={`cursor-hint ${hint.ok ? '' : 'bad'}`} style={{ left: hint.x + 16, top: hint.y + 16 }}>{hint.text}</div>}
+      {!street.street && touch.current && (pending || hint || roadStart.current) && tool.kind !== 'select' && (
+        <div className="confirm-bar glass" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
+          <span className={`confirm-text ${hint && !hint.ok ? 'bad' : ''}`}>
+            {pending ? hint?.text ?? '…' : hint?.text ?? 'Touchez le point d\'arrivée'}
+          </span>
+          <div className="confirm-actions">
+            {pending && <button className="primary" disabled={!hint?.ok} onClick={confirmPending}>✓ {tool.kind === 'demolish' ? 'Démolir' : 'Construire'}</button>}
+            {tool.kind === 'building' && <button onClick={rotatePending} aria-label="Tourner">↻</button>}
+            <button onClick={cancel} aria-label="Annuler">✕</button>
+          </div>
+        </div>
+      )}
       <div className="view-switch glass" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
         <button className={street.street ? '' : 'active'} onClick={() => sceneRef.current?.viewFromAbove()} title="Revenir à la vue du dessus, cadrée sur la ville">
           🛰️ Vue du dessus
@@ -308,9 +399,26 @@ export function CityView3D(props: Props) {
         </button>
       </div>
       {street.street && street.locked && <div className="street-crosshair" />}
+      {street.street && (mobile || touch.current) && (
+        <div className="street-pad" onPointerDown={(e) => e.stopPropagation()}>
+          <div className="pad-cross">
+            {padKey('KeyW', '▲', 'up')}
+            {padKey('KeyA', '◀', 'left')}
+            {padKey('KeyD', '▶', 'right')}
+            {padKey('KeyS', '▼', 'down')}
+          </div>
+          <div className="pad-side">
+            {padKey('Space', '⤒', 'rise')}
+            {padKey('ShiftLeft', '🏃', 'run')}
+            {padKey('KeyC', '⤓', 'sink')}
+          </div>
+        </div>
+      )}
       {glLost && <div className="gl-lost glass">Affichage 3D interrompu par le navigateur — reprise en cours…</div>}
       <div className="city-help glass">
-        {street.street
+        {mobile
+          ? street.street ? 'Glissez pour regarder · croix : avancer · ⤒ ⤓ : monter / descendre' : 'Glisser : déplacer · 2 doigts : zoom et rotation · Toucher : choisir'
+          : street.street
           ? street.locked
             ? 'Souris : regarder · ZQSD / WASD ou flèches : avancer · Maj : courir · Espace / C : monter / descendre · Échap : libérer la souris'
             : 'Cliquez dans la vue pour regarder à la souris (ou glissez) · ZQSD / WASD ou flèches : avancer · Maj : courir · Espace / C : monter / descendre'

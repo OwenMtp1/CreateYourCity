@@ -1117,12 +1117,20 @@ export class CityScene {
   };
   private touchLast: { x: number; y: number } | null = null;
   private readonly onTouchMove = (e: TouchEvent) => {
-    const t = e.touches[0];
+    // Seuls les doigts posés sur la vue 3D font tourner le regard (pas celui qui tient la croix de déplacement).
+    const t = e.targetTouches[0];
     if (!t) return;
     if (this.touchLast) this.look(t.clientX - this.touchLast.x, t.clientY - this.touchLast.y);
     this.touchLast = { x: t.clientX, y: t.clientY };
   };
   private readonly onTouchEnd = () => { this.touchLast = null; };
+
+  /** Touche virtuelle (croix de déplacement tactile) : mêmes codes que le clavier. */
+  setVirtualKey(code: string, down: boolean) {
+    if (!this.street) return;
+    if (down) this.keys.add(code);
+    else this.keys.delete(code);
+  }
 
   private look(dx: number, dy: number) {
     this.yaw -= dx * 0.0025;

@@ -9,12 +9,15 @@ const done = () => { try { return localStorage.getItem(KEY) === '1'; } catch { r
 
 interface Step { title: string; text: string; ok: boolean; tool?: Tool; tab?: string }
 
-export function Tutorial({ setTool, openTab, visitedEconomy, visitedGlobe }: {
+export function Tutorial({ setTool, openTab, visitedEconomy, visitedGlobe, compact = false }: {
   setTool: (t: Tool) => void; openTab: (tab: 'build' | 'economy' | 'advisors') => void; visitedEconomy: boolean; visitedGlobe: boolean;
+  /** Mobile : replié en pastille, déplié au toucher. */
+  compact?: boolean;
 }) {
   const city = useGame(activeCity);
   const layers = useGame((s) => (s.activeCityId ? s.layers[s.activeCityId] : undefined));
   const [hidden, setHidden] = useState(done());
+  const [expanded, setExpanded] = useState(false);
   if (hidden || !city) return null;
   const ok = (id: number) => layers?.buildingStatus[id] === 'ok';
   const has = (pred: (t: string) => boolean) => city.buildings.some((b) => pred(b.type) && ok(b.id));
@@ -33,11 +36,20 @@ export function Tutorial({ setTool, openTab, visitedEconomy, visitedGlobe }: {
     setHidden(true);
   };
   const step = steps[current];
+  const doneCount = steps.filter((s) => s.ok).length;
+  if (compact && !expanded) {
+    return (
+      <button className="tutorial-pill glass" onClick={() => setExpanded(true)} aria-label="Ouvrir le tutoriel">
+        🎓 {doneCount}/{steps.length}{step ? ` · ${step.title}` : ' · terminé'}
+      </button>
+    );
+  }
   return (
     <div className="tutorial glass" role="dialog" aria-label="Tutoriel">
       <div className="row tutorial-head">
         <strong>🎓 Premiers pas</strong>
         <span className="small muted">{steps.filter((s) => s.ok).length}/{steps.length}</span>
+        {compact && <button className="ghost small-btn" onClick={() => setExpanded(false)} aria-label="Réduire">▾</button>}
         <button className="close" onClick={finish} aria-label="Fermer le tutoriel">×</button>
       </div>
       <div className="tutorial-progress"><div style={{ width: `${(steps.filter((s) => s.ok).length / steps.length) * 100}%` }} /></div>

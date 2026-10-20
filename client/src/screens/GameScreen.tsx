@@ -14,6 +14,7 @@ import { AdvisorsPanel, StatsPanel, useAdvice } from '../ui/panels/insights.tsx'
 import { BuildingInspector, BuildingsPanel } from '../ui/panels/buildings.tsx';
 import type { Building } from '@cyc/shared';
 import { Tutorial } from '../ui/Tutorial.tsx';
+import { fmtShort, useIsMobile } from '../ui/mobile.ts';
 
 type Tab = 'build' | 'buildings' | 'advisors' | 'stats' | 'economy' | 'population' | 'services' | 'territory' | 'trade' | 'diplomacy' | 'army' | 'nation' | 'lobby';
 const TABS: { id: Tab; icon: string; label: string; city?: boolean }[] = [
@@ -49,8 +50,23 @@ export function GameScreen() {
     setState({ view: 'city' });
     setFocus((f) => ({ x: b.x, y: b.y, n: (f?.n ?? 0) + 1 }));
   };
+  /** Ouvre la fiche d'un bâtiment ; sur mobile, le panneau se ferme pour laisser voir la ville. */
+  const openBuilding = (b: Building) => {
+    setSelected(b.id);
+    focusOn(b);
+    if (mobile) setTab(null);
+  };
+  const openTab = (t: Tab | null) => {
+    setTab(t);
+    setMoreOpen(false);
+    if (mobile && t) setSelected(null);
+  };
   const [visitedEconomy, setVisitedEconomy] = useState(false);
   const [visitedGlobe, setVisitedGlobe] = useState(false);
+  const mobile = useIsMobile();
+  const [moreOpen, setMoreOpen] = useState(false);
+  /** Panneau mobile déplié en plein écran (sinon à mi-hauteur). */
+  const [sheetFull, setSheetFull] = useState(false);
   const advice = useAdvice();
   const alerts = advice.filter((a) => a.severity !== 'info').length;
   useEventNotifications();
@@ -62,7 +78,7 @@ export function GameScreen() {
   const panelAvailable = tabDef && (!tabDef.city || city);
 
   return (
-    <div className="game">
+    <div className={`game ${mobile ? 'mobile' : ''}`}>
       <div className="viewport">
         {showCity ? (
           <CityView3D city={city} layers={layers} tool={tool} setTool={setTool} grid={grid} setGrid={setGrid}
@@ -71,7 +87,26 @@ export function GameScreen() {
           <GlobeView />
         )}
       </div>
-      <Hud />
+      {mobile ? <MobileHud /> : <Hud />}
+      {mobile ? (
+        <nav className="tabbar glass">
+          <button className={`tab-btn ${!showCity ? 'active' : ''}`} onClick={() => setState({ view: showCity ? 'globe' : 'city' })} disabled={!city && !!showCity}>
+            {showCity ? '🌍' : '🏙️'}<span>{showCity ? 'Monde' : 'Ville'}</span>
+          </button>
+          {(['build', 'buildings', 'economy'] as const).map((id) => {
+            const t = TABS.find((x) => x.id === id)!;
+            return (
+              <button key={id} className={`tab-btn ${tab === id ? 'active' : ''}`} disabled={!city} onClick={() => openTab(tab === id ? null : id)}>
+                {t.icon}<span>{t.label}</span>
+              </button>
+            );
+          })}
+          <button className={`tab-btn ${moreOpen || (tab && !['build', 'buildings', 'economy'].includes(tab)) ? 'active' : ''}`} onClick={() => setMoreOpen(!moreOpen)}>
+            ☰<span>Plus</span>
+            {alerts > 0 && <em className="badge">{alerts}</em>}
+          </button>
+        </nav>
+      ) : (
       <nav className="rail glass">
         <button className={`rail-btn ${!showCity ? 'active' : ''}`} onClick={() => setState({ view: 'globe' })} title="Globe">🌍<span>Monde</span></button>
         <button className={`rail-btn ${showCity ? 'active' : ''}`} disabled={!city} onClick={() => setState({ view: 'city' })} title="Ville">🏙️<span>Ville</span></button>
@@ -84,19 +119,36 @@ export function GameScreen() {
           </button>
         ))}
       </nav>
+      )}
+      {mobile && moreOpen && (
+        <div className="more-sheet glass" role="menu">
+          {TABS.filter((t) => !['build', 'buildings', 'economy'].includes(t.id)).map((t) => (
+            <button key={t.id} className={`more-btn ${tab === t.id ? 'active' : ''}`} disabled={t.city && !city} onClick={() => openTab(t.id)}>
+              <span className="more-icon">{t.icon}</span>{t.label}
+              {t.id === 'advisors' && alerts > 0 && <em className="badge">{alerts}</em>}
+            </button>
+          ))}
+        </div>
+      )}
       {tab && panelAvailable && (
-        <aside className="drawer glass">
+        <aside className={`drawer glass ${mobile ? `sheet ${sheetFull ? 'full' : ''}` : ''}`}>
+          {mobile && <button className="sheet-handle" onClick={() => setSheetFull(!sheetFull)} aria-label={sheetFull ? 'Réduire le panneau' : 'Agrandir le panneau'} />}
           <header>
             <h2>{tabDef.icon} {tabDef.label}{tabDef.city && city ? ` — ${CITY_BY_ID.get(city.cityId)?.name}` : ''}</h2>
             <button className="close" onClick={() => setTab(null)} aria-label="Fermer">×</button>
           </header>
           <div className="drawer-body">
-            {tab === 'build' && <BuildPanel tool={tool} setTool={(t) => { setTool(t); if (t.kind !== 'select') setState({ view: 'city' }); }} grid={grid} setGrid={setGrid}
+            {tab === 'build' && <BuildPanel tool={tool} setTool={(t) => {
+              setTool(t);
+              if (t.kind !== 'select') setState({ view: 'city' });
+              // Sur mobile, choisir un outil replie le panneau pour toucher la carte.
+              if (mobile && t.kind !== 'select') setTab(null);
+            }} grid={grid} setGrid={setGrid}
               layer={layer} setLayer={setLayer} dayNight={dayNight} setDayNight={setDayNight} />}
-            {tab === 'buildings' && <BuildingsPanel selected={selected} onSelect={(b) => { setSelected(b.id); focusOn(b); }} />}
+            {tab === 'buildings' && <BuildingsPanel selected={selected} onSelect={openBuilding} />}
             {tab === 'advisors' && <AdvisorsPanel setTool={(t) => { setTool(t); setTab('build'); }} setSelected={setSelected} />}
             {tab === 'stats' && <StatsPanel />}
-            {tab === 'economy' && <EconomyPanel onSelect={(b) => { setSelected(b.id); focusOn(b); }} />}
+            {tab === 'economy' && <EconomyPanel onSelect={openBuilding} />}
             {tab === 'population' && <PopulationPanel />}
             {tab === 'services' && <ServicesPanel layer={layer} setLayer={setLayer} />}
             {tab === 'territory' && <TerritoryPanel />}
@@ -109,10 +161,10 @@ export function GameScreen() {
         </aside>
       )}
       {showCity && selected !== null && (
-        <BuildingInspector id={selected} onClose={() => setSelected(null)} onFocus={focusOn} onSelect={(b) => { setSelected(b.id); focusOn(b); }} />
+        <BuildingInspector id={selected} onClose={() => setSelected(null)} onFocus={focusOn} onSelect={openBuilding} />
       )}
       {showCity && (
-        <Tutorial setTool={setTool} openTab={(t) => setTab(t)} visitedEconomy={visitedEconomy} visitedGlobe={visitedGlobe} />
+        <Tutorial setTool={setTool} openTab={(t) => openTab(t)} visitedEconomy={visitedEconomy} visitedGlobe={visitedGlobe} compact={mobile} />
       )}
       {view === 'globe' && cityCount === 0 && (
         <div className="onboarding glass">
@@ -120,6 +172,46 @@ export function GameScreen() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Barre d'état compacte : ville, trésorerie, population, solde ; le reste dans un menu. */
+function MobileHud() {
+  const lobby = useGame((s) => s.lobby)!;
+  const tick = useGame((s) => s.tick);
+  const city = useGame(activeCity);
+  const myCities = useGame((s) => s.myCities);
+  const [open, setOpen] = useState(false);
+  const ids = Object.keys(myCities);
+  return (
+    <header className="hud hud-mobile glass">
+      <div className="hud-row">
+        {city ? (
+          ids.length > 1 ? (
+            <select value={city.cityId} onChange={(e) => setState({ activeCityId: e.target.value })}>
+              {ids.map((id) => <option key={id} value={id}>{CITY_BY_ID.get(id)?.name}</option>)}
+            </select>
+          ) : <strong className="city-name">{CITY_BY_ID.get(city.cityId)?.name}</strong>
+        ) : <strong className="brand">CreateYourCity</strong>}
+        {city && (
+          <>
+            <span className={city.treasury < 0 ? 'neg' : ''}>💰 {fmtShort(city.treasury)}</span>
+            <span>👥 {fmtShort(city.population)}</span>
+            {city.stats && <span className={city.stats.budget.net < 0 ? 'neg' : 'pos'}>{city.stats.budget.net >= 0 ? '▲' : '▼'} {fmtShort(Math.abs(city.stats.budget.net))}</span>}
+          </>
+        )}
+        <StatusBadge />
+        <button className="ghost small-btn hud-more" onClick={() => setOpen(!open)} aria-expanded={open} aria-label="Plus d'informations">⋯</button>
+      </div>
+      {open && (
+        <div className="hud-details">
+          <span>🕒 {formatGameTime(tick)}</span>
+          <span className="muted">{lobby.name}</span>
+          <button className="chip-btn" onClick={() => void navigator.clipboard?.writeText(lobby.code).then(() => toast("Code d'invitation copié"))}>{lobby.code}</button>
+          <button className="ghost small-btn" onClick={() => void client.act({ t: 'leaveLobby' })}>Quitter</button>
+        </div>
+      )}
+    </header>
   );
 }
 

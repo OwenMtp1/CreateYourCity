@@ -1,7 +1,7 @@
 // État global du client (copie des données reçues du serveur, qui reste l'autorité).
 import { useSyncExternalStore } from 'react';
 import { expose } from './automation.ts';
-import type { ChatMessage, CityLayers, CityState, CitySummary, ClockInfo, LobbyInfo } from '@cyc/shared';
+import { validateBuilding, type ChatMessage, type CityLayers, type CityState, type CitySummary, type ClockInfo, type LobbyInfo } from '@cyc/shared';
 import type { WorldView } from '@cyc/shared/game';
 
 export type ConnStatus = 'connecting' | 'online' | 'offline';
@@ -70,3 +70,4 @@ export const activeCity = (s: GameState): CityState | null => (s.activeCityId ? 
 
 expose('state', getState);
 expose('setState', setState);
+expose('rules', { validateBuilding });

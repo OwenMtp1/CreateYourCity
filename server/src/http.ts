@@ -20,6 +20,7 @@ const MIME: Record<string, string> = {
   '.jpg': 'image/jpeg',
   '.map': 'application/json; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
 };
 
 const startedAt = Date.now();
