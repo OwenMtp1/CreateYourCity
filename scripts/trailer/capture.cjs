@@ -275,15 +275,15 @@ const SCENES = {
     await page.evaluate((id) => window.__cyc.setState({ activeCityId: id, view: 'city' }), PARIS);
     await waitFor(page, () => !!window.__cyc.city);
     await page.evaluate(() => { const c = window.__cyc.city; c.controls.enableDamping = false; c.camera.position.set(-760, 300, 420); c.controls.target.set(-420, 0, 0); c.controls.update(); c.timeOverride = 11; c.setTimeOfDay(0, true); });
-    await page.clock.runFor(2000);
+    await page.clock.runFor(20); await sleep(1500);
     const dir = path.join(outDir, 'ui');
     fs.mkdirSync(dir, { recursive: true });
     const still = async (name, rail, after) => {
       const btn = page.locator('.rail-btn', { hasText: rail }).first();
       if (!(await btn.getAttribute('class')).includes('active')) await btn.dispatchEvent('click');
-      await page.clock.runFor(800);
+      await page.clock.runFor(20); await sleep(800);
       if (after) await after();
-      await page.clock.runFor(800);
+      await page.clock.runFor(20); await sleep(800);
       await page.screenshot({ path: path.join(dir, `${name}.png`), timeout: 300000 });
       log('ui', name);
     };
@@ -291,8 +291,7 @@ const SCENES = {
     await still('2-advisors', 'Conseillers');
     await still('3-stats', 'Statistiques');
     await page.evaluate(() => window.__cyc.setState({ view: 'globe', focusCityId: 'c1159151613' }));
-    await page.clock.runFor(3000);
-    await sleep(3000);
+    await page.clock.runFor(100); await sleep(4000);
     await page.evaluate(() => {
       const g = window.__cyc.globe;
       g.flight = null;
@@ -301,7 +300,7 @@ const SCENES = {
       g.camera.position.set(-r * Math.sin(theta) * Math.cos(phi), r * Math.cos(theta), r * Math.sin(theta) * Math.sin(phi));
       g.camera.lookAt(0, 0, 0);
     });
-    await page.clock.runFor(1500);
+    await page.clock.runFor(20); await sleep(1000);
     await still('4-diplomacy', 'Diplomatie', async () => {
       await page.locator('.drawer-body').evaluate((el) => { el.scrollTop = el.scrollHeight * 0.45; });
     });
