@@ -1,5 +1,5 @@
 // Identifiants envoyés au serveur : jeton Supabase (session gérée par supabase-js) ou jeton invité.
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 export interface PublicConfig { authMode: 'dev' | 'supabase'; supabaseUrl: string | null; supabaseAnonKey: string | null }
 
@@ -13,6 +13,8 @@ export async function loadPublicConfig(): Promise<PublicConfig> {
   if (!res.ok) throw new Error('Serveur de jeu injoignable');
   config = (await res.json()) as PublicConfig;
   if (config.authMode === 'supabase' && config.supabaseUrl && config.supabaseAnonKey) {
+    // Chargé à la demande : le mode invité n'a pas besoin de supabase-js.
+    const { createClient } = await import('@supabase/supabase-js');
     supabase = createClient(config.supabaseUrl, config.supabaseAnonKey);
   }
   return config;

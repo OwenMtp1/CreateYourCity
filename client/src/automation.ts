@@ -1,5 +1,7 @@
 // Accès aux scènes 3D pour l'automatisation (bande-annonce, tests visuels) : window.__cyc.
+// En production, seulement en mode capture (le serveur reste seul juge : rien n'est contournable).
 export function expose(name: 'globe' | 'city' | 'state' | 'setState', value: unknown) {
+  if (!import.meta.env.DEV && !captureMode()) return;
   const w = window as unknown as { __cyc?: Record<string, unknown> };
   (w.__cyc ??= {})[name] = value;
 }

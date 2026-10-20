@@ -20,7 +20,7 @@
 | `client/` | Interface : connexion et reconnexion (`net/`), état global (`state.ts`), globe 3D (`globe/`), ville 3D (`city3d/` : scène, modèles procéduraux, outils), panneaux (`ui/panels/`). |
 | `supabase/migrations/` | Schéma SQL versionné, appliqué par `npm run db:migrate` ou au démarrage. |
 
-Le code est en TypeScript partout. Le serveur s'exécute avec `tsx` (pas d'étape de compilation à maintenir). Le client est construit par Vite.
+Le code est en TypeScript partout. En développement, le serveur s'exécute avec `tsx` ; en production, esbuild le regroupe en `server/dist/index.js` (dépendances npm laissées externes) lancé par Node. Le client est construit par Vite puis précompressé (Brotli et gzip) par `scripts/compress-dist.mjs`.
 
 ### Choix des bibliothèques
 

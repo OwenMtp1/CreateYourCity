@@ -104,7 +104,9 @@ compte**. Créez un compte, confirmez l'e-mail si demandé, connectez-vous, cré
 
 1. Poussez le dépôt sur GitHub.
 2. Sur <https://render.com> : **New → Blueprint**, choisissez le dépôt. Le fichier `render.yaml` crée un service web
-   (build `npm ci --include=dev && npm run build`, démarrage `npm start`, contrôle de santé `/health`).
+   à Francfort (build `npm ci --include=dev --no-audit --no-fund && npm run build`, démarrage
+   `node --enable-source-maps --max-old-space-size=400 server/dist/index.js`, contrôle de santé `/health`).
+   Si votre projet Supabase est dans une autre région, changez `region` dans `render.yaml` **avant** de créer le service.
    Vous pouvez aussi créer un **Web Service** Node à la main avec ces mêmes commandes.
 3. Renseignez les variables d'environnement :
 

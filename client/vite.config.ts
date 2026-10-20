@@ -13,5 +13,20 @@ export default defineConfig({
       '/health': target,
     },
   },
-  build: { chunkSizeWarningLimit: 2000 },
+  build: {
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        // Bibliothèques et données dans des fichiers séparés : un déploiement qui ne touche que le
+        // code du jeu ne force pas les joueurs à retélécharger Three.js ou la liste des villes.
+        manualChunks(id) {
+          if (id.includes('/node_modules/three/')) return 'three';
+          if (id.includes('/node_modules/react') || id.includes('/node_modules/scheduler/')) return 'react';
+          if (id.includes('/node_modules/d3-') || id.includes('/node_modules/topojson')) return 'geo';
+          if (id.includes('/shared/data/')) return 'world-data';
+          return undefined;
+        },
+      },
+    },
+  },
 });

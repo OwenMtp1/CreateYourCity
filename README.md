@@ -83,12 +83,23 @@ Guide détaillé pas à pas : [`docs/SUPABASE.md`](docs/SUPABASE.md). Résumé c
 ### 2. Render
 
 1. **New → Blueprint** sur ce dépôt (fichier `render.yaml`), ou créez un *Web Service* Node avec :
-   - build : `npm ci --include=dev && npm run build`
-   - start : `npm start`
+   - région : la même que le projet Supabase (le blueprint choisit Francfort)
+   - build : `npm ci --include=dev --no-audit --no-fund && npm run build`
+   - start : `node --enable-source-maps --max-old-space-size=400 server/dist/index.js`
    - health check : `/health`
 2. Renseignez `SUPABASE_URL`, `SUPABASE_ANON_KEY` et `DATABASE_URL`. `AUTH_MODE=supabase` est déjà défini.
 3. Gardez **une seule instance** : le serveur de jeu porte l'état du monde. Lors d'un déploiement, la nouvelle instance
    attend le verrou d'autorité PostgreSQL et ne simule qu'après l'arrêt propre de l'ancienne (sauvegarde finale).
+
+**Ce que fait le build de production**
+
+- Client : Vite découpe le code (Three.js, React, données des villes et code du jeu dans des fichiers séparés, mis en
+  cache un an), puis `scripts/compress-dist.mjs` précompresse tout en Brotli et gzip (~4,1 Mo → ~0,9 Mo). Le serveur
+  envoie directement la variante acceptée par le navigateur et répond `304` aux fichiers déjà en cache.
+- Serveur : esbuild produit `server/dist/index.js` (Node pur, sans transpilation au démarrage).
+  `npm run start:dev -w server` lance encore les sources avec `tsx`.
+- WebSocket : les messages de plus de 1 Ko sont compressés (environ −65 % de trafic, ~3 Ko/s par joueur connecté).
+- Mémoire mesurée : ~125 Mo avec le monde de démonstration (8 villes dont une métropole), pour 512 Mo sur Starter.
 
 ### Hébergement et monde réellement persistant
 

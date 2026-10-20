@@ -1,4 +1,5 @@
 // Stockage PostgreSQL (Supabase en production). Connexion directe du serveur de jeu.
+import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,7 +8,11 @@ import { migrateCityState, type ChatMessage, type CityState } from '@cyc/shared'
 import { migrateWorldMeta, type WorldMeta } from '@cyc/shared/game';
 import type { ActionLogEntry, ClaimResult, LobbyClock, LobbyRecord, Store } from './types.ts';
 
-const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../supabase/migrations');
+// server/src/store en développement, server/dist une fois compilé : on remonte jusqu'à la racine du dépôt.
+const here = path.dirname(fileURLToPath(import.meta.url));
+const MIGRATIONS_DIR = ['../../../supabase/migrations', '../../supabase/migrations']
+  .map((rel) => path.resolve(here, rel))
+  .find((dir) => existsSync(dir)) ?? path.resolve(here, '../../../supabase/migrations');
 
 export interface PostgresOptions {
   connectionString: string;

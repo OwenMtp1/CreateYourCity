@@ -8,9 +8,23 @@ services:
     # (les instances gratuites s'arrêtent après 15 min sans trafic entrant).
     plan: starter
     numInstances: 1
-    buildCommand: npm ci --include=dev && npm run build
-    startCommand: npm start
+    # Francfort : au plus près des joueurs européens (la région ne se change plus après création ;
+    # choisissez la même zone que le projet Supabase).
+    region: frankfurt
+    # Le build compile le client (Vite, fichiers précompressés Brotli/gzip) et le serveur (esbuild).
+    buildCommand: npm ci --include=dev --no-audit --no-fund && npm run build
+    # Node directement (pas npm) : le signal d'arrêt arrive au serveur, qui sauvegarde avant de quitter.
+    # Tas limité sous les 512 Mo de l'instance Starter pour que le ramasse-miettes agisse avant l'OOM.
+    startCommand: node --enable-source-maps --max-old-space-size=400 server/dist/index.js
     healthCheckPath: /health
+    # Laisse le temps à la sauvegarde finale lors d'un redéploiement.
+    maxShutdownDelaySeconds: 60
+    # Pas de redéploiement pour une modification de documentation ou des outils de bande-annonce.
+    buildFilter:
+      ignoredPaths:
+        - "**/*.md"
+        - docs/**
+        - scripts/trailer/**
     envVars:
       - key: NODE_ENV
         value: production
