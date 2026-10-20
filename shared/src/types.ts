@@ -51,6 +51,10 @@ export interface CityStats {
     importPrice: number; exportPrice: number;
     /** Droits de douane payés par les commerces (versés au budget national). */
     tariffPaid: number;
+    /** Biens vendus aux commerces de la ville par ses propres usines. */
+    localSupplied: number;
+    /** Demande des habitants qui n'ont aucun commerce à moins de 450 m (ou commerces saturés). */
+    unserved: number;
   };
   services: Record<ServiceKind, { coverage: number; capacity: number }>;
   /** Écart-type (pondéré par la population) de la couverture moyenne entre bâtiments résidentiels. */
@@ -133,6 +137,46 @@ export interface CityLayers {
   /** Taux d'occupation (0..1) de chaque parking. */
   parkingUse?: Record<number, number>;
   roadConnected: Record<number, boolean>;
+  /** Comptes de chaque entreprise et impôt de chaque logement (dernier tick, par jour de jeu). */
+  economy?: Record<number, BuildingEconomy>;
+  /** Livraisons du jour : usine → commerce (quantité en biens/j, distance par la route). */
+  supply?: SupplyLink[];
+}
+
+/** Comptes d'un bâtiment, en crédits par jour de jeu. */
+export interface BuildingEconomy {
+  /** Recettes (ventes, chiffre d'affaires) et dépenses (achats, salaires) de l'entreprise. */
+  revenue: number;
+  costs: number;
+  profit: number;
+  /** Impôt versé à la ville : sur le bénéfice (entreprise) ou sur le revenu des habitants (logement). */
+  tax: number;
+  /** Commerces : habitants clients, biens vendus, achetés aux usines de la ville, par contrat, importés. */
+  customers?: number;
+  sold?: number;
+  local?: number;
+  contract?: number;
+  imported?: number;
+  /** Prix moyen payé par bien (achats / quantité). */
+  unitCost?: number;
+  /** Usines : production, livraisons aux commerces de la ville, exportations, contrats honorés. */
+  produced?: number;
+  shipped?: number;
+  exported?: number;
+  /** Bureaux : main-d'œuvre qualifiée (école à portée). */
+  educated?: boolean;
+  /** Logements : bonus de valeur foncière grâce aux loisirs (0 à 0,15). */
+  landValue?: number;
+  /** Services publics : coût d'entretien du jour et utilisation de la capacité nominale (0..1). */
+  publicCost?: number;
+  use?: number;
+}
+
+export interface SupplyLink {
+  from: number;
+  to: number;
+  qty: number;
+  distance: number;
 }
 
 /** Vue publique d'une ville appartenant à un autre joueur (informations générales). */

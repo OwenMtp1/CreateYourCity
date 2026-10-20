@@ -32,6 +32,11 @@ Ouvrez <http://localhost:5173> dans deux navigateurs (ou une fenêtre privée) p
    choisissez une destination sur le globe), **Nation** (élection, lois, grands projets, impôt national), **Salon** (chat, journal).
 6. Un **tutoriel** guide les premiers pas ; les **conseillers** (🧭) signalent les problèmes chiffrés ; les **statistiques** (📈)
    retracent l'évolution de la ville. Routes droites, **courbes** ou **ronds-points** ; transports en commun ; voitures animées.
+   **Circuit des biens** : les usines livrent par camion les commerces les plus proches (moins cher que d'importer),
+   chaque commerce vend aux habitants à moins de 450 m, le surplus des usines est exporté ; la couche « Économie »
+   montre le bénéfice de chaque entreprise, les livraisons, importations et exportations, et l'onglet Économie le
+   schéma du circuit et les entreprises en perte. Bureaux +20 % près d'une école, logements +15 % d'impôt près d'un parc,
+   entretien des services selon leur utilisation, **ponts** au-dessus de l'eau.
    **Parkings** (à ciel ouvert ou à étages) gratuits ou payants, tarif réglable dans l'inspecteur ; **paliers** (population,
    trésorerie, réussites) notifiés à l'écran et listés dans les statistiques. Vue **du dessus** par défaut, **vue de rue**
    en caméra libre (ZQSD/WASD, souris, Espace/C).

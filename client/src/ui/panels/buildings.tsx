@@ -1,7 +1,7 @@
 // Fiches détaillées des bâtiments : inspecteur flottant (clic sur un bâtiment) et répertoire de la ville.
 import { useMemo, useState } from 'react';
 import {
-  BUILDINGS, ECONOMY, formatGameTime, SERVICE_KINDS, TRANSIT, type Building, type BuildingCategory, type CityLayers, type CityState,
+  BUILDINGS, COMMERCE, ECONOMY, formatGameTime, SERVICE_KINDS, TRANSIT, type Building, type BuildingCategory, type CityLayers, type CityState,
 } from '@cyc/shared';
 import { client } from '../../net/client.ts';
 import { activeCity, useGame } from '../../state.ts';
@@ -41,8 +41,7 @@ export function buildingDetails(city: CityState, layers: CityLayers | null, b: B
     add('Salaires versés', `${fmtInt(def.jobs * staffing * ECONOMY.wagePerWorker)} cr/j`);
   }
   if (def.goodsSalesCapacityPerDay) add('Capacité de vente', `${fmtInt(def.goodsSalesCapacityPerDay * staffing)} biens/j`);
-  if (def.officeRevenue) add("Chiffre d'affaires (estimation)", `${fmtInt(def.jobs * staffing * ECONOMY.officeRevenuePerWorker)} cr/j`);
-  if (def.goodsProductionPerDay) add('Production', `${fmtInt(def.goodsProductionPerDay * staffing)} biens/j`);
+  if (def.goodsProductionPerDay) add('Capacité de production', `${fmtInt(def.goodsProductionPerDay * staffing)} biens/j`);
   if (def.pollution) add('Pollution émise', `rayon ${def.pollution.radius} m · intensité ${fmtPct(def.pollution.intensity)}`, 'neg');
   if (def.service) {
     add('Service', `${SERVICE_LABEL[def.service.kind]} · rayon ${def.service.radius} m`);
@@ -59,15 +58,95 @@ export function buildingDetails(city: CityState, layers: CityLayers | null, b: B
   }
   if (def.powerMW) add('Consommation électrique', `${def.powerMW.toLocaleString('fr-FR')} MW`);
   if (def.waterM3PerDay) add("Consommation d'eau", `${fmtInt(def.waterM3PerDay)} m³/j`);
-  add('Entretien', `${fmtInt(def.upkeepPerDay)} cr/j`);
+  const publicCost = layers?.economy?.[b.id]?.publicCost;
+  if (def.service && publicCost !== undefined) {
+    add('Entretien (selon utilisation)', `${fmtInt(publicCost)} cr/j sur ${fmtInt(def.upkeepPerDay)} au maximum`);
+  } else add('Entretien', `${fmtInt(def.upkeepPerDay)} cr/j`);
   add('Coût de construction', fmtMoney(def.cost));
   add('Emprise', `${b.rotation === 90 ? def.h : def.w} × ${b.rotation === 90 ? def.w : def.h} m`);
   add('Construit', formatGameTime(b.builtAtTick));
   return rows;
 }
 
+const signed = (v: number) => `${v >= 0 ? '+' : '−'}${fmtInt(Math.abs(v))} cr/j`;
+
+/** Comptes du jour d'une entreprise ou d'un logement, avec ses fournisseurs et clients (cliquables). */
+function Accounts({ city, layers, b, onSelect }: { city: CityState; layers: CityLayers | null; b: Building; onSelect: (b: Building) => void }) {
+  const e = layers?.economy?.[b.id];
+  const def = BUILDINGS[b.type];
+  if (!e) return null;
+  const byId = new Map(city.buildings.map((x) => [x.id, x]));
+  const link = (id: number) => {
+    const x = byId.get(id);
+    return x ? <button className="link" onClick={() => onSelect(x)}>{ICON[x.type]} {BUILDINGS[x.type].label} #{x.id}</button> : `#${id}`;
+  };
+  if (e.publicCost !== undefined) {
+    return (
+      <div className="accounts">
+        <h4>Coût pour la ville</h4>
+        <div className="profit neg">{signed(-e.publicCost)}<small>entretien du jour</small></div>
+        <Row label="Capacité utilisée" value={fmtPct(e.use ?? 0)} />
+        <p className="small muted">
+          {Math.round(COMMERCE.serviceFixedUpkeepShare * 100)} % de l'entretien est fixe, le reste suit l'utilisation : un équipement peu utilisé coûte moins cher.
+        </p>
+      </div>
+    );
+  }
+  if (def.housing) {
+    return (
+      <div className="accounts">
+        <h4>Recettes pour la ville</h4>
+        <Row label="Impôt sur le revenu des habitants" value={`${fmtInt(e.tax)} cr/j`} tone="pos" />
+        <Row label="Valeur foncière (loisirs à proximité)" value={e.landValue ? `+${fmtPct(e.landValue)} d'impôt` : 'aucun parc à portée'} tone={e.landValue ? 'pos' : undefined} />
+      </div>
+    );
+  }
+  const suppliers = (layers?.supply ?? []).filter((l) => l.to === b.id);
+  const customers = (layers?.supply ?? []).filter((l) => l.from === b.id);
+  return (
+    <div className="accounts">
+      <h4>Comptes du jour</h4>
+      <div className={`profit ${e.profit >= 0 ? 'pos' : 'neg'}`}>{signed(e.profit)}<small>bénéfice</small></div>
+      <Row label="Recettes" value={`${fmtInt(e.revenue)} cr/j`} tone="pos" />
+      <Row label="Dépenses (achats + salaires)" value={`${fmtInt(e.costs)} cr/j`} tone="neg" />
+      <Row label="Impôt versé à la ville" value={e.tax > 0 ? `${fmtInt(e.tax)} cr/j` : 'aucun (pas de bénéfice)'} />
+      {e.sold !== undefined && (
+        <>
+          <Row label="Clients (habitants à moins de 450 m)" value={fmtInt(e.customers ?? 0)} tone={(e.customers ?? 0) < 1 ? 'neg' : undefined} />
+          <Row label="Biens vendus" value={`${fmtInt(e.sold)} /j à ${ECONOMY.retailPrice} cr`} />
+          <Row label="Prix d'achat moyen" value={e.sold > 0 ? `${(e.unitCost ?? 0).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} cr/bien` : '—'} />
+          <p className="small muted">Approvisionnement</p>
+          <ul className="list supply-list">
+            {suppliers.map((l) => (
+              <li key={l.from}>{link(l.from)}<span className="small">{fmtInt(l.qty)} biens · {fmtInt(l.distance)} m</span></li>
+            ))}
+            {(e.contract ?? 0) > 0.5 && <li><span>🤝 Contrats</span><span className="small">{fmtInt(e.contract ?? 0)} biens</span></li>}
+            {(e.imported ?? 0) > 0.5 && <li className="neg"><span>🌍 Importations (plus chères)</span><span className="small">{fmtInt(e.imported ?? 0)} biens</span></li>}
+            {e.sold < 0.5 && <li className="muted">Aucune vente : pas d'habitants à proximité.</li>}
+          </ul>
+        </>
+      )}
+      {e.produced !== undefined && (
+        <>
+          <Row label="Production" value={`${fmtInt(e.produced)} biens/j`} />
+          <p className="small muted">Livraisons</p>
+          <ul className="list supply-list">
+            {customers.map((l) => (
+              <li key={l.to}>{link(l.to)}<span className="small">{fmtInt(l.qty)} biens à {ECONOMY.localWholesalePrice} cr</span></li>
+            ))}
+            {(e.exported ?? 0) > 0.5 && <li className="muted"><span>📤 Exportations (moins chères)</span><span className="small">{fmtInt(e.exported ?? 0)} biens</span></li>}
+          </ul>
+        </>
+      )}
+      {e.educated !== undefined && (
+        <Row label="Main-d'œuvre qualifiée (école à portée)" value={e.educated ? `oui : +${Math.round(COMMERCE.educatedOfficeBonus * 100)} % de chiffre d'affaires` : 'non : construisez une école à proximité'} tone={e.educated ? 'pos' : 'neg'} />
+      )}
+    </div>
+  );
+}
+
 /** Fiche flottante du bâtiment sélectionné. */
-export function BuildingInspector({ id, onClose, onFocus }: { id: number; onClose: () => void; onFocus: (b: Building) => void }) {
+export function BuildingInspector({ id, onClose, onFocus, onSelect }: { id: number; onClose: () => void; onFocus: (b: Building) => void; onSelect: (b: Building) => void }) {
   const city = useGame(activeCity);
   const layers = useGame((s) => (s.activeCityId ? s.layers[s.activeCityId] ?? null : null));
   const b = city?.buildings.find((x) => x.id === id);
@@ -81,6 +160,7 @@ export function BuildingInspector({ id, onClose, onFocus }: { id: number; onClos
       </header>
       <p className="small muted">{def.description}</p>
       <div className="inspector-body">
+        <Accounts city={city} layers={layers} b={b} onSelect={onSelect} />
         {buildingDetails(city, layers, b).map((r) => <Row key={r.label} label={r.label} value={r.value} tone={r.tone} />)}
         {def.parking && <ParkingSettings key={b.id} id={b.id} spaces={def.parking.spaces} fee={b.fee ?? 0} use={layers?.parkingUse?.[b.id]} />}
       </div>

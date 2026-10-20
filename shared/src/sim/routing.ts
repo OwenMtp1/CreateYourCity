@@ -19,6 +19,8 @@ export interface RouteEdge {
   ax: number; ay: number; bx: number; by: number;
 }
 
+export interface Delivery { shopId: number; distance: number; edges: Map<number, number>; points: { x: number; y: number }[] }
+
 /** Point d'attache d'un bâtiment sur le graphe : arête et distance à chacune de ses extrémités. */
 interface Attachment { edge: number; da: number; db: number; x: number; y: number }
 
@@ -29,8 +31,15 @@ export interface Routing {
   commute: Map<number, Map<number, number>>;
   /** Pour chaque logement : idem pour les trajets vers les commerces. */
   shopping: Map<number, Map<number, number>>;
-  /** Fret des usines vers l'accès régional : part par arête, pondérée par la production. */
+  /** Fret des usines vers l'accès régional (exportations) : part par arête. */
   freight: Map<number, Map<number, number>>;
+  /** Tracé des exportations de chaque usine vers l'accès régional (animation des camions). */
+  exportPaths: Map<number, { x: number; y: number }[]>;
+  /**
+   * Livraisons possibles usine → commerce par la route, du plus proche au plus lointain :
+   * distance en mètres, arêtes empruntées et tracé (de l'usine vers le commerce).
+   */
+  deliveries: Map<number, Delivery[]>;
   /** Itinéraires représentatifs (suites de points) pour l'animation des véhicules. */
   samples: { weight: number; points: { x: number; y: number }[] }[];
 }
@@ -208,6 +217,8 @@ export function buildRouting(city: CityState, connectedRoads: Set<number>, acces
   const commute = new Map<number, Map<number, number>>(residential.map((r) => [r.id, new Map()]));
   const shopping = new Map<number, Map<number, number>>(residential.map((r) => [r.id, new Map()]));
   const freight = new Map<number, Map<number, number>>();
+  const exportPaths = new Map<number, { x: number; y: number }[]>();
+  const deliveries = new Map<number, Delivery[]>();
   const samples: Routing['samples'] = [];
   const add = (m: Map<number, number>, edgeIds: number[], w: number) => {
     for (const id of edgeIds) m.set(id, (m.get(id) ?? 0) + w);
@@ -253,12 +264,33 @@ export function buildRouting(city: CityState, connectedRoads: Set<number>, acces
           const m = new Map<number, number>();
           add(m, path.edges, 1);
           freight.set(f.id, m);
+          exportPaths.set(f.id, [...path.points].reverse());
           samples.push({ weight: 30, points: path.points });
         }
       }
     }
   }
 
+  // Livraisons : de chaque usine vers chaque commerce joignable, triées par distance.
+  const polyline = (pts: { x: number; y: number }[]) => pts.reduce((sum, p, i) => (i ? sum + Math.hypot(p.x - pts[i - 1]!.x, p.y - pts[i - 1]!.y) : 0), 0);
+  for (const f of factories) {
+    const fa = attachments.get(f.id);
+    if (!fa) continue;
+    const tree = dijkstra(fa);
+    const list: Delivery[] = [];
+    for (const shop of shops) {
+      const sa = attachments.get(shop.id);
+      const path = sa && pathTo(tree, fa, sa);
+      if (!path) continue;
+      const m = new Map<number, number>();
+      add(m, path.edges, 1);
+      const points = [...path.points].reverse();
+      list.push({ shopId: shop.id, distance: polyline(points), edges: m, points });
+    }
+    list.sort((a, b) => a.distance - b.distance || a.shopId - b.shopId);
+    deliveries.set(f.id, list);
+  }
+
   samples.sort((a, b) => b.weight - a.weight);
-  return { nodes, edges, commute, shopping, freight, samples: samples.slice(0, 60) };
+  return { nodes, edges, commute, shopping, freight, exportPaths, deliveries, samples: samples.slice(0, 60) };
 }

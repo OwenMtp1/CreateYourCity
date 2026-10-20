@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
-  BUILDING_TYPES, BUILDINGS, MAX_DEBT, MAX_TAX_RATE, PARKING, ROAD_TYPES, ROADS, SERVICE_KINDS, type BuildingCategory, type ServiceKind,
+  BUILDING_TYPES, BUILDINGS, MAX_DEBT, MAX_TAX_RATE, PARKING, ROAD_TYPES, ROADS, SERVICE_KINDS, type Building, type BuildingCategory, type ServiceKind,
 } from '@cyc/shared';
 import type { CityLayer } from '../../city3d/CityScene.ts';
 import type { Tool } from '../../city3d/CityView3D.tsx';
@@ -8,6 +8,7 @@ import { client } from '../../net/client.ts';
 import { getQuality, setQuality } from '../../city3d/quality.ts';
 import { activeCity, useGame } from '../../state.ts';
 import { flow, Row } from '../common.tsx';
+import { Businesses, GoodsCircuit } from './economy.tsx';
 import { fmtInt, fmtMoney, fmtPct } from '../format.ts';
 
 const CATEGORY_LABEL: Record<BuildingCategory, string> = {
@@ -56,6 +57,7 @@ export function BuildPanel(props: {
           <option value="safety">Couverture sécurité</option>
           <option value="leisure">Couverture loisirs</option>
           <option value="pollution">Pollution</option>
+          <option value="economy">Économie : bénéfices et livraisons</option>
         </select>
       </label>
 
@@ -150,7 +152,7 @@ export function ParkingSettings({ id, spaces, fee, use }: { id: number; spaces: 
   );
 }
 
-export function EconomyPanel() {
+export function EconomyPanel({ onSelect }: { onSelect?: (b: Building) => void }) {
   const city = useGame(activeCity)!;
   const s = city.stats;
   const [taxes, setTaxes] = useState(city.taxes);
@@ -204,18 +206,8 @@ export function EconomyPanel() {
         <button onClick={() => void client.cityCommand({ type: 'repay', amount })} disabled={city.debt <= 0}>Rembourser</button>
       </div>
 
-      {s && (
-        <>
-          <h4>Biens</h4>
-          <Row label="Demande des habitants" value={`${fmtInt(s.goods.demand)} /j`} />
-          <Row label="Ventes des commerces" value={`${fmtInt(s.goods.sold)} /j`} />
-          <Row label="Production locale" value={`${fmtInt(s.goods.produced)} /j`} />
-          <Row label="Reçus par contrats" value={`${fmtInt(s.goods.contractIn)} /j`} />
-          <Row label="Livrés par contrats" value={`${fmtInt(s.goods.contractDelivered)} /j`} />
-          <Row label="Achetés au marché" value={`${fmtInt(s.goods.imported)} /j à ${s.goods.importPrice.toFixed(1)} cr`} />
-          <Row label="Vendus au marché" value={`${fmtInt(s.goods.exported)} /j à ${s.goods.exportPrice.toFixed(1)} cr`} />
-        </>
-      )}
+      {s && <GoodsCircuit />}
+      {s && <Businesses onSelect={onSelect} />}
     </div>
   );
 }

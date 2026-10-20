@@ -77,3 +77,12 @@ Toutes ces règles sont dans `shared/src/world/` (constantes dans `world/rules.t
   coûte jusqu'à 12 % de fluidité ; un tarif moyen élevé coûte jusqu'à 5 points d'attractivité. Valeurs provisoires.
 - **Paliers** (`shared/src/sim/milestones.ts`) : vérifiés à chaque tick et enregistrés dans l'état de la ville (attribués une
   seule fois). Le client notifie ceux qu'il n'a pas encore vus sur cet appareil ; la première visite sert de référence.
+- **Circuit des biens par bâtiment** (`COMMERCE` dans `shared/src/constants.ts`, `sim/tick.ts`) : chaque habitant achète
+  0,3 bien/j dans un commerce à moins de 450 m (affectation du plus proche au plus lointain). Les commerces se fournissent
+  par contrat, puis auprès des usines de la ville (14 cr + 0,004 cr par mètre de route, usines les plus proches d'abord),
+  puis importent au prix du marché + 5 cr de frais. Les usines exportent le reste au prix du marché (≈ 10 cr). Un
+  commerce qui importe tout ne gagne presque rien ; livré par une usine proche, il devient nettement bénéficiaire.
+  L'impôt sur les bénéfices est calculé entreprise par entreprise (une entreprise en perte ne paie rien).
+- **Effets de voisinage** : bureaux à portée d'une école +20 % de chiffre d'affaires ; logements couverts en loisirs
+  jusqu'à +15 % d'impôt sur le revenu ; entretien des services publics 40 % fixe + 60 % selon l'utilisation de leur
+  capacité nominale ; tours d'habitation plus gourmandes en électricité et en eau par logement.

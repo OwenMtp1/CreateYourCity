@@ -71,8 +71,8 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   },
   tower: {
     type: 'tower', label: "Tour d'habitation", category: 'residential',
-    description: 'Logements à haute densité.',
-    w: 30, h: 30, cost: 260_000, upkeepPerDay: 140, jobs: 0, housing: 400, powerMW: 0.6, waterM3PerDay: 80,
+    description: 'Logements à haute densité : beaucoup d\'habitants sur peu de place, mais gros besoins en électricité et en eau.',
+    w: 30, h: 30, cost: 260_000, upkeepPerDay: 140, jobs: 0, housing: 400, powerMW: 1.2, waterM3PerDay: 140,
   },
   apartment: {
     type: 'apartment', label: 'Immeuble', category: 'residential',
@@ -81,19 +81,19 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   },
   shop: {
     type: 'shop', label: 'Commerce', category: 'commercial',
-    description: 'Vend des biens aux habitants (biens locaux ou importés).',
+    description: "Vend aux habitants à moins de 450 m. S'approvisionne auprès des usines de la ville (moins cher), sinon importe.",
     w: 20, h: 20, cost: 30_000, upkeepPerDay: 15, jobs: 12, housing: 0, powerMW: 0.05, waterM3PerDay: 1,
-    goodsSalesCapacityPerDay: 100,
+    goodsSalesCapacityPerDay: 150,
   },
   office: {
     type: 'office', label: 'Bureaux', category: 'commercial',
-    description: 'Entreprise de services vendus à la région.',
+    description: "Entreprise de services vendus à la région. +20 % de chiffre d'affaires à portée d'une école (main-d'œuvre qualifiée).",
     w: 30, h: 30, cost: 90_000, upkeepPerDay: 30, jobs: 100, housing: 0, powerMW: 0.3, waterM3PerDay: 5,
     officeRevenue: true,
   },
   factory: {
     type: 'factory', label: 'Usine', category: 'industrial',
-    description: 'Produit des biens vendus aux commerces locaux ou exportés. Pollue.',
+    description: 'Produit 400 biens/j livrés par camion aux commerces de la ville (les plus proches d\'abord), le surplus est exporté à bas prix. Pollue.',
     w: 50, h: 40, cost: 160_000, upkeepPerDay: 60, jobs: 30, housing: 0, powerMW: 1.5, waterM3PerDay: 40,
     goodsProductionPerDay: 400, pollution: { radius: 300, intensity: 0.6 },
   },
@@ -129,7 +129,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   },
   park: {
     type: 'park', label: 'Parc', category: 'service',
-    description: 'Espace vert : loisirs pour les quartiers voisins.',
+    description: 'Espace vert : loisirs pour les quartiers voisins, dont les logements prennent de la valeur (+15 % d\'impôt).',
     w: 40, h: 40, cost: 40_000, upkeepPerDay: 150, jobs: 3, housing: 0, powerMW: 0, waterM3PerDay: 20,
     service: { kind: 'leisure', radius: 400, capacity: 3_000 }, publicSector: true,
   },

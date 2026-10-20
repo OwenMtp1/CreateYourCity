@@ -39,7 +39,8 @@ export const MAX_TAX_RATE = 0.3;
 export const ECONOMY = {
   wagePerWorker: 100,
   workforceShare: 0.5,
-  goodsDemandPerResident: 0.1,
+  /** Biens achetés par habitant et par jour (dans un commerce à proximité). */
+  goodsDemandPerResident: 0.3,
   retailPrice: 30,
   localWholesalePrice: 14,
   importGoodsPrice: 18,
@@ -49,6 +50,26 @@ export const ECONOMY = {
   waterImportPricePerM3: 0.8,
   /** Efficacité des services publics quand le trésor est négatif. */
   deficitServiceEfficiency: 0.6,
+} as const;
+
+/**
+ * Circuit des biens : usines → commerces → habitants. Les commerces vendent aux habitants de leur
+ * quartier, s'approvisionnent d'abord auprès des usines de la ville (prix de gros + livraison selon
+ * la distance), puis importent le reste, nettement plus cher. Les usines exportent leurs surplus.
+ */
+export const COMMERCE = {
+  /** Rayon de chalandise : un commerce vend aux habitants à moins de 450 m. */
+  catchmentRadius: 450,
+  /** Frais d'importation (transport, intermédiaires) ajoutés au prix du marché commun. */
+  importHandling: 5,
+  /** Coût de livraison par mètre de route entre une usine et un commerce (payé par le commerce). */
+  deliveryCostPerMeter: 0.004,
+  /** Bonus de chiffre d'affaires des bureaux à portée d'une école (main-d'œuvre qualifiée). */
+  educatedOfficeBonus: 0.2,
+  /** Part fixe de l'entretien des services publics ; le reste suit leur taux d'utilisation. */
+  serviceFixedUpkeepShare: 0.4,
+  /** Hausse de l'impôt résidentiel d'un logement bien desservi en loisirs (valeur foncière). */
+  leisureTaxBonus: 0.15,
 } as const;
 
 /** Démographie agrégée. */
@@ -63,7 +84,7 @@ export const POPULATION = {
 export const TRAFFIC = {
   tripsPerResidentPerDay: 1,
   tripsPerWorkerPerDay: 1,
-  tripsPerGoodSold: 2,
+  tripsPerGoodSold: 0.7,
   freeFlowRatio: 0.8,
   minEfficiency: 0.4,
   /** Déplacements de fret par unité de capacité de production. */

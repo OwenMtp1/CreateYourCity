@@ -1,7 +1,7 @@
 // Conseillers municipaux : règles fixes et chiffrées (aucune IA), dérivées des statistiques du
 // dernier tick et de l'agencement. Chaque conseil indique quoi construire ou modifier.
 import { BUILDINGS, type BuildingType, type ServiceKind } from '../catalog.ts';
-import { ECONOMY } from '../constants.ts';
+import { COMMERCE, ECONOMY } from '../constants.ts';
 import { buildingRect, rectCenter } from '../geometry.ts';
 import type { CityLayers, CityState } from '../types.ts';
 
@@ -113,11 +113,26 @@ export function adviseCity(city: CityState, layers: CityLayers | null): Advice[]
   if (waterImportCost > BUILDINGS.water_tower.upkeepPerDay * 1.5) {
     add({ id: 'water', severity: 'info', title: `Eau importée : ${fmt(waterImportCost)} cr/jour`, detail: `Un château d'eau (2 000 m³/j, entretien ${fmt(BUILDINGS.water_tower.upkeepPerDay)} cr/j) serait rentable.`, build: 'water_tower' });
   }
-  if (s.goods.imported > 150 && s.goods.importPrice > 16) {
-    add({ id: 'goods', severity: 'info', title: `${fmt(s.goods.imported)} biens importés par jour`, detail: `Le marché est cher (${s.goods.importPrice.toFixed(1)} cr) : une usine (400 biens/j) ou un contrat avec un joueur réduirait les coûts des commerces.`, build: 'factory' });
+  // Circuit des biens : habitants sans commerce, importations coûteuses, usines qui bradent leurs surplus.
+  const g = s.goods;
+  const unserved = g.unserved ?? Math.max(0, g.demand - g.sold);
+  if (unserved > 20 && unserved > g.demand * 0.15) {
+    add({ id: 'shops', severity: 'info', title: `${fmt(unserved)} biens/j non achetés`, detail: `Des habitants n'ont aucun commerce à moins de ${COMMERCE.catchmentRadius} m (ou les commerces sont pleins). Construisez un commerce au milieu des logements : chaque bien vendu rapporte à la ville.`, build: 'shop' });
   }
-  if (s.goods.demand > s.goods.sold * 1.2 && s.goods.demand > 20) {
-    add({ id: 'shops', severity: 'info', title: 'Commerces insuffisants', detail: `Les habitants veulent ${fmt(s.goods.demand)} biens/j mais les commerces n'en vendent que ${fmt(s.goods.sold)}.`, build: 'shop' });
+  const localPrice = ECONOMY.localWholesalePrice + 1;
+  const importUnit = g.importPrice + COMMERCE.importHandling;
+  if (g.imported > 30 && g.imported > g.sold * 0.3) {
+    add({ id: 'goods', severity: 'warning', title: `Vos commerces importent ${fmt(g.imported)} biens/j`, detail: `Chaque bien importé coûte ≈ ${fmt(importUnit)} cr contre ≈ ${fmt(localPrice)} cr livré par une usine proche : une usine (400 biens/j) près des commerces rendrait la plupart rentables.`, build: 'factory' });
+  }
+  if (g.exported > 50 && g.exported > g.produced * 0.4) {
+    add({ id: 'exports', severity: 'info', title: `Vos usines exportent ${fmt(g.exported)} biens/j à bas prix`, detail: `Exportés à ${g.exportPrice.toFixed(0)} cr au lieu de ${ECONOMY.localWholesalePrice} cr à vos propres commerces : construisez des commerces près des quartiers habités, les usines les livreront.`, build: 'shop' });
+  }
+  if (layers?.economy) {
+    const losers = city.buildings.filter((b) => (layers.economy![b.id]?.profit ?? 0) < 0 && (BUILDINGS[b.type].category === 'commercial' || BUILDINGS[b.type].category === 'industrial'));
+    if (losers.length) {
+      const worst = losers.reduce((a, b) => (layers.economy![b.id]!.profit < layers.economy![a.id]!.profit ? b : a));
+      add({ id: 'losers', severity: 'info', title: `${losers.length} entreprise(s) en perte`, detail: `Une entreprise en perte ne paie pas d'impôt. Commerce : il manque des clients à proximité ou il importe trop cher. Bureaux : trop de postes vacants. Couche « Économie » pour les repérer.`, buildingId: worst.id });
+    }
   }
   if (city.taxes.residential > 0.15) {
     add({ id: 'tax', severity: 'info', title: `Impôt sur le revenu élevé (${pct(city.taxes.residential)})`, detail: "Au-delà de 8 %, chaque point réduit l'attractivité de la ville." });

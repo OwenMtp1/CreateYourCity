@@ -2,7 +2,7 @@
 // bâtiments, zones de service et pollution. Recalculée seulement quand layoutVersion change.
 import { BUILDINGS, type TransitMode } from '../catalog.ts';
 import { buildRouting, type Routing } from './routing.ts';
-import { REGIONAL_ACCESS, ROAD_ACCESS_DISTANCE, ROAD_JOIN_TOLERANCE } from '../constants.ts';
+import { COMMERCE, REGIONAL_ACCESS, ROAD_ACCESS_DISTANCE, ROAD_JOIN_TOLERANCE } from '../constants.ts';
 import { buildingRect, pointSegmentDistance, rectDistance, roadWidth, segmentDistance, segmentRectDistance } from '../geometry.ts';
 import type { BuildingStatus, CityState } from '../types.ts';
 
@@ -20,6 +20,10 @@ export interface CityLayout {
   transitCover: Map<number, Set<TransitMode>>;
   /** Graphe routier et répartition des itinéraires. */
   routing: Routing;
+  /** Clientèle de chaque commerce : logements à moins du rayon de chalandise, du plus proche au plus lointain. */
+  shopReach: Map<number, number[]>;
+  /** Bureaux à portée d'une école en service (main-d'œuvre qualifiée). */
+  educatedOffices: Set<number>;
 }
 
 function find(parent: number[], i: number): number {
@@ -102,9 +106,28 @@ export function analyzeLayout(city: CityState): CityLayout {
     const srect = buildingRect(s);
     for (const r of residential) if (rectDistance(srect, buildingRect(r)) <= t.radius) transitCover.get(r.id)!.add(t.mode);
   }
+  // Clientèle des commerces et bureaux proches d'une école.
+  const shopReach = new Map<number, number[]>();
+  const educatedOffices = new Set<number>();
+  const schools = buildings.filter((b) => BUILDINGS[b.type].service?.kind === 'education' && status.get(b.id) === 'ok');
+  for (const b of buildings) {
+    const def = BUILDINGS[b.type];
+    if (status.get(b.id) !== 'ok') continue;
+    const rect = buildingRect(b);
+    if (def.goodsSalesCapacityPerDay) {
+      shopReach.set(b.id, residential
+        .map((r) => ({ id: r.id, d: rectDistance(rect, buildingRect(r)) }))
+        .filter((e) => e.d <= COMMERCE.catchmentRadius)
+        .sort((x, y) => x.d - y.d || x.id - y.id)
+        .map((e) => e.id));
+    }
+    if (def.officeRevenue && schools.some((sc) => rectDistance(rect, buildingRect(sc)) <= BUILDINGS[sc.type].service!.radius)) {
+      educatedOffices.add(b.id);
+    }
+  }
   const connected = new Set([...roadConnected].filter(([, v]) => v).map(([k]) => k));
   const routing = buildRouting(city, connected, access, buildings.filter((b) => status.get(b.id) === 'ok'));
-  return { key: `${city.cityId}:${city.layoutVersion}`, roadConnected, access, status, serviceReach, pollution, transitCover, routing };
+  return { key: `${city.cityId}:${city.layoutVersion}`, roadConnected, access, status, serviceReach, pollution, transitCover, routing, shopReach, educatedOffices };
 }
 
 const layoutCache = new WeakMap<CityState, CityLayout>();

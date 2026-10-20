@@ -96,7 +96,7 @@ export function GameScreen() {
             {tab === 'buildings' && <BuildingsPanel selected={selected} onSelect={(b) => { setSelected(b.id); focusOn(b); }} />}
             {tab === 'advisors' && <AdvisorsPanel setTool={(t) => { setTool(t); setTab('build'); }} setSelected={setSelected} />}
             {tab === 'stats' && <StatsPanel />}
-            {tab === 'economy' && <EconomyPanel />}
+            {tab === 'economy' && <EconomyPanel onSelect={(b) => { setSelected(b.id); focusOn(b); }} />}
             {tab === 'population' && <PopulationPanel />}
             {tab === 'services' && <ServicesPanel layer={layer} setLayer={setLayer} />}
             {tab === 'territory' && <TerritoryPanel />}
@@ -109,7 +109,7 @@ export function GameScreen() {
         </aside>
       )}
       {showCity && selected !== null && (
-        <BuildingInspector id={selected} onClose={() => setSelected(null)} onFocus={focusOn} />
+        <BuildingInspector id={selected} onClose={() => setSelected(null)} onFocus={focusOn} onSelect={(b) => { setSelected(b.id); focusOn(b); }} />
       )}
       {showCity && (
         <Tutorial setTool={setTool} openTab={(t) => setTab(t)} visitedEconomy={visitedEconomy} visitedGlobe={visitedGlobe} />

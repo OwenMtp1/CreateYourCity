@@ -12,7 +12,7 @@ import {
 import { getQuality } from './quality.ts';
 import { buildModel, placeModel, sharedGeometry, solid, treeInstances, windowMaterials, type ModelInfo } from './models.ts';
 
-export type CityLayer = 'none' | 'status' | 'traffic' | 'health' | 'education' | 'safety' | 'leisure' | 'pollution';
+export type CityLayer = 'none' | 'status' | 'traffic' | 'health' | 'education' | 'safety' | 'leisure' | 'pollution' | 'economy';
 
 export type Preview =
   | { kind: 'building'; type: BuildingType; x: number; y: number; rotation: 0 | 90; ok: boolean }
@@ -170,7 +170,70 @@ export class CityScene {
       this.colorRoads(city, layers, layer);
     }
     this.updateTraffic(city);
+    this.updateTrucks(layers);
     this.rebuildOverlays(city, layers, layer, selected);
+  }
+
+  // --- Camions : livraisons usine → commerce et exportations ------------------------------------
+
+  private trucks: THREE.InstancedMesh | null = null;
+  private truckState: { path: number; s: number; dir: 1 | -1; speed: number }[] = [];
+  private truckPaths: { pts: THREE.Vector3[]; cum: number[]; total: number }[] = [];
+  private truckKey = '';
+
+  /** Camions orange (usine → commerce de la ville) et gris (exportations vers l'accès régional). */
+  private updateTrucks(layers: CityLayers | null) {
+    const routing = this.layout?.routing;
+    const links = layers?.supply ?? [];
+    const exports = Object.entries(layers?.economy ?? {})
+      .filter(([, e]) => (e.exported ?? 0) > 15)
+      .map(([id, e]) => ({ id: Number(id), qty: e.exported ?? 0 }));
+    const key = [
+      ...links.map((l) => `${l.from}>${l.to}:${Math.min(3, Math.ceil(l.qty / 50))}`),
+      ...exports.map((x) => `${x.id}^${Math.min(2, Math.ceil(x.qty / 80))}`),
+    ].join(',');
+    if (key === this.truckKey && (this.trucks || !key)) return;
+    this.truckKey = key;
+    if (this.trucks) {
+      this.scene.remove(this.trucks);
+      this.trucks.dispose();
+      this.trucks = null;
+    }
+    this.truckState = [];
+    this.truckPaths = [];
+    if (!routing || !key) return;
+    const toPath = (points: { x: number; y: number }[]) => {
+      const pts = points.map((p) => new THREE.Vector3(p.x - HALF, 1.5, p.y - HALF));
+      const cum = [0];
+      for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1]! + pts[i]!.distanceTo(pts[i - 1]!));
+      return { pts, cum, total: cum.at(-1)! };
+    };
+    const colors: number[] = [];
+    const rnd = mulberry32(links.length * 31 + exports.length);
+    const addTrucks = (points: { x: number; y: number }[] | undefined, count: number, color: number) => {
+      if (!points || points.length < 2) return;
+      const path = toPath(points);
+      if (path.total < 10) return;
+      this.truckPaths.push(path);
+      for (let k = 0; k < count; k++) {
+        this.truckState.push({ path: this.truckPaths.length - 1, s: ((k + rnd()) / count) * path.total, dir: k % 2 ? -1 : 1, speed: 8 + rnd() * 3 });
+        colors.push(color);
+      }
+    };
+    for (const l of links) addTrucks(routing.deliveries.get(l.from)?.find((d) => d.shopId === l.to)?.points, Math.max(1, Math.min(3, Math.ceil(l.qty / 50))), 0xf97316);
+    for (const x of exports) addTrucks(routing.exportPaths.get(x.id), Math.max(1, Math.min(2, Math.ceil(x.qty / 80))), 0x94a3b8);
+    const n = Math.min(this.truckState.length, this.low ? 40 : 140);
+    this.truckState.length = n;
+    if (!n) return;
+    const geo = sharedGeometry('truck', () => {
+      const trailer = new THREE.BoxGeometry(5.2, 3, 2.5).translate(-0.9, 0, 0);
+      const cab = new THREE.BoxGeometry(1.7, 2.3, 2.4).translate(2.7, -0.35, 0);
+      return mergeGeometries([trailer.toNonIndexed(), cab.toNonIndexed()])!;
+    });
+    this.trucks = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.2 }), n);
+    this.trucks.castShadow = !this.low;
+    for (let i = 0; i < n; i++) this.trucks.setColorAt(i, new THREE.Color(colors[i]!));
+    this.scene.add(this.trucks);
   }
 
   // --- Circulation animée -------------------------------------------------------------------
@@ -221,15 +284,23 @@ export class CityScene {
   }
 
   private moveCars(dt: number) {
-    if (!this.cars) return;
+    // Les embouteillages ralentissent visiblement la circulation.
+    const slow = Math.max(0.15, this.trafficEfficiency ** 3);
+    if (this.cars) this.moveAlong(this.cars, this.carState, this.paths, dt, slow, 0.9);
+    if (this.trucks) this.moveAlong(this.trucks, this.truckState, this.truckPaths, dt, slow, 1.5);
+  }
+
+  /** Avance des véhicules instanciés le long de leurs tracés (aller-retour, circulation à droite). */
+  private moveAlong(
+    mesh: THREE.InstancedMesh, states: { path: number; s: number; dir: 1 | -1; speed: number }[],
+    paths: { pts: THREE.Vector3[]; cum: number[]; total: number }[], dt: number, slow: number, height: number,
+  ) {
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const up = new THREE.Vector3(0, 1, 0);
     const pos = new THREE.Vector3();
-    // Les embouteillages ralentissent visiblement la circulation.
-    const slow = Math.max(0.15, this.trafficEfficiency ** 3);
-    this.carState.forEach((c, i) => {
-      const p = this.paths[c.path]!;
+    states.forEach((c, i) => {
+      const p = paths[c.path]!;
       c.s += c.dir * c.speed * slow * dt * 4;
       if (c.s > p.total) { c.s = p.total; c.dir = -1; }
       if (c.s < 0) { c.s = 0; c.dir = 1; }
@@ -241,12 +312,12 @@ export class CityScene {
       const dir = new THREE.Vector3().subVectors(b, a).normalize().multiplyScalar(c.dir);
       // Circulation à droite.
       pos.add(new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(-2.4));
-      if (this.bridges.length) pos.y = 0.9 + this.deckHeightAt(pos.x, pos.z);
+      pos.y = height + (this.bridges.length ? this.deckHeightAt(pos.x, pos.z) : 0);
       q.setFromAxisAngle(up, Math.atan2(-dir.z, dir.x));
       m.compose(pos, q, new THREE.Vector3(1, 1, 1));
-      this.cars!.setMatrixAt(i, m);
+      mesh.setMatrixAt(i, m);
     });
-    this.cars.instanceMatrix.needsUpdate = true;
+    mesh.instanceMatrix.needsUpdate = true;
   }
 
   // --- Transports en commun -------------------------------------------------------------------
@@ -678,9 +749,12 @@ export class CityScene {
   private rebuildOverlays(city: CityState, layers: CityLayers | null, layer: CityLayer, selected: number | null) {
     for (const o of [...this.overlayGroup.children]) {
       o.removeFromParent();
-      (o as THREE.Mesh).geometry?.dispose();
+      // La géométrie des étiquettes (Sprite) est partagée par three.js : on ne la libère pas.
+      if (!(o as THREE.Sprite).isSprite) (o as THREE.Mesh).geometry?.dispose();
+      // Les textures d'étiquettes sont mises en cache (labelTexture) : seul le matériau est libéré.
       ((o as THREE.Mesh).material as THREE.Material | undefined)?.dispose();
     }
+    if (layer === 'economy') this.drawEconomyFlows(city, layers);
     for (const b of city.buildings) {
       const entry = this.buildings.get(b.id);
       if (!entry) continue;
@@ -699,6 +773,23 @@ export class CityScene {
         const p = layers?.pollution[b.id];
         if (p !== undefined) color = ramp(1 - p);
         else if (def.pollution) color = new THREE.Color(0x92400e);
+      }
+      if (layer === 'economy') {
+        const e = layers?.economy?.[b.id];
+        if (e && e.publicCost !== undefined) {
+          // Services publics : coût pour la ville (bleu), selon leur utilisation.
+          color = new THREE.Color(0x3b82f6);
+          const label = this.label(`coût ${Math.round(e.publicCost).toLocaleString('fr-FR')} cr/j`, '#bfdbfe');
+          label.position.set(b.x - HALF, entry.info.height + 9, b.y - HALF);
+          this.overlayGroup.add(label);
+        } else if (e && !def.housing) {
+          // Entreprises : vert si bénéficiaire, rouge si déficitaire, intensité selon le montant.
+          const k = Math.min(1, Math.abs(e.profit) / 2500);
+          color = new THREE.Color().setHSL(e.profit >= 0 ? 0.36 : 0.0, 0.75, 0.32 + 0.22 * k);
+          const label = this.label(`${e.profit >= 0 ? '+' : '−'}${Math.round(Math.abs(e.profit)).toLocaleString('fr-FR')} cr/j`, e.profit >= 0 ? '#bbf7d0' : '#fecaca');
+          label.position.set(b.x - HALF, entry.info.height + 9, b.y - HALF);
+          this.overlayGroup.add(label);
+        }
       }
       if (color) {
         const tint = new THREE.Mesh(
@@ -734,6 +825,77 @@ export class CityScene {
         this.overlayGroup.add(ring);
       }
     }
+  }
+
+  /** Circuit des biens : livraisons (orange), importations (bleu) et exportations (gris). */
+  private drawEconomyFlows(city: CityState, layers: CityLayers | null) {
+    const routing = this.layout?.routing;
+    const gate = new THREE.Vector3(-HALF - 10, 0, REGIONAL_ACCESS.y - HALF);
+    const pos = new Map(city.buildings.map((b) => [b.id, new THREE.Vector3(b.x - HALF, 0, b.y - HALF)]));
+    const tube = (points: THREE.Vector3[], radius: number, color: number, opacity: number) => {
+      if (points.length < 2) return;
+      const path = new THREE.CurvePath<THREE.Vector3>();
+      for (let i = 1; i < points.length; i++) path.add(new THREE.LineCurve3(points[i - 1]!, points[i]!));
+      const mesh = new THREE.Mesh(
+        new THREE.TubeGeometry(path, Math.max(8, points.length * 4), radius, 6, false),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false }),
+      );
+      this.overlayGroup.add(mesh);
+    };
+    const arc = (a: THREE.Vector3, b: THREE.Vector3, radius: number, color: number) => {
+      const lift = Math.min(160, 30 + a.distanceTo(b) * 0.18);
+      const curve = new THREE.QuadraticBezierCurve3(a.clone().setY(4), a.clone().lerp(b, 0.5).setY(lift), b.clone().setY(8));
+      tube(curve.getPoints(40), radius, color, 0.7);
+    };
+    for (const l of layers?.supply ?? []) {
+      const d = routing?.deliveries.get(l.from)?.find((x) => x.shopId === l.to);
+      if (!d) continue;
+      const pts = d.points.map((p) => {
+        const x = p.x - HALF, z = p.y - HALF;
+        return new THREE.Vector3(x, 3.5 + this.deckHeightAt(x, z), z);
+      });
+      tube(pts, 0.8 + Math.min(2.2, l.qty / 60), 0xf97316, 0.85);
+    }
+    for (const [id, e] of Object.entries(layers?.economy ?? {})) {
+      const p = pos.get(Number(id));
+      if (!p) continue;
+      if ((e.imported ?? 0) > 3) arc(gate, p, 0.6 + Math.min(2, (e.imported ?? 0) / 70), 0x3b82f6);
+      if ((e.exported ?? 0) > 3) arc(p, gate, 0.6 + Math.min(2, (e.exported ?? 0) / 120), 0x94a3b8);
+    }
+  }
+
+  private readonly labelCache = new Map<string, THREE.CanvasTexture>();
+
+  /** Étiquette toujours face à la caméra (texte mis en cache). */
+  private label(text: string, color: string): THREE.Sprite {
+    const key = `${color}|${text}`;
+    let tex = this.labelCache.get(key);
+    if (!tex) {
+      if (this.labelCache.size > 400) {
+        for (const t of this.labelCache.values()) t.dispose();
+        this.labelCache.clear();
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = 'rgba(8, 12, 20, 0.78)';
+      ctx.beginPath();
+      ctx.roundRect(4, 8, 248, 48, 14);
+      ctx.fill();
+      ctx.font = '600 30px Inter, system-ui, sans-serif';
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, 128, 33);
+      tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      this.labelCache.set(key, tex);
+    }
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+    sprite.scale.set(28, 7, 1);
+    sprite.renderOrder = 10;
+    return sprite;
   }
 
   setGrid(on: boolean) {
@@ -1116,6 +1278,7 @@ export class CityScene {
     this.controls.dispose();
     this.envTarget?.dispose();
     this.envMaterial.dispose();
+    for (const t of this.labelCache.values()) t.dispose();
     this.pmrem.dispose();
     this.renderer.domElement.removeEventListener('webglcontextlost', this.onContextLost);
     this.renderer.domElement.removeEventListener('webglcontextrestored', this.onContextRestored);
