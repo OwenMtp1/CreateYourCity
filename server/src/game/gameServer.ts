@@ -4,7 +4,7 @@ import {
   applyCityCommand, clientMessageSchema, createCityState, HISTORY_EVERY_TICKS, simulateTick, simulateTicks, TICK_MS,
   type ChatMessage, type CityState, type ClientMessage, type LobbyInfo, type ServerMessage,
 } from '@cyc/shared';
-import { applyWorldAction, buildWorldView, checkExpansion, cityModifiers, commitExpansion, evaluateNation, RuleError } from '@cyc/shared/game';
+import { applyWorldAction, buildWorldView, checkExpansion, checkForcedAnnexation, cityModifiers, commitExpansion, commitForcedAnnexation, evaluateNation, RuleError } from '@cyc/shared/game';
 import { CITY_BY_ID } from '@cyc/shared/world';
 import { AuthError, type Authenticator, type PlayerIdentity } from '../auth.ts';
 import { TokenBucket } from '../rateLimit.ts';
@@ -270,7 +270,7 @@ export class GameServer {
         }
         case 'expandCity': {
           const world = this.currentLobby(s);
-          await this.expandCity(world, player, msg.fromCityId, msg.cityId);
+          await this.expandCity(world, player, msg.fromCityId, msg.cityId, msg.force ?? false);
           this.requestSave(world);
           return reply(true);
         }
@@ -422,7 +422,15 @@ export class GameServer {
     });
   }
 
-  private async expandCity(world: LobbyWorld, player: PlayerIdentity, fromCityId: string, cityId: string) {
+  private async expandCity(world: LobbyWorld, player: PlayerIdentity, fromCityId: string, cityId: string, force: boolean) {
+    if (force) {
+      const { plan, city } = checkForcedAnnexation(world.world, player.id, fromCityId, cityId);
+      await this.insertCity(world, player, city, async () => {
+        commitForcedAnnexation(world.world, player.id, fromCityId, city, plan);
+        await this.log(world, player.id, 'annexCity', { fromCityId, cityId, troops: plan.required });
+      });
+      return;
+    }
     const { cost, city } = checkExpansion(world.world, player.id, fromCityId, cityId);
     await this.insertCity(world, player, city, async () => {
       commitExpansion(world.world, player.id, fromCityId, city, cost);

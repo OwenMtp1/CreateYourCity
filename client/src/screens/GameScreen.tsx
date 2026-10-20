@@ -301,7 +301,7 @@ function useEventNotifications() {
     for (const e of events) {
       if (e.id <= lastId.current) continue;
       const concernsMe = player && e.players.includes(player.id);
-      const major = ['war', 'peace', 'capture', 'election', 'impeachment'].includes(e.kind);
+      const major = ['war', 'peace', 'capture', 'election', 'impeachment', 'betrayal'].includes(e.kind);
       if (concernsMe || major) toast(e.text, e.kind === 'war' || e.kind === 'capture' ? 'error' : 'info');
     }
     lastId.current = Math.max(lastId.current, max);

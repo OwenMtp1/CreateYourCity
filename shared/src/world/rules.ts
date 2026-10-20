@@ -58,6 +58,24 @@ export const EXPANSION = {
   maxCitiesPerPlayer: 12,
 } as const;
 
+/** Annexion par la force : soldats (unités terrestres) stationnés dans la ville de départ. */
+export const ANNEXATION = {
+  baseTroops: 30,
+  /** Un soldat de plus tous les 4 km. */
+  troopsPerKm: 0.25,
+  /** Ville d'un joueur : soldats supplémentaires par soldat de la garnison et par point de fortification. */
+  perDefender: 1.5,
+  perFortification: 0.5,
+  /** Part des troupes engagées perdue dans l'opération. */
+  lossesNeutral: 0.05,
+  lossesOwned: 0.3,
+} as const;
+
+/** Soldats nécessaires pour annexer une ville située à `km` de la ville de départ. */
+export function annexationTroops(km: number, defense = 0): number {
+  return Math.ceil(ANNEXATION.baseTroops + ANNEXATION.troopsPerKm * km + defense);
+}
+
 export const MARKET = {
   initialPrice: 14,
   floor: 8,

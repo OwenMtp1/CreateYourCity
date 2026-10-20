@@ -55,6 +55,7 @@ export const worldActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('sendMessage'), to: id, text: z.string().trim().min(1).max(500) }),
   z.object({ type: z.literal('secede'), cityId: id }),
   z.object({ type: z.literal('rejoinCountry'), cityId: id }),
+  z.object({ type: z.literal('annexByForce'), fromCityId: cityId, cityId, betray: z.boolean().optional() }),
 ]) satisfies z.ZodType<WorldAction>;
 
 const coord = z.number().finite().min(-10_000).max(10_000);
@@ -100,7 +101,8 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('joinLobby'), reqId, code: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{6}$/) }),
   z.object({ t: z.literal('leaveLobby'), reqId }),
   z.object({ t: z.literal('claimCity'), reqId, cityId: z.string().max(40) }),
-  z.object({ t: z.literal('expandCity'), reqId, fromCityId: z.string().max(40), cityId: z.string().max(40) }),
+  /** `force` : annexion d'une ville neutre par l'armée stationnée dans la ville de départ, sans paiement. */
+  z.object({ t: z.literal('expandCity'), reqId, fromCityId: z.string().max(40), cityId: z.string().max(40), force: z.boolean().optional() }),
   z.object({ t: z.literal('command'), reqId, cityId: z.string().max(40), cmd: cityCommandSchema }),
   z.object({ t: z.literal('action'), reqId, action: worldActionSchema }),
   z.object({ t: z.literal('chat'), reqId, text: z.string().trim().min(1).max(500) }),

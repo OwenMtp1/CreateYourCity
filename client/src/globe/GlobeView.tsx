@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CITY_BY_ID, COUNTRY_BY_ID, WORLD_CITIES } from '@cyc/shared/world';
-import { allied, distanceKm, EXPANSION, type WorldView } from '@cyc/shared/game';
+import { allied, annexationTroops, distanceKm, EXPANSION, LAND_UNITS, type WorldView } from '@cyc/shared/game';
 import { client } from '../net/client.ts';
 import { getState, setState, useGame } from '../state.ts';
 import { fmtInt, fmtMoney } from '../ui/format.ts';
@@ -233,6 +233,9 @@ function PlaceCard({ cityId, countryId, onFocus }: { cityId: string | null; coun
                       Déclarer la guerre à {owner.ownerName}
                     </button>
                   )}
+                  {mineIds.length > 0 && (
+                    <ForceAnnex cityId={city.id} source={source} setSource={setFromCity} owner={owner.ownerId} ownerName={owner.ownerName} />
+                  )}
                 </div>
               )}
             </>
@@ -255,6 +258,10 @@ function PlaceCard({ cityId, countryId, onFocus }: { cityId: string | null; coun
                 onClick={() => void client.act({ t: 'expandCity', fromCityId: source, cityId: city.id })}>
                 {expansionKm > EXPANSION.maxDistanceKm ? `Trop loin (${fmtInt(expansionKm)} km)` : `Annexer pour ${fmtMoney(expansionCost)}`}
               </button>
+              {expansionKm <= EXPANSION.maxDistanceKm && (
+                <span className="small muted">Le prix est versé au trésor national {country ? `(${country.nameFr})` : ''}.</span>
+              )}
+              <ForceAnnex cityId={city.id} source={source} />
             </div>
           )}
           {myArmies.length > 0 && (
@@ -308,4 +315,64 @@ function CountryCard({ countryId, onFocus }: { countryId: string; onFocus: (id: 
 const SIDES = ['au nord', 'au nord-est', "à l'est", 'au sud-est', 'au sud', 'au sud-ouest', "à l'ouest", 'au nord-ouest'];
 function seaSide(dir: number): string {
   return SIDES[Math.round(dir / 45) % 8]!;
+}
+
+/** Soldats (unités terrestres) de mes armées immobiles dans une ville. */
+function useTroopsAt(cityId: string): number {
+  const world = useGame((s) => s.world);
+  const player = useGame((s) => s.player);
+  return Math.floor((world?.armies ?? [])
+    .filter((a) => a.ownerId === player?.id && a.cityId === cityId && !a.movement && a.units)
+    .reduce((s, a) => s + LAND_UNITS.reduce((n, u) => n + (a.units![u] ?? 0), 0), 0));
+}
+
+/**
+ * Annexion par la force depuis une de mes villes : plus la cible est loin, plus il faut de soldats.
+ * La ville d'un autre joueur demande en plus de vaincre sa garnison ; celle d'un allié, de le trahir.
+ */
+function ForceAnnex({ cityId, source, setSource, owner, ownerName }: {
+  cityId: string; source: string; setSource?: (id: string) => void; owner?: string; ownerName?: string;
+}) {
+  const world = useGame((s) => s.world);
+  const player = useGame((s) => s.player);
+  const myCities = useGame((s) => s.myCities);
+  const troops = useTroopsAt(source);
+  if (!source || !player) return null;
+  const km = distanceKm(source, cityId);
+  const need = annexationTroops(km);
+  const tooFar = km > EXPANSION.maxDistanceKm;
+  const between = (t: { a: string; b: string }) => (t.a === player.id && t.b === owner) || (t.a === owner && t.b === player.id);
+  const bonded = !!owner && !!world && (
+    world.treaties.some((t) => t.status === 'active' && t.type !== 'city_transfer' && between(t))
+    || world.organizations.some((o) => o.members.includes(player.id) && o.members.includes(owner)));
+  const go = () => {
+    if (!owner) {
+      void client.act({ t: 'expandCity', fromCityId: source, cityId, force: true });
+      return;
+    }
+    const msg = bonded
+      ? `Trahir ${ownerName} ? Tous vos accords avec ce joueur (traités, organisations communes, contrats) seront rompus et vous entrerez en guerre.`
+      : `Attaquer ${ownerName} et annexer sa ville ? Cela vaut déclaration de guerre.`;
+    if (confirm(msg)) void client.action({ type: 'annexByForce', fromCityId: source, cityId, betray: bonded });
+  };
+  return (
+    <div className="force-annex stack">
+      <strong className="small">⚔️ Annexer par la force</strong>
+      {setSource && Object.keys(myCities).length > 1 && (
+        <label className="small">Depuis
+          <select value={source} onChange={(e) => setSource(e.target.value)}>
+            {Object.keys(myCities).map((id) => <option key={id} value={id}>{CITY_BY_ID.get(id)?.name} ({fmtInt(distanceKm(id, cityId))} km)</option>)}
+          </select>
+        </label>
+      )}
+      <span className="small muted">
+        {tooFar ? `Trop loin (${fmtInt(km)} km, maximum ${EXPANSION.maxDistanceKm} km).`
+          : `${fmtInt(km)} km : ${fmtInt(need)} soldats minimum${owner ? ' + garnison et fortifications' : ''} · ${fmtInt(troops)} stationnés à ${CITY_BY_ID.get(source)?.name}.`}
+      </span>
+      {bonded && <span className="small dictator-note">🗡 {ownerName} est votre allié ou partenaire : l'annexer est une trahison qui rompt tous vos accords.</span>}
+      <button className={bonded ? 'danger' : ''} disabled={tooFar || troops < need} onClick={go}>
+        {bonded ? `🗡 Trahir et annexer` : `⚔️ Envoyer ${fmtInt(need)}${owner ? '+' : ''} soldats`}
+      </button>
+    </div>
+  );
 }

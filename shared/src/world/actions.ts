@@ -5,13 +5,13 @@ import { INDEPENDENCE, TICKS_PER_DAY } from '../constants.ts';
 import { LAW_EFFECTS, type LawId, type ProjectId } from '../sim/modifiers.ts';
 import type { CityState } from '../types.ts';
 import { CITY_BY_ID } from '../world.ts';
-import { changeOwner } from './military.ts';
+import { captureCity, changeOwner, fortification, landSize } from './military.ts';
 import { countryName, evaluateNation, getNation } from './nations.ts';
 import {
-  activeTreaty, allied, atWar, cityName, citiesOf, distanceKm, eligibleVoters, EXPANSION, MILITARY, NATION,
+  activeTreaty, allied, ANNEXATION, annexationTroops, atWar, cityName, citiesOf, distanceKm, eligibleVoters, EXPANSION, MILITARY, NATION,
   hasBuilding, isIndependent, NON_AGGRESSION_NOTICE_TICKS, nextId, ORGANIZATION, playerName, pushEvent, TREATY_LABEL, UNIT_REQUIRES, UNITS,
 } from './rules.ts';
-import { UNIT_TYPES, type OrganizationKind, type TreatyType, type UnitType, type World } from './types.ts';
+import { LAND_UNITS, UNIT_TYPES, type Army, type OrganizationKind, type TreatyType, type UnitType, type World } from './types.ts';
 import { BUILDINGS } from '../catalog.ts';
 import { armySize } from './military.ts';
 
@@ -45,6 +45,8 @@ export type WorldAction =
   /** Sécession : la ville devient une dictature indépendante (ou réintègre son pays). */
   | { type: 'secede'; cityId: string }
   | { type: 'rejoinCountry'; cityId: string }
+  /** Annexion par la force de la ville d'un autre joueur ; `betray` est requis si vous êtes liés par un accord. */
+  | { type: 'annexByForce'; fromCityId: string; cityId: string; betray?: boolean }
   /** Destinataire : identifiant de joueur ou « org:<id> » pour le canal d'une organisation. */
   | { type: 'sendMessage'; to: string; text: string };
 
@@ -92,13 +94,95 @@ export function checkExpansion(world: World, player: string, fromCityId: string,
   return { cost, city };
 }
 
-/** Applique une expansion déjà enregistrée en base. */
+/** Applique une expansion déjà enregistrée en base. Le prix revient au trésor du pays de la ville achetée. */
 export function commitExpansion(world: World, player: string, fromCityId: string, city: CityState, cost: number) {
   const from = ownCity(world, player, fromCityId);
   from.treasury -= cost;
+  getNation(world, city.countryId).treasury += cost;
   world.cities.set(city.cityId, city);
-  pushEvent(world, 'expansion', `${playerName(world.meta, player)} étend son territoire à ${cityName(city.cityId)}.`, [player]);
+  pushEvent(world, 'expansion',
+    `${playerName(world.meta, player)} achète ${cityName(city.cityId)} : ${fmt(cost)} cr versés au trésor national (${countryName(city.countryId)}).`,
+    [player, ...eligibleVoters(world, city.countryId)]);
   evaluateNation(world, city.countryId);
+}
+
+export interface ForcePlan {
+  distance: number;
+  required: number;
+  available: number;
+  /** Renfort exigé par la garnison et les fortifications d'une ville de joueur. */
+  defense: number;
+}
+
+/** Armées immobiles du joueur dans une ville : ce sont elles qui partent annexer. */
+const stationed = (world: World, player: string, cityId: string) =>
+  world.meta.armies.filter((a) => a.ownerId === player && a.cityId === cityId && !a.movement);
+
+/** Garnison d'une ville : armées immobiles de son propriétaire et de ses alliés. */
+const garrison = (world: World, city: CityState) =>
+  world.meta.armies.filter((a) => a.cityId === city.cityId && !a.movement && allied(world.meta, a.ownerId, city.ownerId));
+
+/** Troupes nécessaires et disponibles pour annexer une ville par la force (sans rien modifier). */
+export function forcedAnnexationPlan(world: World, player: string, fromCityId: string, cityId: string): ForcePlan {
+  ownCity(world, player, fromCityId);
+  if (!CITY_BY_ID.get(cityId)) fail('Ville inconnue.');
+  const target = world.cities.get(cityId);
+  if (target?.ownerId === player) fail('Cette ville est déjà à vous.');
+  if (citiesOf(world, player).length >= EXPANSION.maxCitiesPerPlayer) fail(`Limite de ${EXPANSION.maxCitiesPerPlayer} villes atteinte.`);
+  const distance = distanceKm(fromCityId, cityId);
+  if (distance > EXPANSION.maxDistanceKm) fail(`Trop loin : ${fmt(distance)} km (maximum ${EXPANSION.maxDistanceKm} km depuis ${cityName(fromCityId)}).`);
+  const available = Math.floor(stationed(world, player, fromCityId).reduce((s, a) => s + landSize(a), 0));
+  const defense = target
+    ? ANNEXATION.perDefender * garrison(world, target).reduce((s, a) => s + landSize(a), 0) + ANNEXATION.perFortification * fortification(world, target)
+    : 0;
+  const required = annexationTroops(distance, defense);
+  if (available < required) {
+    fail(`Armée insuffisante à ${cityName(fromCityId)} : ${fmt(available)} soldat(s) sur place, ${fmt(required)} nécessaires `
+      + `(${fmt(distance)} km${target ? ', garnison et fortifications comprises' : ''}).`);
+  }
+  return { distance, required, available, defense };
+}
+
+/**
+ * Les troupes engagées quittent la ville de départ (au prorata de chaque armée) et deviennent la garnison
+ * de la ville annexée, après pertes.
+ */
+function occupy(world: World, player: string, fromCityId: string, cityId: string, plan: ForcePlan, losses: number) {
+  const meta = world.meta;
+  const armies = stationed(world, player, fromCityId);
+  const available = armies.reduce((s, a) => s + landSize(a), 0);
+  if (available <= 0) return;
+  const share = Math.min(1, plan.required / available);
+  const units = Object.fromEntries(UNIT_TYPES.map((u) => [u, 0])) as Army['units'];
+  for (const a of armies) {
+    for (const u of LAND_UNITS) {
+      const moved = a.units[u] * share;
+      a.units[u] -= moved;
+      units[u] += moved * (1 - losses);
+    }
+  }
+  meta.armies = meta.armies.filter((a) => !armies.includes(a) || armySize(a) >= MILITARY.minArmySize);
+  meta.armies.push({ id: nextId(meta), ownerId: player, homeCityId: fromCityId, units, cityId, movement: null, supplied: true, paid: true });
+}
+
+/** Annexion par la force d'une ville neutre, déjà enregistrée en base : aucun paiement, les troupes l'occupent. */
+export function commitForcedAnnexation(world: World, player: string, fromCityId: string, city: CityState, plan: ForcePlan) {
+  occupy(world, player, fromCityId, city.cityId, plan, ANNEXATION.lossesNeutral);
+  world.cities.set(city.cityId, city);
+  pushEvent(world, 'expansion',
+    `${playerName(world.meta, player)} annexe ${cityName(city.cityId)} par la force (${fmt(plan.required)} soldats depuis ${cityName(fromCityId)}).`,
+    [player, ...eligibleVoters(world, city.countryId)]);
+  evaluateNation(world, city.countryId);
+}
+
+/** Vérifie une annexion par la force d'une ville neutre et prépare son état (sans écrire). */
+export function checkForcedAnnexation(world: World, player: string, fromCityId: string, cityId: string): { plan: ForcePlan; city: CityState } {
+  if (world.cities.has(cityId)) fail('Cette ville appartient à un joueur : utilisez l\'annexion de ville ennemie.');
+  const plan = forcedAnnexationPlan(world, player, fromCityId, cityId);
+  const target = CITY_BY_ID.get(cityId)!;
+  const city = createCityState({ cityId, countryId: target.countryId, ownerId: player, ownerName: playerName(world.meta, player), tick: world.tick });
+  city.treasury = 0;
+  return { plan, city };
 }
 
 export function applyWorldAction(world: World, player: string, action: WorldAction, now = new Date()): ActionResult {
@@ -466,6 +550,40 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
       nation.treasury -= amount;
       city!.treasury += amount;
       pushEvent(world, 'funds', `${countryName(action.countryId)} verse une subvention de ${fmt(amount)} cr à ${cityName(city!.cityId)}.`);
+      return;
+    }
+
+    case 'annexByForce': {
+      const target = world.cities.get(action.cityId);
+      if (!target) fail('Ville neutre : annexez-la depuis sa fiche (paiement ou force).');
+      const victim = target!.ownerId;
+      const plan = forcedAnnexationPlan(world, player, action.fromCityId, action.cityId);
+      // Trahison : tout accord en vigueur (traité ou organisation commune) doit être rompu.
+      const between = (t: { a: string; b: string }) => (t.a === player && t.b === victim) || (t.a === victim && t.b === player);
+      const treaties = meta.treaties.filter((t) => t.status === 'active' && between(t) && t.type !== 'city_transfer');
+      const orgs = meta.organizations.filter((o) => o.members.includes(player) && o.members.includes(victim));
+      const bonds = [...treaties.map((t) => TREATY_LABEL[t.type].toLowerCase()), ...orgs.map((o) => `« ${o.name} »`)];
+      if (bonds.length && !action.betray) {
+        fail(`${name(victim)} est lié(e) à vous (${bonds.join(', ')}) : l'annexer est une trahison qui rompra tous vos accords.`);
+      }
+      if (bonds.length) {
+        for (const o of orgs) {
+          o.members = o.members.filter((p) => p !== player);
+          if (o.founderId === player && o.members.length) o.founderId = o.members[0]!;
+        }
+        meta.organizations = meta.organizations.filter((o) => o.members.length > 0);
+        pushEvent(world, 'betrayal', `🗡 ${name(player)} trahit ${name(victim)} : accords rompus (${bonds.join(', ')}).`);
+      }
+      // L'attaque vaut déclaration de guerre : propositions, traités et contrats entre les deux tombent.
+      meta.treaties = meta.treaties.filter((t) => !between(t));
+      meta.contracts = meta.contracts.filter((c) => !((c.sellerId === player && c.buyerId === victim) || (c.sellerId === victim && c.buyerId === player)));
+      if (!atWar(meta, player, victim)) meta.wars.push({ id: nextId(meta), a: player, b: victim, sinceTick: world.tick });
+      // La garnison est défaite, les troupes engagées occupent la ville.
+      const defeated = new Set(garrison(world, target!));
+      meta.armies = meta.armies.filter((a) => !defeated.has(a));
+      occupy(world, player, action.fromCityId, action.cityId, plan, ANNEXATION.lossesOwned);
+      captureCity(world, target!, player);
+      evaluateNation(world, target!.countryId);
       return;
     }
 
