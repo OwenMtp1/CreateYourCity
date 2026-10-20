@@ -7,7 +7,7 @@ import { GlobeView } from '../globe/GlobeView.tsx';
 import { client } from '../net/client.ts';
 import { activeCity, setState, toast, useGame } from '../state.ts';
 import { fmtInt, fmtMoney } from '../ui/format.ts';
-import { BuildPanel, EconomyPanel, PopulationPanel, ServicesPanel } from '../ui/panels/city.tsx';
+import { BuildPanel, DisplayOptions, EconomyPanel, MobileBuildBar, PopulationPanel, ServicesPanel } from '../ui/panels/city.tsx';
 import { ArmyPanel, DiplomacyPanel, LobbyPanel, NationPanel, TerritoryPanel, TradePanel } from '../ui/panels/world.tsx';
 import { StatusBadge } from '../ui/StatusBadge.tsx';
 import { AdvisorsPanel, StatsPanel, useAdvice } from '../ui/panels/insights.tsx';
@@ -16,7 +16,7 @@ import type { Building } from '@cyc/shared';
 import { Tutorial } from '../ui/Tutorial.tsx';
 import { fmtShort, isMobile, useIsMobile } from '../ui/mobile.ts';
 
-type Tab = 'build' | 'buildings' | 'advisors' | 'stats' | 'economy' | 'population' | 'services' | 'territory' | 'trade' | 'diplomacy' | 'army' | 'nation' | 'lobby';
+type Tab = 'build' | 'display' | 'buildings' | 'advisors' | 'stats' | 'economy' | 'population' | 'services' | 'territory' | 'trade' | 'diplomacy' | 'army' | 'nation' | 'lobby';
 const TABS: { id: Tab; icon: string; label: string; city?: boolean }[] = [
   { id: 'build', icon: '🏗️', label: 'Construire', city: true },
   { id: 'buildings', icon: '🏘️', label: 'Bâtiments', city: true },
@@ -25,6 +25,7 @@ const TABS: { id: Tab; icon: string; label: string; city?: boolean }[] = [
   { id: 'economy', icon: '💰', label: 'Économie', city: true },
   { id: 'population', icon: '👥', label: 'Population', city: true },
   { id: 'services', icon: '🏥', label: 'Services', city: true },
+  { id: 'display', icon: '🎛️', label: 'Affichage', city: true },
   { id: 'territory', icon: '🗺️', label: 'Territoire' },
   { id: 'trade', icon: '📦', label: 'Commerce' },
   { id: 'diplomacy', icon: '🤝', label: 'Diplomatie' },
@@ -58,9 +59,16 @@ export function GameScreen() {
     if (mobile) setTab(null);
   };
   const openTab = (t: Tab | null) => {
+    // Sur mobile, refermer la barre de construction repose l'outil : pas de construction involontaire ensuite.
+    if (mobile && tab === 'build' && t !== 'build' && t !== 'display') setTool({ kind: 'select' });
+    if (mobile && t === 'build') setState({ view: 'city' });
     setTab(t);
     setMoreOpen(false);
     if (mobile && t) setSelected(null);
+  };
+  const pickTool = (t: Tool) => {
+    setTool(t);
+    if (t.kind !== 'select') setState({ view: 'city' });
   };
   const [visitedEconomy, setVisitedEconomy] = useState(false);
   const [visitedGlobe, setVisitedGlobe] = useState(false);
@@ -77,9 +85,10 @@ export function GameScreen() {
   const showCity = view === 'city' && city;
   const tabDef = TABS.find((t) => t.id === tab);
   const panelAvailable = tabDef && (!tabDef.city || city);
+  const buildBar = mobile && tab === 'build' && !!showCity && selected === null;
 
   return (
-    <div className={`game ${mobile ? 'mobile' : ''}`}>
+    <div className={`game ${mobile ? 'mobile' : ''} ${buildBar ? 'buildbar-open' : ''}`}>
       <div className="viewport">
         {showCity ? (
           <CityView3D city={city} layers={layers} tool={tool} setTool={setTool} grid={grid} setGrid={setGrid}
@@ -112,7 +121,7 @@ export function GameScreen() {
         <button className={`rail-btn ${!showCity ? 'active' : ''}`} onClick={() => setState({ view: 'globe' })} title="Globe">🌍<span>Monde</span></button>
         <button className={`rail-btn ${showCity ? 'active' : ''}`} disabled={!city} onClick={() => setState({ view: 'city' })} title="Ville">🏙️<span>Ville</span></button>
         <div className="rail-sep" />
-        {TABS.map((t) => (
+        {TABS.filter((t) => t.id !== 'display').map((t) => (
           <button key={t.id} className={`rail-btn ${tab === t.id ? 'active' : ''}`} disabled={t.city && !city}
             onClick={() => setTab(tab === t.id ? null : t.id)} title={t.label}>
             {t.icon}<span>{t.label}</span>
@@ -131,12 +140,13 @@ export function GameScreen() {
           ))}
         </div>
       )}
-      {tab && panelAvailable && (
+      {buildBar && <MobileBuildBar tool={tool} setTool={pickTool} onOptions={() => openTab('display')} />}
+      {tab && panelAvailable && !(mobile && tab === 'build') && (
         <aside className={`drawer glass ${mobile ? `sheet ${sheetFull ? 'full' : ''}` : ''}`}>
           {mobile && <button className="sheet-handle" onClick={() => setSheetFull(!sheetFull)} aria-label={sheetFull ? 'Réduire le panneau' : 'Agrandir le panneau'} />}
           <header>
             <h2>{tabDef.icon} {tabDef.label}{tabDef.city && city ? ` — ${CITY_BY_ID.get(city.cityId)?.name}` : ''}</h2>
-            <button className="close" onClick={() => setTab(null)} aria-label="Fermer">×</button>
+            <button className="close" onClick={() => openTab(tab === 'display' && mobile ? 'build' : null)} aria-label="Fermer">×</button>
           </header>
           <div className="drawer-body">
             {tab === 'build' && <BuildPanel tool={tool} setTool={(t) => {
@@ -146,6 +156,7 @@ export function GameScreen() {
               if (mobile && t.kind !== 'select') setTab(null);
             }} grid={grid} setGrid={setGrid}
               layer={layer} setLayer={setLayer} dayNight={dayNight} setDayNight={setDayNight} />}
+            {tab === 'display' && <DisplayOptions grid={grid} setGrid={setGrid} layer={layer} setLayer={setLayer} dayNight={dayNight} setDayNight={setDayNight} />}
             {tab === 'buildings' && <BuildingsPanel selected={selected} onSelect={openBuilding} />}
             {tab === 'advisors' && <AdvisorsPanel setTool={(t) => { setTool(t); setTab('build'); }} setSelected={setSelected} />}
             {tab === 'stats' && <StatsPanel />}

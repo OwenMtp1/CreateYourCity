@@ -190,13 +190,16 @@ export function CityView3D(props: Props) {
     } else if (t.kind === 'demolish') {
       scene.setPreview({ kind: 'demolish', target: hitTest(p) });
     }
-    if (result) setHint({ x: cur.sx, y: cur.sy, text: result.ok ? `Coût : ${fmtMoney(result.cost)}` : result.reason, ok: result.ok });
-    else if (t.kind === 'road') setHint({ x: cur.sx, y: cur.sy, text: t.mode === 'curve' ? 'Courbe : cliquez le départ, puis le point de courbure, puis l\'arrivée' : 'Cliquez pour commencer la route (Maj : angle droit)', ok: true });
+    const tap = touch.current ? 'Touchez' : 'Cliquez';
     if (result && t.kind === 'road' && t.mode === 'curve' && roadStart.current && !roadControl.current) {
-      setHint({ x: cur.sx, y: cur.sy, text: 'Cliquez le point de courbure', ok: true });
-    }
-    else if (t.kind === 'demolish') setHint({ x: cur.sx, y: cur.sy, text: 'Démolition sans remboursement', ok: false });
-    else setHint(null);
+      setHint({ x: cur.sx, y: cur.sy, text: `${tap} le point de courbure`, ok: true });
+    } else if (result) {
+      setHint({ x: cur.sx, y: cur.sy, text: result.ok ? `Coût : ${fmtMoney(result.cost)}` : result.reason, ok: result.ok });
+    } else if (t.kind === 'road') {
+      setHint({ x: cur.sx, y: cur.sy, text: t.mode === 'curve' ? `Courbe : ${tap.toLowerCase()} le départ, puis le point de courbure, puis l'arrivée` : touch.current ? 'Touchez le point de départ de la route' : 'Cliquez pour commencer la route (Maj : angle droit)', ok: true });
+    } else if (t.kind === 'demolish') {
+      setHint({ x: cur.sx, y: cur.sy, text: 'Démolition sans remboursement', ok: false });
+    } else setHint(null);
   };
 
   // Clavier : R pivoter, G grille, Échap annuler.
@@ -384,7 +387,7 @@ export function CityView3D(props: Props) {
             {pending ? hint?.text ?? '…' : hint?.text ?? 'Touchez le point d\'arrivée'}
           </span>
           <div className="confirm-actions">
-            {pending && <button className="primary" disabled={!hint?.ok} onClick={confirmPending}>✓ {tool.kind === 'demolish' ? 'Démolir' : 'Construire'}</button>}
+            {pending && <button className="primary" disabled={tool.kind !== 'demolish' && !hint?.ok} onClick={confirmPending}>✓ {tool.kind === 'demolish' ? 'Démolir' : 'Construire'}</button>}
             {tool.kind === 'building' && <button onClick={rotatePending} aria-label="Tourner">↻</button>}
             <button onClick={cancel} aria-label="Annuler">✕</button>
           </div>
@@ -392,10 +395,10 @@ export function CityView3D(props: Props) {
       )}
       <div className="view-switch glass" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
         <button className={street.street ? '' : 'active'} onClick={() => sceneRef.current?.viewFromAbove()} title="Revenir à la vue du dessus, cadrée sur la ville">
-          🛰️ Vue du dessus
+          🛰️{mobile ? '' : ' Vue du dessus'}
         </button>
         <button className={street.street ? 'active' : ''} onClick={toggleStreet} title="Se promener dans la ville en caméra libre">
-          🚶 Vue de rue
+          🚶{mobile ? '' : ' Vue de rue'}
         </button>
       </div>
       {street.street && street.locked && <div className="street-crosshair" />}
@@ -415,15 +418,15 @@ export function CityView3D(props: Props) {
         </div>
       )}
       {glLost && <div className="gl-lost glass">Affichage 3D interrompu par le navigateur — reprise en cours…</div>}
-      <div className="city-help glass">
+      {(!mobile || street.street) && <div className="city-help glass">
         {mobile
-          ? street.street ? 'Glissez pour regarder · croix : avancer · ⤒ ⤓ : monter / descendre' : 'Glisser : déplacer · 2 doigts : zoom et rotation · Toucher : choisir'
+          ? 'Glissez pour regarder · croix : avancer · ⤒ ⤓ : monter / descendre'
           : street.street
           ? street.locked
             ? 'Souris : regarder · ZQSD / WASD ou flèches : avancer · Maj : courir · Espace / C : monter / descendre · Échap : libérer la souris'
             : 'Cliquez dans la vue pour regarder à la souris (ou glissez) · ZQSD / WASD ou flèches : avancer · Maj : courir · Espace / C : monter / descendre'
           : 'Glisser : déplacer · Clic droit + glisser : pivoter / incliner · Molette : zoom · R : tourner · G : grille · Échap : annuler'}
-      </div>
+      </div>}
     </div>
   );
 }

@@ -25,20 +25,13 @@ const ICON: Record<string, string> = {
   parking: '🅿️', parking_garage: '🚗',
 };
 
-export function BuildPanel(props: {
-  tool: Tool; setTool: (t: Tool) => void; grid: boolean; setGrid: (g: boolean) => void;
-  layer: CityLayer; setLayer: (l: CityLayer) => void; dayNight: boolean; setDayNight: (v: boolean) => void;
+/** Réglages d'affichage de la ville : grille, cycle jour/nuit, qualité, couche d'information. */
+export function DisplayOptions(props: {
+  grid: boolean; setGrid: (g: boolean) => void; layer: CityLayer; setLayer: (l: CityLayer) => void; dayNight: boolean; setDayNight: (v: boolean) => void;
 }) {
-  const { tool, setTool, grid, setGrid, layer, setLayer, dayNight, setDayNight } = props;
-  const city = useGame(activeCity)!;
-  const categories = [...new Set(BUILDING_TYPES.map((t) => BUILDINGS[t].category))];
-
+  const { grid, setGrid, layer, setLayer, dayNight, setDayNight } = props;
   return (
-    <div className="stack">
-      <div className="row wrap">
-        <button className={tool.kind === 'select' ? 'active' : ''} onClick={() => setTool({ kind: 'select' })}>🔍 Inspecter</button>
-        <button className={tool.kind === 'demolish' ? 'active danger' : 'danger'} onClick={() => setTool({ kind: 'demolish' })}>🧨 Démolir</button>
-      </div>
+    <>
       <div className="row wrap">
         <label className="check"><input type="checkbox" checked={grid} onChange={(e) => setGrid(e.target.checked)} /> Grille</label>
         <label className="check"><input type="checkbox" checked={dayNight} onChange={(e) => setDayNight(e.target.checked)} /> Cycle jour/nuit</label>
@@ -60,6 +53,107 @@ export function BuildPanel(props: {
           <option value="economy">Économie : bénéfices et livraisons</option>
         </select>
       </label>
+
+    </>
+  );
+}
+
+const ROAD_MODES = [['straight', '➖', 'Droite'], ['curve', '〰️', 'Courbe'], ['roundabout', '⭕', 'Rond-point']] as const;
+type BarCategory = 'roads' | BuildingCategory;
+const CATEGORY_ICON: Record<BarCategory, string> = {
+  roads: '🛣️', residential: '🏡', commercial: '🛍️', industrial: '🏭', service: '🏥', utility: '⚡', transport: '🚆', military: '🎖️',
+};
+const shortMoney = (v: number) => (v >= 1e6 ? `${(v / 1e6).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} M` : v >= 1e4 ? `${Math.round(v / 1e3)} k` : fmtInt(v));
+
+/**
+ * Barre de construction mobile, à la manière des jeux de gestion : catégories en haut, cartes défilantes
+ * dessous, la ville reste visible. Toucher une carte choisit l'outil ; toucher la carte de la ville place l'aperçu.
+ */
+export function MobileBuildBar({ tool, setTool, onOptions }: { tool: Tool; setTool: (t: Tool) => void; onOptions: () => void }) {
+  const city = useGame(activeCity)!;
+  const categories: BarCategory[] = ['roads', ...new Set(BUILDING_TYPES.map((t) => BUILDINGS[t].category))];
+  const [cat, setCat] = useState<BarCategory>(tool.kind === 'building' ? BUILDINGS[tool.building].category : 'roads');
+  const scroller = useRef<HTMLDivElement>(null);
+  useEffect(() => { scroller.current?.scrollTo({ left: 0 }); }, [cat]);
+  const roadTool = (road: (typeof ROAD_TYPES)[number], mode = tool.kind === 'road' ? tool.mode ?? 'straight' : 'straight') =>
+    setTool({ kind: 'road', road, mode, radius: tool.kind === 'road' ? tool.radius ?? 30 : 30 });
+
+  let info = 'Choisissez une construction, puis touchez la carte pour la placer.';
+  if (tool.kind === 'building') {
+    const d = BUILDINGS[tool.building];
+    info = `${d.label} · ${fmtMoney(d.cost)} · entretien ${fmtInt(d.upkeepPerDay)}/j · ${d.housing ? `${d.housing} logements` : `${d.jobs} emplois`}`;
+  } else if (tool.kind === 'road') {
+    info = `${ROADS[tool.road].label} · ${ROADS[tool.road].costPerMeter} cr/m · touchez le départ puis l'arrivée (accès : portique jaune à l'ouest)`;
+  } else if (tool.kind === 'demolish') info = 'Démolir : touchez un bâtiment ou une route (sans remboursement).';
+
+  return (
+    <div className="buildbar glass" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="buildbar-cats" role="tablist">
+        <button className={`cat-chip ${tool.kind === 'select' ? 'active' : ''}`} onClick={() => setTool({ kind: 'select' })} aria-label="Inspecter">🔍</button>
+        <button className={`cat-chip danger ${tool.kind === 'demolish' ? 'active' : ''}`} onClick={() => setTool({ kind: 'demolish' })} aria-label="Démolir">🧨</button>
+        <span className="cat-sep" />
+        {categories.map((c) => (
+          <button key={c} role="tab" aria-selected={cat === c} className={`cat-chip ${cat === c ? 'active' : ''}`} onClick={() => setCat(c)}
+            aria-label={c === 'roads' ? 'Routes' : CATEGORY_LABEL[c]}>
+            {CATEGORY_ICON[c]}
+          </button>
+        ))}
+        <button className="cat-chip" onClick={onOptions} aria-label="Affichage">🎛️</button>
+      </div>
+      <div className="bb-info">{info}</div>
+      <div className="buildbar-items" ref={scroller}>
+        {cat === 'roads' ? (
+          <>
+            {ROAD_TYPES.map((r) => (
+              <button key={r} className={`bb-item ${tool.kind === 'road' && tool.road === r ? 'active' : ''}`} onClick={() => roadTool(r)}>
+                <span className="bb-icon">{ICON[r]}</span>
+                <span className="bb-name">{ROADS[r].label}</span>
+                <span className="bb-price">{ROADS[r].costPerMeter} cr/m</span>
+              </button>
+            ))}
+            {ROAD_MODES.map(([mode, icon, label]) => (
+              <button key={mode} className={`bb-item mode ${tool.kind === 'road' && (tool.mode ?? 'straight') === mode ? 'active' : ''}`}
+                onClick={() => roadTool(tool.kind === 'road' ? tool.road : 'street', mode)}>
+                <span className="bb-icon">{icon}</span>
+                <span className="bb-name">{label}</span>
+                <span className="bb-price muted">tracé</span>
+              </button>
+            ))}
+          </>
+        ) : (
+          BUILDING_TYPES.filter((t) => BUILDINGS[t].category === cat).map((t) => {
+            const d = BUILDINGS[t];
+            const poor = city.treasury < d.cost;
+            return (
+              <button key={t} className={`bb-item ${tool.kind === 'building' && tool.building === t ? 'active' : ''} ${poor ? 'poor' : ''}`} disabled={poor}
+                onClick={() => setTool({ kind: 'building', building: t, rotation: tool.kind === 'building' ? tool.rotation : 0 })}>
+                <span className="bb-icon">{ICON[t]}</span>
+                <span className="bb-name">{d.label}</span>
+                <span className="bb-price">{shortMoney(d.cost)}</span>
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function BuildPanel(props: {
+  tool: Tool; setTool: (t: Tool) => void; grid: boolean; setGrid: (g: boolean) => void;
+  layer: CityLayer; setLayer: (l: CityLayer) => void; dayNight: boolean; setDayNight: (v: boolean) => void;
+}) {
+  const { tool, setTool, grid, setGrid, layer, setLayer, dayNight, setDayNight } = props;
+  const city = useGame(activeCity)!;
+  const categories = [...new Set(BUILDING_TYPES.map((t) => BUILDINGS[t].category))];
+
+  return (
+    <div className="stack">
+      <div className="row wrap">
+        <button className={tool.kind === 'select' ? 'active' : ''} onClick={() => setTool({ kind: 'select' })}>🔍 Inspecter</button>
+        <button className={tool.kind === 'demolish' ? 'active danger' : 'danger'} onClick={() => setTool({ kind: 'demolish' })}>🧨 Démolir</button>
+      </div>
+      <DisplayOptions grid={grid} setGrid={setGrid} layer={layer} setLayer={setLayer} dayNight={dayNight} setDayNight={setDayNight} />
 
       <h4>Routes</h4>
       <div className="row wrap">

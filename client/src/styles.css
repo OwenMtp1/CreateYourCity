@@ -338,8 +338,37 @@ button, select, input, a { touch-action: manipulation; }
 .pad-btn.up { grid-area: up; } .pad-btn.down { grid-area: down; } .pad-btn.left { grid-area: left; } .pad-btn.right { grid-area: right; }
 
 @media (max-width: 760px), (pointer: coarse) and (max-width: 1100px) {
-  .toasts { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+  /* Notifications en haut : le bas de l'écran appartient aux barres d'outils. */
+  .toasts { top: calc(60px + env(safe-area-inset-top, 0px)); bottom: auto; }
+  /* iOS zoome la page sur un champ de moins de 16 px et ne dézoome pas ensuite. */
+  input, select, textarea { font-size: 16px !important; }
 }
+/* Pas de zoom de la page (pincer, double toucher) : seule la carte 3D se zoome. */
+html, body { touch-action: pan-x pan-y; }
+
+/* Barre de construction mobile (façon jeu de gestion) */
+.game.mobile { --buildbar-h: 158px; }
+.buildbar { position: absolute; left: 6px; right: 6px; bottom: calc(var(--tabbar-h) + 12px + var(--safe-b)); height: var(--buildbar-h); display: flex; flex-direction: column; gap: 4px; padding: 6px; border-radius: 16px; z-index: 6; animation: rise 0.16s ease-out; }
+.buildbar-cats, .buildbar-items { display: flex; gap: 5px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.buildbar-cats::-webkit-scrollbar, .buildbar-items::-webkit-scrollbar { display: none; }
+.cat-chip { flex: none; min-width: 42px; height: 36px; padding: 0 0.45rem; font-size: 1.15rem; line-height: 1; border-radius: 10px; background: rgba(15, 23, 42, 0.55); }
+.cat-chip.active { background: rgba(251, 191, 36, 0.18); border-color: rgba(251, 191, 36, 0.7); }
+.cat-chip.danger.active { background: rgba(239, 68, 68, 0.22); border-color: rgba(239, 68, 68, 0.7); }
+.cat-sep { flex: none; width: 1px; margin: 4px 2px; background: var(--border); }
+.bb-info { font-size: 0.7rem; color: var(--muted); padding: 0 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.buildbar-items { flex: 1; align-items: stretch; scroll-snap-type: x proximity; }
+.bb-item { flex: none; width: 78px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 0.25rem 0.2rem; border-radius: 12px; font-size: 0.66rem; line-height: 1.15; scroll-snap-align: start; background: rgba(15, 23, 42, 0.55); }
+.bb-item.active { background: rgba(251, 191, 36, 0.18); border-color: rgba(251, 191, 36, 0.8); box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.4) inset; }
+.bb-item.mode { width: 64px; }
+.bb-icon { font-size: 1.6rem; line-height: 1.1; }
+.bb-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.bb-price { color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+.bb-item.poor { opacity: 0.45; }
+.bb-item.poor .bb-price { color: var(--neg); }
+.game.mobile.buildbar-open .confirm-bar { bottom: calc(var(--tabbar-h) + var(--buildbar-h) + 18px + var(--safe-b)); }
+.game.mobile.buildbar-open .tutorial-pill { display: none; }
+.game.mobile .inspector { max-height: 44dvh; }
+.game.mobile .inspector > p { display: none; }
 
 /* Dictatures indépendantes */
 .chip-dictator { color: #fecaca; border-color: rgba(239, 68, 68, 0.6); background: rgba(239, 68, 68, 0.12); margin-left: 0.3rem; }

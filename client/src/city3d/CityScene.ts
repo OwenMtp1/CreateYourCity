@@ -94,6 +94,10 @@ export class CityScene {
     outer.rotation.x = -Math.PI / 2;
     outer.position.y = -0.3;
     outer.receiveShadow = true;
+    // Sols lointains dessinés en premier sans écrire la profondeur : à grande distance, la précision du
+    // tampon de profondeur ne suffit plus à départager des plans presque confondus (scintillement vert).
+    outer.renderOrder = -10;
+    (outer.material as THREE.Material).depthWrite = false;
     this.scene.add(outer);
 
     this.camera.position.set(-HALF + 330, 190, 260);
@@ -501,7 +505,11 @@ export class CityScene {
 
     const water = new THREE.Mesh(
       new THREE.PlaneGeometry(CITY_SIZE_M, CITY_SIZE_M),
-      new THREE.MeshStandardMaterial({ color: 0x2c6e98, roughness: 0.08, metalness: 0.25, transparent: true, opacity: 0.92, alphaMap: new THREE.CanvasTexture(mask) }),
+      new THREE.MeshStandardMaterial({
+        color: 0x2c6e98, roughness: 0.08, metalness: 0.25, transparent: true, opacity: 0.92, alphaMap: new THREE.CanvasTexture(mask),
+        // L'eau reste devant le sol même de loin (sinon le terrain vert transparaît en bandes).
+        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4,
+      }),
     );
     water.rotation.x = -Math.PI / 2;
     water.position.y = 0.08;
@@ -514,7 +522,8 @@ export class CityScene {
     if (band) {
       const sea = new THREE.Group();
       sea.name = 'sea';
-      const plane = new THREE.Mesh(new THREE.PlaneGeometry(12000, 24000), new THREE.MeshStandardMaterial({ color: 0x2a6890, roughness: 0.08, metalness: 0.25 }));
+      const plane = new THREE.Mesh(new THREE.PlaneGeometry(12000, 24000), new THREE.MeshStandardMaterial({ color: 0x2a6890, roughness: 0.08, metalness: 0.25, depthWrite: false }));
+      plane.renderOrder = -9;
       plane.rotation.x = -Math.PI / 2;
       plane.position.x = band.shoreline + 6000;
       plane.receiveShadow = true;
@@ -1085,11 +1094,14 @@ export class CityScene {
     }
     const cx = (minX + maxX) / 2 - HALF;
     const cz = (minY + maxY) / 2 - HALF;
-    const extent = Math.max(maxX - minX, (maxY - minY) * this.camera.aspect, 200);
-    const height = THREE.MathUtils.clamp(extent / (2 * Math.tan((this.camera.fov * Math.PI) / 360)) * 1.15, 220, 2400);
+    // Étendue verticale à couvrir : sur un écran en portrait, c'est la largeur de la ville qui limite.
+    const extent = Math.max(maxY - minY, (maxX - minX) / this.camera.aspect, 200);
+    const portrait = this.camera.aspect < 0.9;
+    const height = THREE.MathUtils.clamp(extent / (2 * Math.tan((this.camera.fov * Math.PI) / 360)) * (portrait ? 1.05 : 1.15), 220, 2400);
     this.controls.target.set(cx, 0, cz);
-    // Presque à la verticale (~7°) : le nord reste en haut de l'écran et les hauteurs se lisent encore.
-    this.camera.position.set(cx, height, cz + height * 0.12);
+    // Presque à la verticale (~7°) : le nord reste en haut et les hauteurs se lisent encore. Sur téléphone,
+    // vue inclinée façon jeu de gestion (~30°) : on voit les volumes et plus de ville dans la hauteur de l'écran.
+    this.camera.position.set(cx, height, cz + height * (portrait ? 0.55 : 0.12));
     this.camera.up.set(0, 1, 0);
     this.controls.update();
   }
@@ -1097,10 +1109,19 @@ export class CityScene {
   /** Recentre la vue aérienne sur un point de la ville (coordonnées de jeu), à distance de lecture. */
   focusOn(x: number, y: number) {
     if (this.street) this.exitStreetView();
+    const portrait = this.camera.aspect < 0.9;
     const target = new THREE.Vector3(x - HALF, 0, y - HALF);
     const offset = this.camera.position.clone().sub(this.controls.target);
-    if (offset.length() > 320 || offset.length() < 60) offset.setLength(260);
+    const [near, far, dist] = portrait ? [180, 700, 420] : [60, 320, 260];
+    if (offset.length() > far || offset.length() < near) offset.setLength(dist);
     if (offset.y < 80) offset.y = 120;
+    // Sur téléphone, la fiche occupe le bas de l'écran : le bâtiment est cadré dans le tiers supérieur.
+    if (portrait) {
+      // Cible décalée vers la caméra (bas de l'écran) : le bâtiment remonte à l'image.
+      const back = new THREE.Vector3(offset.x, 0, offset.z);
+      if (back.lengthSq() < 1) back.set(0, 0, 1);
+      target.add(back.normalize().multiplyScalar(offset.length() * 0.28));
+    }
     this.controls.target.copy(target);
     this.camera.position.copy(target).add(offset);
     this.controls.update();
