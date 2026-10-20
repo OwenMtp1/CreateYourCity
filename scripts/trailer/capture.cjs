@@ -176,7 +176,7 @@ const SCENES = {
     await sleep(2000);
     await page.clock.runFor(1000);
     await shootCity(page, 'c1-paris', 5.5, cityOrbit, { arg: { cx: -330, cz: 0, radius: 720, height: 420, a0: 200, a1: 255, ease: true } });
-    await shootCity(page, 'c2-avenue', 4.5, cityTrack, { arg: { x0: -830, x1: -380, z: 0, height: 26, ahead: 120, side: 55 } });
+    await SCENES.avenueShot(page);
     const station = await page.evaluate((id) => {
       const city = window.__cyc.state().myCities[id];
       const s = city.buildings.filter((b) => b.type === 'metro_station' || b.type === 'tram_station');
@@ -198,6 +198,22 @@ const SCENES = {
       c.setCity(s.myCities[id], s.layers[id], 'health', null);
     }, PARIS);
     await shootCity(page, 'c6-coverage', 2.5, cityOrbit, { arg: { cx: -360, cz: 0, radius: 520, height: 520, a0: 250, a1: 262 } });
+    await page.context().close();
+  },
+
+  async avenueShot(page) {
+    // Travelling au-dessus de l'avenue principale (axe z = 0), légèrement décalé vers le sud.
+    await shootCity(page, 'c2-avenue', 4.5, cityTrack, { arg: { x0: -900, x1: -520, z: 0, height: 20, ahead: 170, side: 6 } });
+  },
+
+  async avenue(browser) {
+    const page = await openPage(browser, TOKEN);
+    await page.evaluate((id) => window.__cyc.setState({ activeCityId: id, view: 'city' }), PARIS);
+    await waitFor(page, () => !!window.__cyc.city && !!document.querySelector('.city3d canvas'));
+    await page.clock.runFor(2000);
+    await sleep(2000);
+    await page.clock.runFor(1000);
+    await SCENES.avenueShot(page);
     await page.context().close();
   },
 
