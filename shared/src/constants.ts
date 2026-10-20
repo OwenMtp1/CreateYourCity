@@ -70,6 +70,25 @@ export const TRAFFIC = {
   freightTripsPerGood: 0.2,
 } as const;
 
+/**
+ * Stationnement. La demande (places occupées en même temps) suit les trajets en voiture des
+ * habitants ; l'offre vient des rues raccordées et des parkings. Un parking payant attire moins
+ * (poids exp(−tarif / sensibilité)) ; les automobilistes n'y vont que faute de mieux.
+ */
+export const PARKING = {
+  streetSpacesPerMeter: { street: 0.08, avenue: 0.05 },
+  spacesPerCarTrip: 0.12,
+  /** Stationnements successifs par place occupée et par jour (recettes). */
+  turnoverPerDay: 3,
+  maxFee: 20,
+  priceSensitivity: 6,
+  /** Perte d'efficacité du trafic quand aucune place n'est disponible (voitures qui tournent). */
+  searchPenalty: 0.12,
+  /** Malus d'attractivité maximal, atteint quand le coût moyen par trajet atteint feeTolerance. */
+  maxFeeMalus: 0.05,
+  feeTolerance: 4,
+} as const;
+
 /** Transports en commun : part modale maximale des habitants desservis, tarif par voyage. */
 export const TRANSIT = {
   modeShare: { bus: 0.25, tram: 0.35, metro: 0.5 },

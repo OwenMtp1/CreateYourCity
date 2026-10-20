@@ -19,7 +19,9 @@ export type BuildingType =
   | 'metro_station'
   | 'train_station'
   | 'port'
-  | 'airbase';
+  | 'airbase'
+  | 'parking'
+  | 'parking_garage';
 
 export type RoadType = 'street' | 'avenue';
 export type BuildingCategory = 'residential' | 'commercial' | 'industrial' | 'service' | 'utility' | 'transport' | 'military';
@@ -57,6 +59,8 @@ export interface BuildingDef {
   transit?: { mode: TransitMode; radius: number; capacity: number };
   /** Doit être construit à moins de 40 m d'une étendue d'eau (port). */
   needsWater?: boolean;
+  /** Parking municipal : nombre de places (gratuit ou payant, tarif réglable par parking). */
+  parking?: { spaces: number };
 }
 
 export const BUILDINGS: Record<BuildingType, BuildingDef> = {
@@ -167,6 +171,18 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     type: 'airbase', label: 'Base aérienne', category: 'military',
     description: "Permet de recruter l'aviation.",
     w: 80, h: 60, cost: 600_000, upkeepPerDay: 3_000, jobs: 80, housing: 0, powerMW: 0.8, waterM3PerDay: 10, publicSector: true,
+  },
+  parking: {
+    type: 'parking', label: 'Parking', category: 'transport',
+    description: 'Parking à ciel ouvert (120 places). Gratuit ou payant : sans places, les voitures tournent et ralentissent le trafic.',
+    w: 30, h: 40, cost: 20_000, upkeepPerDay: 30, jobs: 1, housing: 0, powerMW: 0.01, waterM3PerDay: 0,
+    parking: { spaces: 120 }, publicSector: true,
+  },
+  parking_garage: {
+    type: 'parking_garage', label: 'Parking à étages', category: 'transport',
+    description: 'Silo de stationnement (600 places) sur une petite emprise. Gratuit ou payant.',
+    w: 30, h: 40, cost: 150_000, upkeepPerDay: 220, jobs: 4, housing: 0, powerMW: 0.1, waterM3PerDay: 1,
+    parking: { spaces: 600 }, publicSector: true,
   },
 };
 

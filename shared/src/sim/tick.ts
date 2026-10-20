@@ -2,10 +2,11 @@
 // même résultat (aucun aléa, aucune horloge). Toutes les formules sont exprimées par jour de
 // jeu puis multipliées par DT_DAYS.
 import { BUILDINGS, ROADS, SERVICE_KINDS, TRANSIT_MODES, type ServiceKind, type TransitMode } from '../catalog.ts';
-import { DAYS_PER_YEAR, DT_DAYS, ECONOMY, LOAN_ANNUAL_RATE, POPULATION, TRAFFIC, TRANSIT } from '../constants.ts';
+import { DAYS_PER_YEAR, DT_DAYS, ECONOMY, LOAN_ANNUAL_RATE, PARKING, POPULATION, TRAFFIC, TRANSIT } from '../constants.ts';
 import { segmentLength } from '../geometry.ts';
 import type { Building, CityLayers, CityState, CityStats } from '../types.ts';
 import { getLayout } from './layout.ts';
+import { checkMilestones } from './milestones.ts';
 import { DEFAULT_MODIFIERS, LAW_EFFECTS, PROJECT_EFFECTS, type CityModifiers } from './modifiers.ts';
 
 export const HISTORY_EVERY_TICKS = 24;
@@ -112,7 +113,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   // --- Trafic : itinéraires sur le graphe routier (domicile-travail, achats, fret) ---------------
   const routing = layout.routing;
   const edgeLoad = new Float64Array(routing.edges.length);
-  let carTrips = 0, riders = 0;
+  let carTrips = 0, riders = 0, personalCarTrips = 0;
   for (const [id, n] of residents) {
     const share = (potentialShare.get(id) ?? 0) * transitFill;
     const commuteTrips = n * employmentRate * 2;
@@ -120,6 +121,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     const car = (commuteTrips + shopTrips) * (1 - share);
     riders += (commuteTrips + shopTrips) * share;
     carTrips += car;
+    personalCarTrips += car;
     const cw = routing.commute.get(id);
     if (cw) for (const [e, w] of cw) edgeLoad[e]! += commuteTrips * (1 - share) * w;
     const sw = routing.shopping.get(id);
@@ -152,8 +154,57 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     roadConnected[r.id] = layout.roadConnected.get(r.id) === true;
     if (ratio > TRAFFIC.freeFlowRatio) congestedSegments++;
   }
-  const trafficEfficiency = weight > 0 ? weighted / weight : 1;
+  const roadEfficiency = weight > 0 ? weighted / weight : 1;
   const totalTrips = carTrips + riders;
+
+  // --- Stationnement : rues raccordées + parkings, répartis selon le tarif -----------------------
+  let streetSpaces = 0;
+  for (const r of city.roads) {
+    if (layout.roadConnected.get(r.id)) streetSpaces += segmentLength(r) * PARKING.streetSpacesPerMeter[r.type];
+  }
+  const lots: { id: number; spaces: number; fee: number; weight: number; used: number }[] = [];
+  for (const b of ops) {
+    const p = BUILDINGS[b.type].parking;
+    if (!p) continue;
+    const fee = Math.max(0, Math.min(PARKING.maxFee, b.fee ?? 0));
+    lots.push({ id: b.id, spaces: p.spaces, fee, weight: p.spaces * Math.exp(-fee / PARKING.priceSensitivity), used: 0 });
+  }
+  const lotSpaces = lots.reduce((a, l) => a + l.spaces, 0);
+  const parkingDemand = personalCarTrips * PARKING.spacesPerCarTrip;
+  // Premier passage : chacun choisit selon l'attrait (places × tarif) ; second passage : le reste
+  // de la demande se gare là où il reste de la place, faute de mieux.
+  let streetUsed = 0;
+  let remaining = parkingDemand;
+  for (let pass = 0; pass < 2 && remaining > 1e-9; pass++) {
+    // La rue est gratuite : son poids est simplement le nombre de places libres.
+    const streetFree = streetSpaces - streetUsed;
+    const total = streetFree + lots.reduce((a, l) => a + (l.spaces - l.used > 0 ? (pass === 0 ? l.weight : l.spaces - l.used) : 0), 0);
+    if (total <= 0) break;
+    const want = remaining;
+    const takeStreet = Math.min(streetFree, (want * streetFree) / total);
+    streetUsed += takeStreet;
+    remaining -= takeStreet;
+    for (const l of lots) {
+      const free = l.spaces - l.used;
+      if (free <= 0) continue;
+      const take = Math.min(free, (want * (pass === 0 ? l.weight : free)) / total);
+      l.used += take;
+      remaining -= take;
+    }
+  }
+  const parkingUsed = parkingDemand - Math.max(0, remaining);
+  const parkingCoverage = parkingDemand > 0 ? Math.min(1, parkingUsed / parkingDemand) : 1;
+  let parkingFees = 0;
+  const parkingUse: Record<number, number> = {};
+  for (const l of lots) {
+    parkingFees += l.used * l.fee * PARKING.turnoverPerDay;
+    parkingUse[l.id] = l.spaces > 0 ? l.used / l.spaces : 0;
+  }
+  // Coût moyen du stationnement par trajet en voiture : au-delà de la tolérance, la ville déplaît.
+  const feePerTrip = personalCarTrips > 0 ? parkingFees / personalCarTrips : 0;
+  const parkingMalus = PARKING.maxFeeMalus * clamp01(feePerTrip / PARKING.feeTolerance);
+  // Sans place, les voitures tournent : le trafic ralentit.
+  const trafficEfficiency = roadEfficiency * (1 - PARKING.searchPenalty * (1 - parkingCoverage));
 
   // --- Production et comptes des entreprises ---------------------------------------------------
   let produced = 0, officeRevenue = 0, commercialWages = 0, industrialWages = 0;
@@ -256,14 +307,14 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   const commercialTax = city.taxes.commercial * Math.max(0, commercialProfit);
   const industrialTax = city.taxes.industrial * Math.max(0, industrialProfit);
   const transitFares = riders * TRANSIT.farePerRide;
-  const net = residentialTax + commercialTax + industrialTax + transitFares - upkeep - utilityImports - loanInterest;
+  const net = residentialTax + commercialTax + industrialTax + transitFares + parkingFees - upkeep - utilityImports - loanInterest;
   city.treasury += net * DT_DAYS;
 
   // --- Migrations -----------------------------------------------------------------------------
   const jobScore = workforce > 0 ? Math.min(1, jobs / workforce) : jobs > 0 ? 1 : 0;
   const serviceScore = meanCoverage;
   const bonus = (law.minimum_wage ? LAW_EFFECTS.minimum_wage.attractivenessBonus : 0) -
-    (law.conscription ? LAW_EFFECTS.conscription.attractivenessMalus : 0);
+    (law.conscription ? LAW_EFFECTS.conscription.attractivenessMalus : 0) - parkingMalus;
   const attract = attractiveness({
     jobScore, serviceScore, residentialTax: city.taxes.residential + mod.nationalTaxRate, trafficEfficiency,
     pollution: pollutionExposure, bonus,
@@ -300,8 +351,10 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     pollutionExposure,
     traffic: { trips: totalTrips, efficiency: trafficEfficiency, congestedSegments },
     transit: { riders, capacity: transitCapacity, share: totalTrips > 0 ? riders / totalTrips : 0 },
-    budget: { residentialTax, commercialTax, industrialTax, upkeep, utilityImports, loanInterest, net, nationalTax, transitFares },
+    parking: { streetSpaces, lotSpaces, demand: parkingDemand, used: parkingUsed, coverage: parkingCoverage, revenue: parkingFees },
+    budget: { residentialTax, commercialTax, industrialTax, upkeep, utilityImports, loanInterest, net, nationalTax, transitFares, parkingFees },
   };
+  checkMilestones(city);
 
   if (city.tick % HISTORY_EVERY_TICKS === 0) {
     const history = (city.history ??= []);
@@ -312,7 +365,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     if (history.length > HISTORY_LENGTH) history.splice(0, history.length - HISTORY_LENGTH);
   }
 
-  return { buildingStatus, residentialCoverage, pollution, roadLoad, roadConnected, serviceLoad };
+  return { buildingStatus, residentialCoverage, pollution, roadLoad, roadConnected, serviceLoad, parkingUse };
 }
 
 /** Avance une ville de n ticks (rattrapage déterministe). */

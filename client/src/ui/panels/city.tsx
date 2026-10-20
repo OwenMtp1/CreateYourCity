@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
-  BUILDING_TYPES, BUILDINGS, MAX_DEBT, MAX_TAX_RATE, ROAD_TYPES, ROADS, SERVICE_KINDS, type BuildingCategory, type ServiceKind,
+  BUILDING_TYPES, BUILDINGS, MAX_DEBT, MAX_TAX_RATE, PARKING, ROAD_TYPES, ROADS, SERVICE_KINDS, type BuildingCategory, type ServiceKind,
 } from '@cyc/shared';
 import type { CityLayer } from '../../city3d/CityScene.ts';
 import type { Tool } from '../../city3d/CityView3D.tsx';
@@ -21,6 +21,7 @@ const ICON: Record<string, string> = {
   house: '🏡', apartment: '🏢', tower: '🏙️', shop: '🛍️', office: '💼', factory: '🏭', clinic: '🏥', school: '🏫', police: '🚓',
   power_plant: '⚡', water_tower: '💧', park: '🌳', barracks: '🎖️', street: '🛣️', avenue: '🛤️',
   bus_station: '🚌', tram_station: '🚋', metro_station: '🚇', train_station: '🚆', port: '⚓', airbase: '✈️',
+  parking: '🅿️', parking_garage: '🚗',
 };
 
 export function BuildPanel(props: {
@@ -107,6 +108,7 @@ export function BuildPanel(props: {
                     {d.powerOutputMW ? ` · ${d.powerOutputMW} MW` : ''}
                     {d.waterOutputM3PerDay ? ` · ${fmtInt(d.waterOutputM3PerDay)} m³/j` : ''}
                     {d.goodsProductionPerDay ? ` · ${d.goodsProductionPerDay} biens/j` : ''}
+                    {d.parking ? ` · ${fmtInt(d.parking.spaces)} places` : ''}
                   </span>
                 </button>
               );
@@ -124,10 +126,41 @@ export function BuildPanel(props: {
             <Row key={k} label={`Couverture ${SERVICE_LABEL[k].toLowerCase()}`} value={fmtPct(layers.residentialCoverage[sel.id]![k] ?? 0)} />
           ))}
           {layers?.pollution[sel.id] !== undefined && <Row label="Exposition à la pollution" value={fmtPct(layers.pollution[sel.id]!)} />}
+          {BUILDINGS[sel.type].parking && <ParkingSettings key={sel.id} id={sel.id} spaces={BUILDINGS[sel.type].parking!.spaces} fee={sel.fee ?? 0} use={layers?.parkingUse?.[sel.id]} />}
           <button className="danger" onClick={() => void client.cityCommand({ type: 'demolish', target: 'building', id: sel.id })}>Démolir</button>
         </div>
       )}
     </div>
+  );
+}
+
+/** Réglage du tarif d'un parking : gratuit, ou payant avec un prix par stationnement. */
+function ParkingSettings({ id, spaces, fee, use }: { id: number; spaces: number; fee: number; use: number | undefined }) {
+  const [paid, setPaid] = useState(fee > 0);
+  const [price, setPrice] = useState(fee > 0 ? fee : 2);
+  const dirty = (paid ? price : 0) !== fee;
+  const apply = async (e: FormEvent) => {
+    e.preventDefault();
+    await client.cityCommand({ type: 'setParkingFee', id, fee: paid ? price : 0 });
+  };
+  return (
+    <form className="stack" onSubmit={(e) => void apply(e)}>
+      <Row label="Places" value={fmtInt(spaces)} />
+      <Row label="Occupation" value={use === undefined ? '—' : `${fmtPct(use)} (${fmtInt(use * spaces)} places)`} />
+      <Row label="Tarif actuel" value={fee > 0 ? `${fee.toLocaleString('fr-FR')} cr / stationnement` : 'Gratuit'} />
+      <label className="check"><input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} /> Parking payant</label>
+      {paid && (
+        <label>
+          Prix d'un stationnement : {price.toLocaleString('fr-FR')} cr
+          <input type="range" min={0.5} max={PARKING.maxFee} step={0.5} value={price} onChange={(e) => setPrice(Number(e.target.value))} />
+        </label>
+      )}
+      <p className="small muted">
+        Un parking payant rapporte {PARKING.turnoverPerDay} stationnements par place occupée et par jour, mais les automobilistes
+        préfèrent la rue et les parkings gratuits ; trop cher, il reste vide et la ville perd en attractivité.
+      </p>
+      <button type="submit" disabled={!dirty}>Appliquer le tarif</button>
+    </form>
   );
 }
 
@@ -154,6 +187,8 @@ export function EconomyPanel() {
           <Row label="Impôt commercial" value={flow(s.budget.commercialTax, '+')} tone="pos" />
           <Row label="Impôt industriel" value={flow(s.budget.industrialTax, '+')} tone="pos" />
           <Row label="Entretien et salaires publics" value={flow(s.budget.upkeep, '−')} tone="neg" />
+          {(s.budget.transitFares ?? 0) > 0 && <Row label="Billets de transports en commun" value={flow(s.budget.transitFares, '+')} tone="pos" />}
+          {(s.budget.parkingFees ?? 0) > 0 && <Row label="Stationnement payant" value={flow(s.budget.parkingFees, '+')} tone="pos" />}
           <Row label="Importations d'électricité et d'eau" value={flow(s.budget.utilityImports, '−')} tone="neg" />
           <Row label="Intérêts de la dette" value={flow(s.budget.loanInterest, '−')} tone="neg" />
           <Row label="Solde" value={`${s.budget.net >= 0 ? '+' : '−'}${fmtInt(Math.abs(s.budget.net))}`} tone={s.budget.net >= 0 ? 'pos' : 'neg'} />

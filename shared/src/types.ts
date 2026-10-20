@@ -9,6 +9,8 @@ export interface Building {
   /** 0 ou 90 degrés. */
   rotation: 0 | 90;
   builtAtTick: number;
+  /** Parkings : prix d'un stationnement en crédits (absent ou 0 : gratuit). */
+  fee?: number;
 }
 
 export interface Road {
@@ -57,6 +59,11 @@ export interface CityStats {
   traffic: { trips: number; efficiency: number; congestedSegments: number };
   /** Transports en commun : voyages par jour, capacité, part des déplacements. */
   transit: { riders: number; capacity: number; share: number };
+  /**
+   * Stationnement (places occupées simultanément) : places le long des rues raccordées et dans
+   * les parkings, demande des automobilistes, part de la demande satisfaite, recettes par jour.
+   */
+  parking: { streetSpaces: number; lotSpaces: number; demand: number; used: number; coverage: number; revenue: number };
   /** Flux budgétaires par jour de jeu. */
   budget: {
     residentialTax: number;
@@ -69,6 +76,7 @@ export interface CityStats {
     /** Impôt national payé par les habitants (hors budget municipal). */
     nationalTax: number;
     transitFares: number;
+    parkingFees: number;
   };
 }
 
@@ -93,6 +101,13 @@ export interface CityState {
   stats: CityStats | null;
   /** Échantillons d'historique (un toutes les 4 h de jeu, 15 jours au plus). */
   history?: HistorySample[];
+  /** Paliers atteints (population, trésorerie, réussites), dans l'ordre d'obtention. */
+  milestones?: MilestoneReached[];
+}
+
+export interface MilestoneReached {
+  id: string;
+  tick: number;
 }
 
 export interface HistorySample {
@@ -115,6 +130,8 @@ export interface CityLayers {
   roadLoad: Record<number, number>;
   /** Taux d'utilisation (0..1) de chaque équipement de service. */
   serviceLoad: Record<number, number>;
+  /** Taux d'occupation (0..1) de chaque parking. */
+  parkingUse?: Record<number, number>;
   roadConnected: Record<number, boolean>;
 }
 

@@ -93,6 +93,12 @@ export function adviseCity(city: CityState, layers: CityLayers | null): Advice[]
       }
     }
   }
+  // Stationnement (absent des états calculés avant l'ajout des parkings).
+  const pk = s.parking;
+  if (pk && pk.demand > 50 && pk.coverage < 0.8) {
+    const missing = pk.demand - pk.used;
+    add({ id: 'parking', severity: pk.coverage < 0.5 ? 'warning' : 'info', title: `Stationnement saturé : ${pct(pk.coverage)} de la demande`, detail: `Il manque environ ${fmt(missing)} places : les voitures tournent et ralentissent le trafic. Construisez des parkings ou baissez leurs tarifs.`, build: missing > 300 ? 'parking_garage' : 'parking' });
+  }
   if (s.traffic.efficiency < 0.85) {
     add({ id: 'traffic', severity: s.traffic.efficiency < 0.65 ? 'warning' : 'info', title: `Embouteillages : fluidité ${pct(s.traffic.efficiency)}`, detail: `${s.traffic.congestedSegments} tronçon(s) saturé(s) (couche « Trafic »). Doublez les axes, remplacez des rues par des avenues ou créez des transports en commun (2 stations minimum).`, build: s.transit.capacity > 0 ? 'tram_station' : 'bus_station' });
   }

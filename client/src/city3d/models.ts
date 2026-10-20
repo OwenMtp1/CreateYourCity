@@ -418,8 +418,66 @@ export function buildModel(type: BuildingType, seed: number): { group: THREE.Gro
       info.height = 19;
       break;
     }
+    case 'parking': {
+      g.add(ground(W, D, 0x3b3f46));
+      const line = solid(0xf1f5f9);
+      // Deux rangées de places de part et d'autre d'une allée centrale.
+      for (const side of [-1, 1]) {
+        for (let i = 0; i <= 16; i++) g.add(box(6, 0.05, 0.14, line, side * 11.5, 0.07, -D / 2 + 0.5 + i * 2.45));
+      }
+      parkedCars(g, rnd, 0.65, [[-11.5, 0], [11.5, 0]], 16, 2.45, -D / 2 + 1.7, 0.1);
+      parkingSign(g, W / 2 - 1, -D / 2 + 1);
+      info.height = 5;
+      break;
+    }
+    case 'parking_garage': {
+      g.add(ground(W, D, 0x52525b));
+      const concrete = solid(0xb8b5ae);
+      const levels = 5;
+      for (let l = 0; l < levels; l++) {
+        const y = l * 3.1;
+        if (l > 0) g.add(box(W - 1, 0.4, D - 1, concrete, 0, y - 0.4, 0));
+        // Garde-corps bas : façades ouvertes typiques des silos.
+        g.add(box(W - 1, 1, 0.3, concrete, 0, y, -D / 2 + 0.65));
+        g.add(box(W - 1, 1, 0.3, concrete, 0, y, D / 2 - 0.65));
+        g.add(box(0.3, 1, D - 1, concrete, -W / 2 + 0.65, y, 0));
+        g.add(box(0.3, 1, D - 1, concrete, W / 2 - 0.65, y, 0));
+        for (const [x, z] of [[-13, -18], [13, -18], [-13, 18], [13, 18], [-13, 0], [13, 0]] as const) g.add(box(0.7, 3.1, 0.7, concrete, x, y, z));
+        parkedCars(g, rnd, 0.55, [[-9, 0], [9, 0]], 12, 2.8, -D / 2 + 4, y + (l > 0 ? 0 : 0.05));
+      }
+      g.add(box(W - 1, 0.5, D - 1, solid(0x8d8a84), 0, levels * 3.1 - 0.4, 0));
+      // Cage d'escalier et enseigne.
+      g.add(box(4, levels * 3.1 + 2.5, 4, solid(0x64748b), W / 2 - 2.5, 0, -D / 2 + 2.5));
+      g.add(box(0.3, 3, 3, solid(0x2563eb, { emissive: new THREE.Color(0x2563eb), emissiveIntensity: 0.6 }), W / 2 - 0.4, levels * 3.1 - 1, -D / 2 + 2.5));
+      info.height = levels * 3.1 + 2.5;
+      break;
+    }
   }
   return { group: mergeByMaterial(g), info };
+}
+
+const CAR_COLORS = [0xdc2626, 0x2563eb, 0xf8fafc, 0x1f2937, 0x9ca3af, 0x16a34a, 0xf59e0b, 0x7c2d12];
+
+/** Voitures garées en rangées (centres de rangées, nombre de places, pas, départ, hauteur du sol). */
+function parkedCars(g: THREE.Group, rnd: () => number, fill: number, rows: [number, number][], slots: number, step: number, z0: number, y: number) {
+  for (const [x] of rows) {
+    for (let i = 0; i < slots; i++) {
+      if (rnd() > fill) continue;
+      const color = solid(CAR_COLORS[Math.floor(rnd() * CAR_COLORS.length)]!, { metalness: 0.4, roughness: 0.45 });
+      const z = z0 + i * step;
+      g.add(box(4.2, 0.8, 1.8, color, x, y + 0.25, z));
+      g.add(box(2.2, 0.6, 1.6, solid(0x1e293b, { metalness: 0.3, roughness: 0.2 }), x - 0.2, y + 1.05, z));
+    }
+  }
+}
+
+/** Panneau « P » bleu sur poteau. */
+function parkingSign(g: THREE.Group, x: number, z: number) {
+  g.add(box(0.2, 3, 0.2, solid(0x6b7280), x, 0, z));
+  g.add(box(0.15, 1.4, 1.4, solid(0x1d4ed8, { emissive: new THREE.Color(0x1d4ed8), emissiveIntensity: 0.5 }), x, 3, z));
+  g.add(box(0.2, 0.9, 0.18, solid(0xffffff, { emissive: new THREE.Color(0xffffff), emissiveIntensity: 0.4 }), x + 0.05, 3.25, z - 0.25));
+  g.add(box(0.2, 0.18, 0.5, solid(0xffffff, { emissive: new THREE.Color(0xffffff), emissiveIntensity: 0.4 }), x + 0.05, 3.95, z));
+  g.add(box(0.2, 0.18, 0.5, solid(0xffffff, { emissive: new THREE.Color(0xffffff), emissiveIntensity: 0.4 }), x + 0.05, 3.55, z));
 }
 
 /**

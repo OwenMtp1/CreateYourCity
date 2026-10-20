@@ -21,6 +21,8 @@ export class Session {
   lobbyId: string | null = null;
   /** Villes du joueur déjà envoyées en entier (détection des gains et pertes). */
   knownCities = new Set<string>();
+  /** Nombre de paliers déjà transmis par ville (renvoi seulement en cas de nouveauté). */
+  readonly milestonesSent = new Map<string, number>();
   readonly commands = new TokenBucket(10, 30);
   readonly chat = new TokenBucket(1, 5);
   constructor(readonly conn: Connection) {}
@@ -126,6 +128,7 @@ export class GameServer {
           population: city.population, taxes: city.taxes, stats: city.stats,
           ...(Math.floor(city.tick / HISTORY_EVERY_TICKS) > Math.floor((city.tick - (world.tick - previousTick)) / HISTORY_EVERY_TICKS)
             ? { history: city.history ?? [] } : {}),
+          ...(this.newMilestones(s, city) ? { milestones: city.milestones ?? [] } : {}),
         });
         const layers = world.layers.get(city.cityId);
         if (sendLayers && layers) s.conn.send({ t: 'layers', cityId: city.cityId, layers });
@@ -133,6 +136,13 @@ export class GameServer {
       if (sendWorld) s.conn.send({ t: 'world', world: buildWorldView(world.world, s.player.id) });
       if (summaries) s.conn.send({ t: 'summaries', summaries });
     }
+  }
+
+  private newMilestones(s: Session, city: CityState): boolean {
+    const n = city.milestones?.length ?? 0;
+    if (s.milestonesSent.get(city.cityId) === n) return false;
+    s.milestonesSent.set(city.cityId, n);
+    return true;
   }
 
   /** Envoie l'état complet des villes nouvellement acquises et signale celles perdues. */

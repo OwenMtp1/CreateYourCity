@@ -71,3 +71,9 @@ Toutes ces règles sont dans `shared/src/world/` (constantes dans `world/rules.t
   transversales deviennent nécessaires (marché, statistiques).
 - **Pas de PostgREST ni de Realtime Supabase pour le jeu** : le WebSocket du serveur de jeu porte tout le temps réel ;
   Supabase fournit l'authentification et PostgreSQL.
+- **Stationnement agrégé** (`PARKING` dans `shared/src/constants.ts`) : la demande (places occupées en même temps) vaut
+  0,12 × trajets en voiture des habitants ; l'offre vient des rues raccordées (0,08 place/m de rue, 0,05 d'avenue) et des
+  parkings. Les automobilistes choisissent selon places × exp(−tarif / 6), puis se garent où il reste de la place. Un déficit
+  coûte jusqu'à 12 % de fluidité ; un tarif moyen élevé coûte jusqu'à 5 points d'attractivité. Valeurs provisoires.
+- **Paliers** (`shared/src/sim/milestones.ts`) : vérifiés à chaque tick et enregistrés dans l'état de la ville (attribués une
+  seule fois). Le client notifie ceux qu'il n'a pas encore vus sur cet appareil ; la première visite sert de référence.

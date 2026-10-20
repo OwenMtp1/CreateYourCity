@@ -6,7 +6,7 @@ import type { WorldView } from '@cyc/shared/game';
 
 export type ConnStatus = 'connecting' | 'online' | 'offline';
 
-export interface Toast { id: number; kind: 'error' | 'info'; text: string }
+export interface Toast { id: number; kind: 'error' | 'info' | 'milestone'; text: string; title?: string; icon?: string }
 
 export interface GameState {
   status: ConnStatus;
@@ -56,6 +56,13 @@ export function toast(text: string, kind: Toast['kind'] = 'info') {
   const id = ++toastId;
   setState((s) => ({ toasts: [...s.toasts, { id, kind, text }].slice(-4) }));
   setTimeout(() => setState((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), kind === 'error' ? 5000 : 3000);
+}
+
+/** Notification de palier atteint (plus visible et plus longue qu'un message ordinaire). */
+export function milestoneToast(icon: string, title: string, text: string) {
+  const id = ++toastId;
+  setState((s) => ({ toasts: [...s.toasts, { id, kind: 'milestone' as const, icon, title, text }].slice(-4) }));
+  setTimeout(() => setState((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 7000);
 }
 
 /** Ville active (vue de construction et panneaux municipaux). */

@@ -111,6 +111,11 @@ label.check { flex-direction: row; align-items: center; gap: 0.4rem; }
 .toasts { position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 0.4rem; z-index: 50; max-width: min(560px, 92vw); }
 .toast { background: var(--glass-strong); border: 1px solid var(--glass-border); padding: 0.55rem 1rem; border-radius: 12px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45); backdrop-filter: blur(10px); animation: pop 0.2s ease-out; }
 .toast-error { border-color: rgba(239, 68, 68, 0.6); }
+.toast-milestone { display: flex; align-items: center; gap: 0.8rem; border-color: rgba(251, 191, 36, 0.7); box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.25), 0 10px 34px rgba(251, 191, 36, 0.18); }
+.toast-milestone strong { display: block; color: #fde68a; }
+.toast-milestone .small { display: block; color: var(--muted); }
+.milestone-icon { font-size: 1.7rem; line-height: 1; }
+.milestones li { background: rgba(15, 23, 42, 0.35); }
 @keyframes pop { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* --- Jeu ---------------------------------------------------------------------------------- */

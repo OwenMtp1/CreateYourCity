@@ -3,7 +3,7 @@
 import { z } from 'zod';
 import { BUILDING_TYPES, ROAD_TYPES, type BuildingType, type RoadType } from './catalog.ts';
 import type { CityCommand } from './commands.ts';
-import type { CityLayers, CityState, CityStats, CitySummary, HistorySample, TaxRates } from './types.ts';
+import type { CityLayers, CityState, CityStats, CitySummary, HistorySample, MilestoneReached, TaxRates } from './types.ts';
 import type { WorldAction } from './world/actions.ts';
 import type { WorldView } from './world/view.ts';
 
@@ -81,6 +81,7 @@ export const cityCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('borrow'), amount: z.number().positive().max(1e9) }),
   z.object({ type: z.literal('repay'), amount: z.number().positive().max(1e9) }),
+  z.object({ type: z.literal('setParkingFee'), id: z.number().int().nonnegative(), fee: z.number().finite().min(0).max(1000) }),
 ]) satisfies z.ZodType<CityCommand>;
 
 const reqId = z.number().int().optional();
@@ -158,6 +159,8 @@ export type ServerMessage =
       stats: CityStats | null;
       /** Envoyé seulement quand un nouvel échantillon d'historique vient d'être ajouté. */
       history?: HistorySample[];
+      /** Envoyé seulement quand un nouveau palier vient d'être atteint. */
+      milestones?: MilestoneReached[];
     }
   | { t: 'layers'; cityId: string; layers: CityLayers }
   | { t: 'world'; world: WorldView }

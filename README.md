@@ -32,6 +32,9 @@ Ouvrez <http://localhost:5173> dans deux navigateurs (ou une fenêtre privée) p
    choisissez une destination sur le globe), **Nation** (élection, lois, grands projets, impôt national), **Salon** (chat, journal).
 6. Un **tutoriel** guide les premiers pas ; les **conseillers** (🧭) signalent les problèmes chiffrés ; les **statistiques** (📈)
    retracent l'évolution de la ville. Routes droites, **courbes** ou **ronds-points** ; transports en commun ; voitures animées.
+   **Parkings** (à ciel ouvert ou à étages) gratuits ou payants, tarif réglable dans l'inspecteur ; **paliers** (population,
+   trésorerie, réussites) notifiés à l'écran et listés dans les statistiques. Vue **du dessus** par défaut, **vue de rue**
+   en caméra libre (ZQSD/WASD, souris, Espace/C).
 7. Ordinateur peu puissant : cochez « Graphismes économiques » dans l'onglet Construire.
 
 Sans base de données, l'état est sauvegardé dans `./data/world.json` (`STORE=file`). Arrêtez le serveur avec Ctrl+C

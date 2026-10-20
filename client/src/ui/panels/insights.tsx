@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
-import { adviseCity, BUILDINGS, formatGameTime, type Advice } from '@cyc/shared';
+import { adviseCity, BUILDINGS, formatGameTime, MILESTONE_BY_ID, MILESTONES, type Advice } from '@cyc/shared';
 import type { Tool } from '../../city3d/CityView3D.tsx';
 import { activeCity, setState, useGame } from '../../state.ts';
+import { Row } from '../common.tsx';
 import { fmtInt, fmtMoney, fmtPct } from '../format.ts';
 import { LineChart } from '../LineChart.tsx';
 import { ICON } from './city.tsx';
@@ -65,6 +66,44 @@ export function StatsPanel() {
       <LineChart title="Attractivité" points={pts((s) => s.attractiveness)} format={(v) => fmtPct(v)} />
       <LineChart title="Fluidité du trafic" points={pts((s) => s.traffic)} format={(v) => fmtPct(v)} />
       <LineChart title="Prix des biens (marché commun)" points={marketPts} format={(v) => `${v.toFixed(2)} cr`} />
+      {city.stats?.parking && (
+        <div className="card compact">
+          <h4>🅿️ Stationnement</h4>
+          <Row label="Places dans les rues" value={fmtInt(city.stats.parking.streetSpaces)} />
+          <Row label="Places en parking" value={fmtInt(city.stats.parking.lotSpaces)} />
+          <Row label="Demande (voitures garées en même temps)" value={fmtInt(city.stats.parking.demand)} />
+          <Row label="Demande satisfaite" value={fmtPct(city.stats.parking.coverage)} tone={city.stats.parking.coverage < 0.8 ? 'neg' : 'pos'} />
+          <Row label="Recettes" value={`${fmtInt(city.stats.parking.revenue)} cr/j`} />
+        </div>
+      )}
+      <Milestones />
+    </div>
+  );
+}
+
+/** Paliers atteints, puis prochains paliers de chaque catégorie. */
+function Milestones() {
+  const city = useGame(activeCity)!;
+  const reached = city.milestones ?? [];
+  const done = new Set(reached.map((m) => m.id));
+  const next = (['population', 'treasury'] as const)
+    .map((kind) => MILESTONES.find((m) => m.kind === kind && !done.has(m.id)))
+    .filter((m) => m !== undefined);
+  return (
+    <div className="card compact">
+      <h4>🏆 Paliers ({reached.length}/{MILESTONES.length})</h4>
+      {reached.length === 0 && <p className="small muted">Aucun palier pour l'instant.</p>}
+      <ul className="list milestones">
+        {[...reached].reverse().map((r) => {
+          const m = MILESTONE_BY_ID.get(r.id);
+          return m ? (
+            <li key={r.id} title={m.detail}><span>{m.icon} {m.title}</span><span className="small muted">{formatGameTime(r.tick)}</span></li>
+          ) : null;
+        })}
+        {next.map((m) => (
+          <li key={m.id} className="muted" title={m.detail}><span>🔒 {m.title}</span><span className="small">prochain</span></li>
+        ))}
+      </ul>
     </div>
   );
 }

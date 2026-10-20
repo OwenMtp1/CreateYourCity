@@ -1,7 +1,7 @@
 // Commandes qui modifient une ville. Le serveur est l'autorité : il appelle applyCityCommand.
 // Le client réutilise les mêmes validations pour l'aperçu de construction (retour immédiat).
 import { BUILDINGS, ROADS, type BuildingType, type RoadType } from './catalog.ts';
-import { CITY_SIZE_M, MAX_DEBT, MAX_TAX_RATE, ROAD_ACCESS_DISTANCE, ROAD_MAX_LENGTH, ROAD_MIN_LENGTH } from './constants.ts';
+import { CITY_SIZE_M, MAX_DEBT, MAX_TAX_RATE, PARKING, ROAD_ACCESS_DISTANCE, ROAD_MAX_LENGTH, ROAD_MIN_LENGTH } from './constants.ts';
 import { buildingRect, footprint, rectsOverlap, roadWidth, segmentLength, segmentRectDistance, type Segment } from './geometry.ts';
 import { generateTerrain, rectTerrain, roadTerrain, terrainAt, TerrainKind } from './terrain.ts';
 import type { CityState, TaxRates } from './types.ts';
@@ -14,7 +14,9 @@ export type CityCommand =
   | { type: 'demolish'; target: 'building' | 'road'; id: number }
   | { type: 'setTaxes'; taxes: TaxRates }
   | { type: 'borrow'; amount: number }
-  | { type: 'repay'; amount: number };
+  | { type: 'repay'; amount: number }
+  /** Tarif d'un parking (0 : gratuit). */
+  | { type: 'setParkingFee'; id: number; fee: number };
 
 export type ValidationResult = { ok: true; cost: number } | { ok: false; reason: string };
 
@@ -189,6 +191,17 @@ export function applyCityCommand(city: CityState, cmd: CityCommand): CommandResu
       city.debt -= amount;
       city.treasury -= amount;
       return { ok: true, cost: amount };
+    }
+    case 'setParkingFee': {
+      const b = city.buildings.find((x) => x.id === cmd.id);
+      if (!b || !BUILDINGS[b.type].parking) return { ok: false, reason: 'Parking introuvable.' };
+      if (!Number.isFinite(cmd.fee) || cmd.fee < 0 || cmd.fee > PARKING.maxFee) {
+        return { ok: false, reason: `Tarif entre 0 et ${PARKING.maxFee} cr.` };
+      }
+      const fee = Math.round(cmd.fee * 10) / 10;
+      if (fee > 0) b.fee = fee;
+      else delete b.fee;
+      return { ok: true, cost: 0 };
     }
   }
 }

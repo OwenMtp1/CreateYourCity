@@ -3,6 +3,7 @@ import type { ClientMessage, ServerMessage } from '@cyc/shared';
 import { CITY_BY_ID } from '@cyc/shared/world';
 import { getState, setState, toast } from '../state.ts';
 import { currentToken, rememberedLobby, rememberLobby, setDevToken } from './auth.ts';
+import { notifyMilestones } from './milestones.ts';
 
 type Result = Extract<ServerMessage, { t: 'result' }>;
 type Outgoing = ClientMessage extends infer M ? (M extends { reqId?: number } ? Omit<M, 'reqId'> : never) : never;
@@ -116,6 +117,8 @@ class GameClient {
           activeCityId: s.activeCityId && myCities[s.activeCityId] ? s.activeCityId : first,
           view: s.lobby?.id === msg.lobby.id ? s.view : first ? 'city' : 'globe',
         }));
+        // Paliers obtenus pendant l'absence : notifiés au retour (après la mise à jour du salon).
+        for (const c of msg.myCities) notifyMilestones(c.cityId, c.milestones);
         return;
       }
       case 'lobbyLeft':
@@ -131,6 +134,7 @@ class GameClient {
           layers: { ...s.layers, [msg.city.cityId]: msg.layers },
           activeCityId: s.activeCityId ?? msg.city.cityId,
         }));
+        notifyMilestones(msg.city.cityId, msg.city.milestones);
         return;
       case 'cityRemoved': {
         const name = CITY_BY_ID.get(msg.cityId)?.name ?? msg.cityId;
@@ -146,6 +150,7 @@ class GameClient {
       case 'cityStats': {
         const { t: _t, cityId, ...update } = msg;
         setState((s) => (s.myCities[cityId] ? { myCities: { ...s.myCities, [cityId]: { ...s.myCities[cityId]!, ...update } } } : {}));
+        if (msg.milestones) notifyMilestones(cityId, msg.milestones);
         return;
       }
       case 'layers':
