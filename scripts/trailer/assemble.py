@@ -138,14 +138,19 @@ def fade(img: Image.Image, i, n):
 
 
 def fix_status(img: Image.Image) -> Image.Image:
-    """L'horloge figée de la capture fait afficher « Hors ligne » : on rétablit « Connecté »."""
-    r, g, b, _ = img.getpixel((1051, 68))
-    if not (r > 180 and g < 120):
+    """L'horloge figée de la capture fait afficher « Hors ligne » ou « Connexion… » : on rétablit « Connecté »."""
+    for x in range(960, 1195):
+        r, g, b, _ = img.getpixel((x, 68))
+        if max(r, g, b) - min(r, g, b) > 90:
+            break
+    else:
+        return img
+    if g > r:  # pastille déjà verte
         return img
     d = ImageDraw.Draw(img)
-    d.rectangle((1043, 59, 1201, 78), fill=img.getpixel((1040, 68)))
-    d.ellipse((1047, 64, 1055, 72), fill=(52, 211, 153, 255))
-    d.text((1060, 68), 'Connecté', font=font('Medium', 12), fill=(226, 232, 240, 255), anchor='lm')
+    d.rectangle((x - 4, 59, 1201, 78), fill=img.getpixel((x - 10, 68)))
+    d.ellipse((x, 64, x + 8, 72), fill=(52, 211, 153, 255))
+    d.text((x + 13, 68), 'Connecté', font=font('Medium', 12), fill=(226, 232, 240, 255), anchor='lm')
     return img
 
 
