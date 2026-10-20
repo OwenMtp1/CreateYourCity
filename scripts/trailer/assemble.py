@@ -99,11 +99,12 @@ def ramp(i, n, start, length):
     return min(a, b)
 
 
-def caption(img: Image.Image, i, n, title, sub):
+def caption(img: Image.Image, i, n, title, sub, right=False):
+    """Légende en bas ; à droite sur les plans d'interface pour laisser le panneau lisible."""
     a = ramp(i, n, 6, 10)
     if a <= 0:
         return
-    slide = int((1 - a) * 30)
+    slide = int((1 - a) * 30) * (-1 if right else 1)
     # Bandeau dégradé sombre en bas pour la lisibilité.
     grad = Image.new('L', (1, 220))
     for y in range(220):
@@ -112,9 +113,14 @@ def caption(img: Image.Image, i, n, title, sub):
     shade.putalpha(grad.resize((W, 220)))
     img.alpha_composite(shade, (0, H - 220))
     accent = Image.new('RGBA', (6, 76), (255, 196, 70, int(255 * a)))
-    img.alpha_composite(accent, (56 - slide, H - 132))
-    shadow_text(img, (78 - slide, H - 134), title, F_CAPTION, alpha=a)
-    shadow_text(img, (80 - slide, H - 88), sub, F_SUB, fill=(214, 224, 238, 255), alpha=a)
+    if right:
+        img.alpha_composite(accent, (W - 62 + slide, H - 132))
+        shadow_text(img, (W - 78 + slide, H - 134), title, F_CAPTION, anchor='ra', alpha=a)
+        shadow_text(img, (W - 80 + slide, H - 88), sub, F_SUB, fill=(214, 224, 238, 255), anchor='ra', alpha=a)
+    else:
+        img.alpha_composite(accent, (56 - slide, H - 132))
+        shadow_text(img, (78 - slide, H - 134), title, F_CAPTION, alpha=a)
+        shadow_text(img, (80 - slide, H - 88), sub, F_SUB, fill=(214, 224, 238, 255), alpha=a)
 
 
 def title_card(img: Image.Image, i, n, title, sub, start=12):
@@ -196,7 +202,7 @@ def main(frames_dir: str, out: str):
             elif kind == 'outro':
                 title_card(img, i, n, title, sub, start=40)
             else:
-                caption(img, i, n, title, sub)
+                caption(img, i, n, title, sub, right=kind == 'still')
             img = fade(img, i, n)
             img.convert('RGB').save(os.path.join(seq, f'{k:05d}.jpg'), quality=94)
             k += 1
