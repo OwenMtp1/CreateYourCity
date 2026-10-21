@@ -90,6 +90,21 @@ export const POPULATION = {
   comfortableTaxRate: 0.08,
 } as const;
 
+/**
+ * Gestion des habitants. Une campagne coûte un montant fixe et dure `campaignDays` jours.
+ * - « jobs » : davantage d'habitants en âge de travailler se présentent aux emplois.
+ * - « attract » : la ville paraît plus attractive aux nouveaux arrivants.
+ * Transférer des habitants vers une autre ville de la même main coûte un trajet, par personne.
+ */
+export const POPULATION_POLICY = {
+  campaignDays: 5,
+  campaignCost: { jobs: 60_000, attract: 80_000 },
+  jobsParticipationBonus: 0.1,
+  attractBonus: 0.12,
+  transferBaseCost: 200,
+  transferCostPerKm: 0.5,
+} as const;
+
 /** Trafic agrégé par tronçon. */
 export const TRAFFIC = {
   tripsPerResidentPerDay: 1,

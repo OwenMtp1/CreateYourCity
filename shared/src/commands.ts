@@ -2,14 +2,14 @@
 // Le client réutilise les mêmes validations pour l'aperçu de construction (retour immédiat).
 import { BUILDINGS, ROADS, type BuildingType, type RoadType } from './catalog.ts';
 import {
-  CITY_SIZE_M, MAX_DEBT, MAX_TAX_RATE, PARKING, REGIONAL_ACCESS, ROAD_ACCESS_DISTANCE, ROAD_AUTO_CONNECT_DISTANCE, ROAD_MAX_LENGTH, ROAD_MIN_LENGTH,
+  CITY_SIZE_M, MAX_DEBT, MAX_TAX_RATE, PARKING, POPULATION_POLICY, REGIONAL_ACCESS, TICKS_PER_DAY, ROAD_ACCESS_DISTANCE, ROAD_AUTO_CONNECT_DISTANCE, ROAD_MAX_LENGTH, ROAD_MIN_LENGTH,
 } from './constants.ts';
 import {
   buildingRect, closestPointOnSegment, footprint, pointSegmentDistance, rectsOverlap, roadWidth, segmentLength, segmentRectDistance, type Point, type Segment,
 } from './geometry.ts';
 import { getLayout } from './sim/layout.ts';
 import { generateTerrain, rectTerrain, roadTerrain, terrainAt, TerrainKind } from './terrain.ts';
-import type { CityState, TaxRates } from './types.ts';
+import type { CampaignKind, CityState, TaxRates } from './types.ts';
 
 export type CityCommand =
   | { type: 'build'; building: BuildingType; x: number; y: number; rotation: 0 | 90 }
@@ -21,7 +21,9 @@ export type CityCommand =
   | { type: 'borrow'; amount: number }
   | { type: 'repay'; amount: number }
   /** Tarif d'un parking (0 : gratuit). */
-  | { type: 'setParkingFee'; id: number; fee: number };
+  | { type: 'setParkingFee'; id: number; fee: number }
+  /** Campagne de communication pour l'emploi ou l'attractivité. */
+  | { type: 'campaign'; kind: CampaignKind };
 
 export type ValidationResult = { ok: true; cost: number } | { ok: false; reason: string };
 
@@ -212,6 +214,15 @@ export function applyCityCommand(city: CityState, cmd: CityCommand): CommandResu
       if (!valid) return { ok: false, reason: `Taux d'imposition entre 0 et ${MAX_TAX_RATE * 100} %.` };
       city.taxes = { residential: t.residential, commercial: t.commercial, industrial: t.industrial };
       return { ok: true, cost: 0 };
+    }
+    case 'campaign': {
+      const current = (city.campaigns ?? []).filter((c) => c.endsTick > city.tick);
+      if (current.some((c) => c.kind === cmd.kind)) return { ok: false, reason: 'Une campagne de ce type est déjà en cours.' };
+      const cost = POPULATION_POLICY.campaignCost[cmd.kind];
+      if (city.treasury < cost) return { ok: false, reason: `Fonds insuffisants (${fmt(cost)} cr requis).` };
+      city.treasury -= cost;
+      city.campaigns = [...current, { kind: cmd.kind, endsTick: city.tick + POPULATION_POLICY.campaignDays * TICKS_PER_DAY }];
+      return { ok: true, cost };
     }
     case 'borrow': {
       const amount = Math.floor(cmd.amount);

@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
-  BUILDING_TYPES, BUILDINGS, MAX_DEBT, MAX_TAX_RATE, PARKING, ROAD_TYPES, ROADS, SERVICE_KINDS, type Building, type BuildingCategory, type ServiceKind,
+  BUILDING_TYPES, BUILDINGS, MAX_DEBT, MAX_TAX_RATE, PARKING, POPULATION_POLICY, ROAD_TYPES, ROADS, SERVICE_KINDS, TICKS_PER_DAY,
+  type Building, type BuildingCategory, type CampaignKind, type ServiceKind,
 } from '@cyc/shared';
+import { CITY_BY_ID } from '@cyc/shared/world';
+import { distanceKm } from '@cyc/shared/game';
 import type { CityLayer } from '../../city3d/CityScene.ts';
 import type { Tool } from '../../city3d/CityView3D.tsx';
 import { client } from '../../net/client.ts';
@@ -328,6 +331,75 @@ export function PopulationPanel() {
       <p className="small muted">
         Attractivité = 40 % emploi + 25 % services + 20 % fiscalité (locale + nationale) + 15 % trafic − 30 % pollution (± lois nationales).
       </p>
+      <PopulationCampaigns />
+      <TransferResidents />
+    </div>
+  );
+}
+
+const CAMPAIGN_LABEL: Record<CampaignKind, { title: string; text: string }> = {
+  jobs: { title: "📣 Campagne pour l'emploi", text: "Plus d'habitants se présentent aux postes disponibles." },
+  attract: { title: '📣 Campagne d’attractivité', text: 'Davantage de nouveaux arrivants s’installent dans la ville.' },
+};
+
+/** Campagnes de communication : coût fixe, effet pendant plusieurs jours. */
+function PopulationCampaigns() {
+  const city = useGame(activeCity)!;
+  const active = (city.campaigns ?? []).filter((c) => c.endsTick > city.tick);
+  return (
+    <div className="stack">
+      <h4>Campagnes</h4>
+      {(Object.keys(CAMPAIGN_LABEL) as CampaignKind[]).map((kind) => {
+        const run = active.find((c) => c.kind === kind);
+        const cost = POPULATION_POLICY.campaignCost[kind];
+        return (
+          <div key={kind} className="campaign">
+            <div className="small"><strong>{CAMPAIGN_LABEL[kind].title}</strong> <span className="muted">{CAMPAIGN_LABEL[kind].text}</span></div>
+            {run ? (
+              <span className="small pos">En cours : {fmtInt(Math.ceil((run.endsTick - city.tick) / TICKS_PER_DAY))} jour(s) restant(s)</span>
+            ) : (
+              <button disabled={city.treasury < cost} onClick={() => void client.cityCommand({ type: 'campaign', kind })}>
+                Lancer pour {fmtMoney(cost)} ({POPULATION_POLICY.campaignDays} j)
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Transfert d'habitants vers une autre ville de la même main (coût : trajet, par personne). */
+function TransferResidents() {
+  const city = useGame(activeCity)!;
+  const myCities = useGame((s) => s.myCities);
+  const others = Object.keys(myCities).filter((id) => id !== city.cityId);
+  const [target, setTarget] = useState('');
+  const [count, setCount] = useState(50);
+  if (others.length === 0) return null;
+  const to = target || others[0]!;
+  const toCity = myCities[to];
+  const free = Math.max(0, (toCity?.stats?.housingCapacity ?? 0) - (toCity?.population ?? 0));
+  const cost = Math.round(count * (POPULATION_POLICY.transferBaseCost + POPULATION_POLICY.transferCostPerKm * distanceKm(city.cityId, to)));
+  const max = Math.min(Math.floor(city.population), Math.floor(free));
+  return (
+    <div className="stack">
+      <h4>Transférer des habitants</h4>
+      <label>Vers
+        <select value={to} onChange={(e) => setTarget(e.target.value)}>
+          {others.map((id) => <option key={id} value={id}>{CITY_BY_ID.get(id)?.name}</option>)}
+        </select>
+      </label>
+      <label>Nombre d'habitants
+        <input type="number" min={1} max={max} value={count} onChange={(e) => setCount(Number(e.target.value))} />
+      </label>
+      <Row label="Logements libres là-bas" value={fmtInt(free)} />
+      <Row label="Coût du trajet" value={fmtMoney(cost)} tone={city.treasury < cost ? 'neg' : undefined} />
+      <button className="primary" disabled={count < 1 || count > max || city.treasury < cost}
+        onClick={() => void client.action({ type: 'transferResidents', fromCityId: city.cityId, toCityId: to, count })}>
+        Envoyer {fmtInt(count)} habitant(s)
+      </button>
+      <p className="small muted">Les habitants arrivent immédiatement ; le trajet coûte {POPULATION_POLICY.transferBaseCost} cr par personne plus {POPULATION_POLICY.transferCostPerKm} cr par km.</p>
     </div>
   );
 }

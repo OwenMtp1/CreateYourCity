@@ -86,6 +86,8 @@ export interface CityStats {
   };
 }
 
+export type CampaignKind = 'jobs' | 'attract';
+
 export interface CityState {
   schemaVersion: number;
   cityId: string;
@@ -104,6 +106,8 @@ export interface CityState {
   nextEntityId: number;
   /** Incrémenté à chaque modification de l'agencement (invalide le cache d'analyse). */
   layoutVersion: number;
+  /** Campagnes de communication en cours ; `endsTick` exclu. */
+  campaigns?: { kind: CampaignKind; endsTick: number }[];
   stats: CityStats | null;
   /** Échantillons d'historique (un toutes les 4 h de jeu, 15 jours au plus). */
   history?: HistorySample[];

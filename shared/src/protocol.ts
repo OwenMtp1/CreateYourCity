@@ -55,6 +55,7 @@ export const worldActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('sendMessage'), to: id, text: z.string().trim().min(1).max(500) }),
   z.object({ type: z.literal('secede'), cityId: id }),
   z.object({ type: z.literal('rejoinCountry'), cityId: id }),
+  z.object({ type: z.literal('transferResidents'), fromCityId: cityId, toCityId: cityId, count: z.number().int().min(1).max(1_000_000) }),
   z.object({ type: z.literal('annexByForce'), fromCityId: cityId, cityId, troops: z.number().int().min(1).max(1_000_000).optional(), betray: z.boolean().optional() }),
 ]) satisfies z.ZodType<WorldAction>;
 
@@ -85,6 +86,7 @@ export const cityCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('borrow'), amount: z.number().positive().max(1e9) }),
   z.object({ type: z.literal('repay'), amount: z.number().positive().max(1e9) }),
   z.object({ type: z.literal('setParkingFee'), id: z.number().int().nonnegative(), fee: z.number().finite().min(0).max(1000) }),
+  z.object({ type: z.literal('campaign'), kind: z.enum(['jobs', 'attract']) }),
 ]) satisfies z.ZodType<CityCommand>;
 
 const reqId = z.number().int().optional();

@@ -1,7 +1,7 @@
 // Actions de niveau « monde » des joueurs : diplomatie, commerce, armée, territoire, nation.
 // Le serveur valide et applique ; toutes les règles sont ici et testées.
 import { createCityState } from '../city.ts';
-import { INDEPENDENCE, TICKS_PER_DAY } from '../constants.ts';
+import { INDEPENDENCE, POPULATION_POLICY, TICKS_PER_DAY } from '../constants.ts';
 import { LAW_EFFECTS, type LawId, type ProjectId } from '../sim/modifiers.ts';
 import type { CityState } from '../types.ts';
 import { CITY_BY_ID } from '../world.ts';
@@ -17,6 +17,8 @@ import { armySize } from './military.ts';
 
 export type WorldAction =
   | { type: 'transferFunds'; fromCityId: string; toCityId: string; amount: number }
+  /** Déplace des habitants d'une de vos villes vers une autre ; payé par la ville d'origine. */
+  | { type: 'transferResidents'; fromCityId: string; toCityId: string; count: number }
   | { type: 'proposeTreaty'; to: string; treaty: TreatyType; cityId?: string; price?: number; payFromCityId?: string; nation?: { from: string; to: string } }
   | { type: 'respondTreaty'; treatyId: number; accept: boolean; payFromCityId?: string }
   | { type: 'cancelTreaty'; treatyId: number }
@@ -211,6 +213,24 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
   const meta = world.meta;
   const name = (id: string) => playerName(meta, id);
   switch (action.type) {
+    case 'transferResidents': {
+      const from = ownCity(world, player, action.fromCityId);
+      const to = ownCity(world, player, action.toCityId);
+      if (to.cityId === from.cityId) fail('Choisissez une autre ville.');
+      const count = Math.floor(action.count);
+      if (!(count >= 1)) fail('Nombre d\'habitants invalide.');
+      const free = Math.max(0, (to.stats?.housingCapacity ?? 0) - to.population);
+      if (count > Math.floor(from.population)) fail(`Seulement ${fmt(from.population)} habitant(s) à ${cityName(from.cityId)}.`);
+      if (count > Math.floor(free)) fail(`Logements libres à ${cityName(to.cityId)} : ${fmt(free)}.`);
+      const cost = Math.round(count * (POPULATION_POLICY.transferBaseCost + POPULATION_POLICY.transferCostPerKm * distanceKm(from.cityId, to.cityId)));
+      if (from.treasury < cost) fail(`Fonds insuffisants à ${cityName(from.cityId)} (${fmt(cost)} cr requis).`);
+      from.treasury -= cost;
+      from.population -= count;
+      to.population += count;
+      pushEvent(world, 'transfer', `${name(player)} transfère ${fmt(count)} habitant(s) de ${cityName(from.cityId)} à ${cityName(to.cityId)}.`, [player], true);
+      return;
+    }
+
     case 'transferFunds': {
       const from = ownCity(world, player, action.fromCityId);
       const to = world.cities.get(action.toCityId);

@@ -2,9 +2,9 @@
 // même résultat (aucun aléa, aucune horloge). Toutes les formules sont exprimées par jour de
 // jeu puis multipliées par DT_DAYS.
 import { BUILDINGS, ROADS, SERVICE_KINDS, TRANSIT_MODES, type ServiceKind, type TransitMode } from '../catalog.ts';
-import { COMMERCE, DAYS_PER_YEAR, DT_DAYS, ECONOMY, INDEPENDENCE, LOAN_ANNUAL_RATE, PARKING, POPULATION, TRAFFIC, TRANSIT } from '../constants.ts';
+import { COMMERCE, DAYS_PER_YEAR, DT_DAYS, ECONOMY, INDEPENDENCE, LOAN_ANNUAL_RATE, PARKING, POPULATION, POPULATION_POLICY, TRAFFIC, TRANSIT } from '../constants.ts';
 import { segmentLength } from '../geometry.ts';
-import type { Building, BuildingEconomy, CityLayers, CityState, CityStats, SupplyLink } from '../types.ts';
+import type { Building, BuildingEconomy, CampaignKind, CityLayers, CityState, CityStats, SupplyLink } from '../types.ts';
 import { getLayout } from './layout.ts';
 import { checkMilestones } from './milestones.ts';
 import { DEFAULT_MODIFIERS, LAW_EFFECTS, PROJECT_EFFECTS, type CityModifiers } from './modifiers.ts';
@@ -59,7 +59,9 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   }
   // Les habitants d'un logement démoli ou déconnecté partent immédiatement.
   const population = Math.min(city.population, housing);
-  const workforce = population * ECONOMY.workforceShare;
+  const campaignActive = (kind: CampaignKind) => (city.campaigns ?? []).some((c) => c.kind === kind && c.endsTick > city.tick);
+  const participation = ECONOMY.workforceShare + (campaignActive('jobs') ? POPULATION_POLICY.jobsParticipationBonus : 0);
+  const workforce = population * participation;
   const employed = Math.min(workforce, jobs);
   const staffing = jobs > 0 ? employed / jobs : 0;
   const residents = new Map<number, number>();
@@ -440,7 +442,8 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   // --- Migrations -----------------------------------------------------------------------------
   const jobScore = workforce > 0 ? Math.min(1, jobs / workforce) : jobs > 0 ? 1 : 0;
   const serviceScore = meanCoverage;
-  const bonus = (law.minimum_wage ? LAW_EFFECTS.minimum_wage.attractivenessBonus : 0) -
+  const bonus = (campaignActive('attract') ? POPULATION_POLICY.attractBonus : 0) +
+    (law.minimum_wage ? LAW_EFFECTS.minimum_wage.attractivenessBonus : 0) -
     (law.conscription ? LAW_EFFECTS.conscription.attractivenessMalus : 0) - parkingMalus - INDEPENDENCE.blackoutMalus * (1 - utilitySupply);
   const attract = attractiveness({
     jobScore, serviceScore, residentialTax: city.taxes.residential + mod.nationalTaxRate, trafficEfficiency,
