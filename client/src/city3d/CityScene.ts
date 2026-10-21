@@ -245,17 +245,25 @@ export class CityScene {
   private layout: CityLayout | null = null;
   private cars: THREE.InstancedMesh | null = null;
   private carState: { path: number; s: number; dir: 1 | -1; speed: number }[] = [];
-  private paths: { pts: THREE.Vector3[]; cum: number[]; total: number }[] = [];
+  private paths: { pts: THREE.Vector3[]; cum: number[]; total: number; weight?: number }[] = [];
   private trafficEfficiency = 1;
 
-  /** Voitures proportionnelles aux déplacements, sur les itinéraires représentatifs du graphe. */
+  private trafficRouting: unknown = null;
+
+  /**
+   * Voitures sur chaque tronçon relié : un minimum partout pour que toute la voirie vive, plus une densité
+   * proportionnelle aux trajets qui l'empruntent (domicile-travail, commerces, fret).
+   */
   private updateTraffic(city: CityState) {
     const routing = this.layout?.routing;
     const trips = city.stats?.traffic.trips ?? 0;
     const carTrips = trips * (1 - (city.stats?.transit.share ?? 0));
     this.trafficEfficiency = city.stats?.traffic.efficiency ?? 1;
-    const wanted = routing && routing.samples.length ? Math.min(this.low ? 80 : 260, Math.round(carTrips / 25)) : 0;
-    if (this.cars && this.carState.length === wanted && this.paths.length === (routing?.samples.length ?? 0)) return;
+    const cap = this.low ? 120 : 360;
+    const edges = routing?.edges.filter((e) => Math.hypot(e.bx - e.ax, e.by - e.ay) > 5) ?? [];
+    const wanted = routing && edges.length ? Math.min(cap, Math.max(Math.round(carTrips / 25), edges.length * 2)) : 0;
+    if (this.cars && this.carState.length === wanted && this.trafficRouting === routing) return;
+    this.trafficRouting = routing;
     if (this.cars) {
       this.scene.remove(this.cars);
       this.cars.dispose();
@@ -263,24 +271,33 @@ export class CityScene {
     }
     this.carState = [];
     if (!routing || wanted === 0) return;
-    this.paths = routing.samples.map((sm) => {
-      const pts = sm.points.map((p) => new THREE.Vector3(p.x - HALF, 0.9, p.y - HALF));
-      const cum = [0];
-      for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1]! + pts[i]!.distanceTo(pts[i - 1]!));
-      return { pts, cum, total: cum.at(-1)! };
-    }).filter((p) => p.total > 5);
+    const load = new Map<number, number>();
+    const addLoad = (m: Map<number, number>) => { for (const [e, w] of m) load.set(e, (load.get(e) ?? 0) + w); };
+    for (const m of routing.commute.values()) addLoad(m);
+    for (const m of routing.shopping.values()) addLoad(m);
+    for (const m of routing.freight.values()) addLoad(m);
+    const maxLoad = Math.max(1e-9, ...load.values());
+    // Chaque tronçon est un aller-retour ; son poids dépend de son trafic (un tronçon vide garde un poids de base).
+    this.paths = edges.map((e) => {
+      const pts = [new THREE.Vector3(e.ax - HALF, 0.9, e.ay - HALF), new THREE.Vector3(e.bx - HALF, 0.9, e.by - HALF)];
+      return { pts, cum: [0, pts[0]!.distanceTo(pts[1]!)], total: pts[0]!.distanceTo(pts[1]!), weight: 1 + 8 * ((load.get(e.id) ?? 0) / maxLoad) };
+    });
     if (!this.paths.length) return;
     const geo = sharedGeometry('car', () => new THREE.BoxGeometry(4.4, 1.6, 2));
     this.cars = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.3 }), wanted);
     this.cars.castShadow = !this.low;
     const rnd = mulberry32(hashString(city.cityId) + wanted);
     const colors = [0xe5e7eb, 0x1f2937, 0xdc2626, 0x2563eb, 0x9ca3af, 0xf59e0b, 0x16a34a, 0xf8fafc];
-    const weights = routing.samples.map((s2) => s2.weight);
+    // Chaque tronçon reçoit d'abord une voiture, puis le reste est réparti selon son poids.
+    const weights = this.paths.map((p) => p.weight ?? 1);
     const total = weights.reduce((a, b) => a + b, 0);
     for (let i = 0; i < wanted; i++) {
-      let r = rnd() * total, k = 0;
-      while (k < weights.length - 1 && r > weights[k]!) { r -= weights[k]!; k++; }
-      const path = Math.min(k, this.paths.length - 1);
+      let path = i < this.paths.length ? i : 0;
+      if (i >= this.paths.length) {
+        let r = rnd() * total, k = 0;
+        while (k < weights.length - 1 && r > weights[k]!) { r -= weights[k]!; k++; }
+        path = k;
+      }
       this.carState.push({ path, s: rnd() * this.paths[path]!.total, dir: rnd() < 0.5 ? 1 : -1, speed: 10 + rnd() * 6 });
       this.cars.setColorAt(i, new THREE.Color(colors[Math.floor(rnd() * colors.length)]!));
     }
