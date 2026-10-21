@@ -1,7 +1,7 @@
 // Fiches détaillées des bâtiments : inspecteur flottant (clic sur un bâtiment) et répertoire de la ville.
 import { useMemo, useState } from 'react';
 import {
-  BUILDINGS, COMMERCE, ECONOMY, formatGameTime, SERVICE_KINDS, TRANSIT, type Building, type BuildingCategory, type CityLayers, type CityState,
+  BUILDINGS, COMMERCE, ECONOMY, formatGameTime, SERVICE_KINDS, TRANSIT, type Building, type BuildingCategory, type BuildingEconomy, type CityLayers, type CityState,
 } from '@cyc/shared';
 import { client } from '../../net/client.ts';
 import { activeCity, useGame } from '../../state.ts';
@@ -112,7 +112,8 @@ function Accounts({ city, layers, b, onSelect }: { city: CityState; layers: City
       <Row label="Impôt versé à la ville" value={e.tax > 0 ? `${fmtInt(e.tax)} cr/j` : 'aucun (pas de bénéfice)'} />
       {e.sold !== undefined && (
         <>
-          <Row label="Clients (habitants à moins de 450 m)" value={fmtInt(e.customers ?? 0)} tone={(e.customers ?? 0) < 1 ? 'neg' : undefined} />
+          <Row label="Habitants dans la zone (450 m)" value={fmtInt(e.catchment ?? 0)} tone={(e.catchment ?? 0) < 1 ? 'neg' : undefined} />
+          <Row label="Clients" value={fmtInt(e.customers ?? 0)} tone={(e.customers ?? 0) < 1 ? 'neg' : undefined} />
           <Row label="Biens vendus" value={`${fmtInt(e.sold)} /j à ${ECONOMY.retailPrice} cr`} />
           <Row label="Prix d'achat moyen" value={e.sold > 0 ? `${(e.unitCost ?? 0).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} cr/bien` : '—'} />
           <p className="small muted">Approvisionnement</p>
@@ -122,7 +123,7 @@ function Accounts({ city, layers, b, onSelect }: { city: CityState; layers: City
             ))}
             {(e.contract ?? 0) > 0.5 && <li><span>🤝 Contrats</span><span className="small">{fmtInt(e.contract ?? 0)} biens</span></li>}
             {(e.imported ?? 0) > 0.5 && <li className="neg"><span>🌍 Importations (plus chères)</span><span className="small">{fmtInt(e.imported ?? 0)} biens</span></li>}
-            {e.sold < 0.5 && <li className="muted">Aucune vente : pas d'habitants à proximité.</li>}
+            {e.sold < 0.5 && <li className="muted">{saleBlocker(e)}</li>}
           </ul>
         </>
       )}
@@ -234,4 +235,12 @@ function summary(b: Building): string {
   if (d.service) return `${SERVICE_LABEL[d.service.kind]} · ${fmtInt(d.service.capacity)}`;
   if (d.jobs) return `${fmtInt(d.jobs)} emplois`;
   return '';
+}
+
+/** Cause la plus probable d'un commerce sans vente, dans l'ordre où le joueur peut la corriger. */
+function saleBlocker(e: BuildingEconomy): string {
+  if ((e.catchment ?? 0) < 1) return "Aucune vente : aucun habitant ne vit dans les logements à moins de 450 m. Un immeuble voisin vide ne compte pas tant qu'il n'a pas d'habitants.";
+  if (e.staffed === false) return "Aucune vente : personne ne travaille dans la ville. Créez des emplois.";
+  if (e.powered === false) return "Aucune vente : pas d'électricité ni d'eau pour le commerce.";
+  return "Aucune vente : la ville n'a pas assez de biens à vendre (approvisionnement).";
 }

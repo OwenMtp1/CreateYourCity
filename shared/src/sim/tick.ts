@@ -92,12 +92,16 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   const purchased = new Map<number, number>();
   const shopSold = new Map<number, number>();
   const shopCustomers = new Map<number, number>();
+  /** Habitants vivant dans la zone de chalandise (qu'ils achètent ou non). */
+  const shopCatchment = new Map<number, number>();
   let sold = 0;
   for (const b of ops) {
     const capacity = BUILDINGS[b.type].goodsSalesCapacityPerDay;
     if (!capacity) continue;
     let left = capacity * staffing * utilitySupply, sales = 0;
+    let catchment = 0;
     for (const resId of layout.shopReach.get(b.id) ?? []) {
+      catchment += residents.get(resId) ?? 0;
       if (left <= 1e-9) break;
       const want = (residents.get(resId) ?? 0) * ECONOMY.goodsDemandPerResident - (purchased.get(resId) ?? 0);
       if (want <= 1e-9) continue;
@@ -106,6 +110,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
       left -= take;
       sales += take;
     }
+    shopCatchment.set(b.id, catchment);
     shopSold.set(b.id, sales);
     shopCustomers.set(b.id, sales / ECONOMY.goodsDemandPerResident);
     sold += sales;
@@ -309,6 +314,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
       commercialTax += tax;
       economy[b.id] = {
         revenue, costs: purchases + wages, profit, tax, customers: (shopCustomers.get(b.id) ?? 0) * (wanted > 0 ? q / wanted : 0), sold: q, local: local.qty, contract,
+        catchment: shopCatchment.get(b.id) ?? 0, staffed: staffing > 0, powered: utilitySupply > 0,
         imported: imp, unitCost: q > 0 ? purchases / q : 0,
       };
     } else if (def.officeRevenue) {

@@ -162,6 +162,10 @@ export interface BuildingEconomy {
   tax: number;
   /** Commerces : habitants clients, biens vendus, achetés aux usines de la ville, par contrat, importés. */
   customers?: number;
+  /** Habitants dans la zone de chalandise, et conditions de vente (emploi, électricité et eau). */
+  catchment?: number;
+  staffed?: boolean;
+  powered?: boolean;
   sold?: number;
   local?: number;
   contract?: number;
