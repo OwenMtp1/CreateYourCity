@@ -6,7 +6,7 @@ import { simulateTick } from '../sim/tick.ts';
 import type { CityLayers } from '../types.ts';
 import { stepMilitary } from './military.ts';
 import { evaluateNation } from './nations.ts';
-import { cityName, distanceKm, freeTrade, hasBuilding, LOGISTICS, MARKET, marketPrices, playerName, pushEvent, TRANSPORT, TREATY_LABEL } from './rules.ts';
+import { cityName, distanceKm, freeTrade, fundedMeasures, hasBuilding, LOGISTICS, MARKET, marketPrices, measuresUpkeep, playerName, pushEvent, TRANSPORT, TREATY_LABEL } from './rules.ts';
 import type { World } from './types.ts';
 
 
@@ -59,8 +59,8 @@ export function cityModifiers(world: World, cityId: string): CityModifiers {
     contractOut,
     tariffRate,
     nationalTaxRate: nation?.taxRate ?? 0,
-    laws: nation?.laws ?? {},
-    projects: nation?.projects ?? {},
+    laws: fundedMeasures(nation).laws,
+    projects: fundedMeasures(nation).projects,
   };
 }
 
@@ -78,6 +78,8 @@ export function stepWorld(world: World): Map<string, CityLayers> {
     const nation = meta.nations[city.countryId];
     if (nation && city.stats) nation.treasury += (city.stats.budget.nationalTax + city.stats.goods.tariffPaid) * DT_DAYS;
   }
+  // Entretien des lois et grands projets : pris en charge par le budget national, pas par les villes.
+  for (const nation of Object.values(meta.nations)) nation.treasury -= measuresUpkeep(nation) * DT_DAYS;
 
   // 3. Contrats : taux de livraison et échéances.
   for (const c of meta.contracts) {

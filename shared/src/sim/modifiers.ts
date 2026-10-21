@@ -2,8 +2,8 @@
 // entre joueurs, politique nationale. Une ville isolée utilise DEFAULT_MODIFIERS.
 import { ECONOMY } from '../constants.ts';
 
-export type LawId = 'environment' | 'minimum_wage' | 'public_health' | 'conscription';
-export type ProjectId = 'highway' | 'power_grid' | 'university' | 'national_defense';
+export type LawId = 'environment' | 'minimum_wage' | 'public_health' | 'conscription' | 'education' | 'emergency';
+export type ProjectId = 'highway' | 'power_grid' | 'university' | 'national_defense' | 'trade_fair' | 'national_health' | 'data_network' | 'national_park' | 'international_airport';
 
 export interface CityModifiers {
   /** Prix d'achat des biens importés (marché commun). */
@@ -40,6 +40,10 @@ export const LAW_EFFECTS = {
   minimum_wage: { wageFactor: 1.15, attractivenessBonus: 0.05 },
   public_health: { healthCapacityFactor: 1.25, healthUpkeepFactor: 1.1 },
   conscription: { recruitCostFactor: 0.7, attractivenessMalus: 0.05 },
+  /** Éducation obligatoire : capacité éducative +20 %, attractivité +3 points. */
+  education: { educationCapacityFactor: 1.2, attractivenessBonus: 0.03 },
+  /** État d'urgence : fortifications +30 %, impôt national jusqu'à 20 %, attractivité −8 points, élections suspendues. */
+  emergency: { fortificationFactor: 1.3, attractivenessMalus: 0.08, maxTaxRate: 0.2 },
 } as const;
 
 /** Effets des grands projets nationaux. */
@@ -48,4 +52,14 @@ export const PROJECT_EFFECTS = {
   power_grid: { powerImportFactor: 0.6 },
   university: { educationCapacityFactor: 1.3, officeRevenueFactor: 1.1 },
   national_defense: { fortificationFactor: 1.5 },
+  /** Foire commerciale : ventes des commerces +15 %. */
+  trade_fair: { goodsSalesFactor: 1.15 },
+  /** Système de santé national : capacité santé +20 %. */
+  national_health: { healthCapacityFactor: 1.2 },
+  /** Réseau de données : revenu des bureaux +10 %. */
+  data_network: { officeRevenueFactor: 1.1 },
+  /** Parc national : pollution −15 %, attractivité +3 points. */
+  national_park: { pollutionFactor: 0.85, attractivenessBonus: 0.03 },
+  /** Aéroport international : vitesse des unités aériennes ×1,5. */
+  international_airport: { airSpeedFactor: 1.5 },
 } as const;

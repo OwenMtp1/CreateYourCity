@@ -1,7 +1,7 @@
 // Règles et constantes du monde multijoueur (valeurs provisoires : docs/DECISIONS.md).
 import { CITY_BY_ID } from '../world.ts';
-import type { ProjectId } from '../sim/modifiers.ts';
-import type { Treaty, TreatyType, UnitType, World, WorldEventKind, WorldMeta } from './types.ts';
+import type { LawId, ProjectId } from '../sim/modifiers.ts';
+import type { NationState, Treaty, TreatyType, UnitType, World, WorldEventKind, WorldMeta } from './types.ts';
 
 export const UNITS: Record<UnitType, {
   label: string; cost: number; upkeepPerDay: number; attack: number; defense: number; speedKmh: number; siege: number;
@@ -117,8 +117,36 @@ export const ORGANIZATION = { maxMembers: 20, maxPerPlayer: 5 } as const;
 export const NATION = {
   maxTaxRate: 0.1,
   maxTariff: 0.5,
-  projectCost: { highway: 1_500_000, power_grid: 1_000_000, university: 800_000, national_defense: 1_200_000 } as Record<ProjectId, number>,
+  /** Coût de réalisation unique d'un grand projet. */
+  projectCost: {
+    highway: 1_500_000, power_grid: 1_000_000, university: 800_000, national_defense: 1_200_000,
+    trade_fair: 300_000, national_health: 900_000, data_network: 500_000, national_park: 400_000, international_airport: 1_000_000,
+  } as Record<ProjectId, number>,
+  /**
+   * Entretien quotidien pris en charge par le budget national tant que la mesure est en vigueur.
+   * Les villes ne paient rien de plus : c'est la nation qui absorbe le coût.
+   */
+  measureUpkeepPerDay: {
+    education: 15_000, emergency: 20_000,
+    trade_fair: 10_000, national_health: 30_000, data_network: 20_000, national_park: 5_000, international_airport: 25_000,
+  } as Partial<Record<LawId | ProjectId, number>>,
 } as const;
+
+/** Entretien quotidien total des lois et projets en vigueur d'un pays. */
+export function measuresUpkeep(nation: NationState | undefined): number {
+  if (!nation) return 0;
+  const active = [...Object.entries(nation.laws), ...Object.entries(nation.projects)].filter(([, on]) => on).map(([id]) => id);
+  return active.reduce((sum, id) => sum + (NATION.measureUpkeepPerDay[id as LawId | ProjectId] ?? 0), 0);
+}
+
+/**
+ * Lois et projets qui produisent leurs effets. Un budget national en déficit suspend les mesures :
+ * elles reprennent dès que la trésorerie repasse au-dessus de zéro.
+ */
+export function fundedMeasures(nation: NationState | undefined): { laws: Partial<Record<LawId, boolean>>; projects: Partial<Record<ProjectId, boolean>> } {
+  if (!nation || nation.treasury < 0) return { laws: {}, projects: {} };
+  return { laws: nation.laws, projects: nation.projects };
+}
 
 export const TREATY_LABEL: Record<TreatyType, string> = {
   alliance: 'Alliance',

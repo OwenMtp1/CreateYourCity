@@ -504,6 +504,7 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
     case 'runForLeader': {
       if (!eligibleVoters(world, action.countryId).includes(player)) fail(`Il faut posséder une ville en ${countryName(action.countryId)}.`);
       const nation = getNation(world, action.countryId);
+      if (nation.laws.emergency) fail("Élections suspendues pendant l'état d'urgence.");
       if (action.run) {
         if (nation.leaderId === player) fail('Vous dirigez déjà ce pays.');
         if (!nation.candidates.includes(player)) nation.candidates.push(player);
@@ -517,6 +518,7 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
     case 'vote': {
       if (!eligibleVoters(world, action.countryId).includes(player)) fail(`Il faut posséder une ville en ${countryName(action.countryId)} pour voter.`);
       const nation = getNation(world, action.countryId);
+      if (nation.laws.emergency) fail("Élections suspendues pendant l'état d'urgence.");
       if (action.candidateId === null) delete nation.votes[player];
       else {
         if (!nation.candidates.includes(action.candidateId)) fail("Ce joueur n'est pas candidat.");
@@ -529,6 +531,7 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
     case 'impeach': {
       if (!eligibleVoters(world, action.countryId).includes(player)) fail('Seuls les électeurs du pays peuvent voter la destitution.');
       const nation = getNation(world, action.countryId);
+      if (nation.laws.emergency) fail("Élections suspendues pendant l'état d'urgence.");
       if (!nation.leaderId) fail("Ce pays n'a pas de dirigeant.");
       nation.impeach = nation.impeach.filter((p) => p !== player);
       if (action.support) nation.impeach.push(player);
@@ -548,7 +551,8 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
 
     case 'setNationalTax': {
       const nation = requireLeader(world, player, action.countryId);
-      if (!(action.rate >= 0 && action.rate <= NATION.maxTaxRate)) fail(`Taux national entre 0 et ${NATION.maxTaxRate * 100} %.`);
+      const cap = nation.laws.emergency ? LAW_EFFECTS.emergency.maxTaxRate : NATION.maxTaxRate;
+      if (!(action.rate >= 0 && action.rate <= cap)) fail(`Taux national entre 0 et ${cap * 100} %.`);
       nation.taxRate = Math.round(action.rate * 1000) / 1000;
       pushEvent(world, 'law', `${countryName(action.countryId)} : impôt national fixé à ${(nation.taxRate * 100).toFixed(1)} %.`);
       return;
@@ -782,6 +786,8 @@ export const LAW_LABEL: Record<LawId, string> = {
   minimum_wage: 'Salaire minimum',
   public_health: 'Santé publique renforcée',
   conscription: 'Conscription',
+  education: 'Éducation obligatoire',
+  emergency: "État d'urgence",
 };
 
 export const PROJECT_LABEL: Record<ProjectId, string> = {
@@ -789,5 +795,10 @@ export const PROJECT_LABEL: Record<ProjectId, string> = {
   power_grid: 'Réseau électrique national',
   university: 'Universités nationales',
   national_defense: 'Défense du territoire',
+  trade_fair: 'Foire commerciale',
+  national_health: 'Système de santé national',
+  data_network: 'Réseau de données',
+  national_park: 'Parc national',
+  international_airport: 'Aéroport international',
 };
 

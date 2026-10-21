@@ -525,19 +525,31 @@ export function ArmyPanel() {
 
 // --- Nation ---------------------------------------------------------------------------------------
 
-const LAWS: LawId[] = ['environment', 'minimum_wage', 'public_health', 'conscription'];
+const LAWS: LawId[] = ['environment', 'minimum_wage', 'public_health', 'conscription', 'education', 'emergency'];
 const LAW_HELP: Record<LawId, string> = {
   environment: 'Pollution −40 %, production industrielle −10 %',
   minimum_wage: 'Salaires +15 %, attractivité +5 %',
   public_health: 'Capacité santé +25 %, entretien santé +10 %',
   conscription: 'Recrutement −30 %, attractivité −5 %',
+  education: 'Capacité éducative +20 %, attractivité +3 %',
+  emergency: "Fortifications +30 %, impôt national jusqu'à 20 %, attractivité −8 %, élections suspendues",
 };
-const PROJECTS: ProjectId[] = ['highway', 'power_grid', 'university', 'national_defense'];
+const PROJECTS: ProjectId[] = ['highway', 'power_grid', 'university', 'national_defense', 'trade_fair', 'national_health', 'data_network', 'national_park', 'international_airport'];
 const PROJECT_HELP: Record<ProjectId, string> = {
   highway: 'Capacité des routes +30 %',
   power_grid: "Prix de l'électricité importée −40 %",
   university: 'Capacité éducative +30 %, bureaux +10 %',
   national_defense: 'Fortifications +50 %',
+  trade_fair: 'Ventes des commerces +15 %',
+  national_health: 'Capacité santé +20 %',
+  data_network: 'Revenu des bureaux +10 %',
+  national_park: 'Pollution −15 %, attractivité +3 %',
+  international_airport: 'Unités aériennes ×1,5 en vitesse',
+};
+/** Coût quotidien d'une mesure, pris en charge par le budget national. */
+const upkeepText = (id: LawId | ProjectId) => {
+  const v = NATION.measureUpkeepPerDay[id];
+  return v ? ` · ${fmtMoney(v)}/j à la charge de la nation` : '';
 };
 
 /** Proclamer l'indépendance d'une ville (dictature) ou la réintégrer dans son pays. */
@@ -667,7 +679,7 @@ function NationDetail({ world, me, countryId }: { world: WorldView; me: string; 
       <ul className="list">
         {LAWS.map((l) => (
           <li key={l}>
-            <span>{LAW_LABEL[l]}<br /><span className="small muted">{LAW_HELP[l]}</span></span>
+            <span>{LAW_LABEL[l]}<br /><span className="small muted">{LAW_HELP[l]}{upkeepText(l)}</span></span>
             {isLeader ? (
               <button className={nation?.laws[l] ? 'active small-btn' : 'small-btn'} onClick={() => void client.action({ type: 'setLaw', countryId, law: l, enabled: !nation?.laws[l] })}>
                 {nation?.laws[l] ? 'En vigueur' : 'Adopter'}
@@ -677,7 +689,7 @@ function NationDetail({ world, me, countryId }: { world: WorldView; me: string; 
         ))}
         {PROJECTS.map((p) => (
           <li key={p}>
-            <span>{PROJECT_LABEL[p]}<br /><span className="small muted">{PROJECT_HELP[p]} · {fmtMoney(NATION.projectCost[p])}</span></span>
+            <span>{PROJECT_LABEL[p]}<br /><span className="small muted">{PROJECT_HELP[p]} · {fmtMoney(NATION.projectCost[p])}{upkeepText(p)}</span></span>
             {nation?.projects[p] ? <span className="chip pos">réalisé</span> : isLeader ? (
               <button className="small-btn" disabled={(nation?.treasury ?? 0) < NATION.projectCost[p]} onClick={() => void client.action({ type: 'fundProject', countryId, project: p })}>Financer</button>
             ) : <span className="chip">—</span>}

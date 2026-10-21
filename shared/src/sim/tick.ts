@@ -37,14 +37,15 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   const law = mod.laws;
   const project = mod.projects;
   const wage = ECONOMY.wagePerWorker * (law.minimum_wage ? LAW_EFFECTS.minimum_wage.wageFactor : 1);
-  const pollutionFactor = law.environment ? LAW_EFFECTS.environment.pollutionFactor : 1;
+  const pollutionFactor = (law.environment ? LAW_EFFECTS.environment.pollutionFactor : 1) * (project.national_park ? PROJECT_EFFECTS.national_park.pollutionFactor : 1);
+  const goodsSalesFactor = project.trade_fair ? PROJECT_EFFECTS.trade_fair.goodsSalesFactor : 1;
   const industryFactor = law.environment ? LAW_EFFECTS.environment.industryFactor : 1;
   const roadCapacityFactor = project.highway ? PROJECT_EFFECTS.highway.roadCapacityFactor : 1;
   const powerPrice = ECONOMY.powerImportPricePerMWh * (project.power_grid ? PROJECT_EFFECTS.power_grid.powerImportFactor : 1);
-  const officeFactor = project.university ? PROJECT_EFFECTS.university.officeRevenueFactor : 1;
+  const officeFactor = (project.university ? PROJECT_EFFECTS.university.officeRevenueFactor : 1) * (project.data_network ? PROJECT_EFFECTS.data_network.officeRevenueFactor : 1);
   const serviceCapacityFactor: Record<ServiceKind, number> = {
-    health: law.public_health ? LAW_EFFECTS.public_health.healthCapacityFactor : 1,
-    education: project.university ? PROJECT_EFFECTS.university.educationCapacityFactor : 1,
+    health: (law.public_health ? LAW_EFFECTS.public_health.healthCapacityFactor : 1) * (project.national_health ? PROJECT_EFFECTS.national_health.healthCapacityFactor : 1),
+    education: (project.university ? PROJECT_EFFECTS.university.educationCapacityFactor : 1) * (law.education ? LAW_EFFECTS.education.educationCapacityFactor : 1),
     safety: 1,
     leisure: 1,
   };
@@ -108,7 +109,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   for (const b of ops) {
     const capacity = BUILDINGS[b.type].goodsSalesCapacityPerDay;
     if (!capacity) continue;
-    let left = capacity * staff(b.id) * utilitySupply, sales = 0;
+    let left = capacity * staff(b.id) * utilitySupply * goodsSalesFactor, sales = 0;
     let catchment = 0;
     for (const resId of layout.shopReach.get(b.id) ?? []) {
       catchment += residents.get(resId) ?? 0;
@@ -451,6 +452,8 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   const jobScore = workforce > 0 ? Math.min(1, jobs / workforce) : jobs > 0 ? 1 : 0;
   const serviceScore = meanCoverage;
   const bonus = (campaignActive('attract') ? POPULATION_POLICY.attractBonus : 0) +
+    (law.education ? LAW_EFFECTS.education.attractivenessBonus : 0) - (law.emergency ? LAW_EFFECTS.emergency.attractivenessMalus : 0) +
+    (project.national_park ? PROJECT_EFFECTS.national_park.attractivenessBonus : 0) +
     (law.minimum_wage ? LAW_EFFECTS.minimum_wage.attractivenessBonus : 0) -
     (law.conscription ? LAW_EFFECTS.conscription.attractivenessMalus : 0) - parkingMalus - INDEPENDENCE.blackoutMalus * (1 - utilitySupply);
   const attract = attractiveness({

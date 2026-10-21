@@ -1,8 +1,8 @@
 // Armées : déplacements, ravitaillement, solde, combats et sièges. Règles déterministes.
 import { GAME_MINUTES_PER_TICK, DT_DAYS } from '../constants.ts';
-import { PROJECT_EFFECTS } from '../sim/modifiers.ts';
+import { LAW_EFFECTS, PROJECT_EFFECTS } from '../sim/modifiers.ts';
 import type { CityState } from '../types.ts';
-import { allied, armyPosition, atWar, cityName, distanceLatLonKm, hasBuilding, MILITARY, nextId, playerName, pushEvent, UNITS } from './rules.ts';
+import { allied, armyPosition, atWar, cityName, distanceLatLonKm, fundedMeasures, hasBuilding, MILITARY, nextId, playerName, pushEvent, UNITS } from './rules.ts';
 import { LAND_UNITS, UNIT_TYPES, type Army, type UnitType, type World } from './types.ts';
 
 export const armySize = (a: Pick<Army, 'units'>) => UNIT_TYPES.reduce((s, u) => s + (a.units[u] ?? 0), 0);
@@ -19,6 +19,13 @@ export function effectiveSpeed(world: World, a: Army): number {
     if (friendly(from) && friendly(to)) speed *= MILITARY.railSpeedFactor;
   }
   if (a.retreating) speed *= MILITARY.retreatSpeedFactor;
+  // Aéroport international : les unités aériennes décollent et arrivent plus vite depuis le pays concerné.
+  if (hasUnit(a, 'air') && a.movement) {
+    const country = world.cities.get(a.cityId)?.countryId;
+    if (fundedMeasures(country ? world.meta.nations[country] : undefined).projects.international_airport) {
+      speed *= PROJECT_EFFECTS.international_airport.airSpeedFactor;
+    }
+  }
   return speed;
 }
 
@@ -43,7 +50,9 @@ export function fortification(world: World, city: CityState): number {
     if (b.type === 'barracks') barracks++;
   }
   const nation = world.meta.nations[city.countryId];
-  const factor = nation?.projects.national_defense ? PROJECT_EFFECTS.national_defense.fortificationFactor : 1;
+  const measures = fundedMeasures(nation);
+  const factor = (measures.projects.national_defense ? PROJECT_EFFECTS.national_defense.fortificationFactor : 1) *
+    (measures.laws.emergency ? LAW_EFFECTS.emergency.fortificationFactor : 1);
   return (MILITARY.fortBase + police * MILITARY.fortPerPolice + barracks * MILITARY.fortPerBarracks) * factor;
 }
 
