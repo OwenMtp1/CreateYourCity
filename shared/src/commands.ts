@@ -1,6 +1,6 @@
 // Commandes qui modifient une ville. Le serveur est l'autorité : il appelle applyCityCommand.
 // Le client réutilise les mêmes validations pour l'aperçu de construction (retour immédiat).
-import { BUILDINGS, ROADS, type BuildingType, type RoadType } from './catalog.ts';
+import { BUILDINGS, ROADS, sectorOf, type BuildingType, type RoadType } from './catalog.ts';
 import {
   CITY_SIZE_M, MAX_DEBT, MAX_TAX_RATE, PARKING, POPULATION_POLICY, REGIONAL_ACCESS, TICKS_PER_DAY, ROAD_ACCESS_DISTANCE, ROAD_AUTO_CONNECT_DISTANCE, ROAD_MAX_LENGTH, ROAD_MIN_LENGTH,
 } from './constants.ts';
@@ -23,7 +23,11 @@ export type CityCommand =
   /** Tarif d'un parking (0 : gratuit). */
   | { type: 'setParkingFee'; id: number; fee: number }
   /** Campagne de communication pour l'emploi ou l'attractivité. */
-  | { type: 'campaign'; kind: CampaignKind };
+  | { type: 'campaign'; kind: CampaignKind }
+  /** Déplace `count` actifs d'un site d'emploi vers un autre du même secteur. */
+  | { type: 'moveWorkers'; fromId: number; toId: number; count: number }
+  /** Rend la répartition des actifs entièrement automatique. */
+  | { type: 'resetAssignments' };
 
 export type ValidationResult = { ok: true; cost: number } | { ok: false; reason: string };
 
@@ -213,6 +217,28 @@ export function applyCityCommand(city: CityState, cmd: CityCommand): CommandResu
       const valid = [t.residential, t.commercial, t.industrial].every((v) => Number.isFinite(v) && v >= 0 && v <= MAX_TAX_RATE);
       if (!valid) return { ok: false, reason: `Taux d'imposition entre 0 et ${MAX_TAX_RATE * 100} %.` };
       city.taxes = { residential: t.residential, commercial: t.commercial, industrial: t.industrial };
+      return { ok: true, cost: 0 };
+    }
+    case 'moveWorkers': {
+      if (!city.stats) return { ok: false, reason: 'Attendez le premier calcul de la ville.' };
+      const from = city.buildings.find((b) => b.id === cmd.fromId);
+      const to = city.buildings.find((b) => b.id === cmd.toId);
+      if (!from || !to) return { ok: false, reason: 'Site introuvable.' };
+      if (from.id === to.id) return { ok: false, reason: 'Choisissez un autre site.' };
+      if (sectorOf(from.type) !== sectorOf(to.type)) return { ok: false, reason: 'Les actifs ne peuvent se déplacer qu’entre sites d’un même secteur.' };
+      if (!(BUILDINGS[to.type].jobs > 0) || !(BUILDINGS[from.type].jobs > 0)) return { ok: false, reason: "Ce bâtiment n'offre pas d'emploi." };
+      const count = Math.floor(cmd.count);
+      if (!(count >= 1)) return { ok: false, reason: 'Nombre invalide.' };
+      const here = city.stats.siteWorkers?.[from.id] ?? 0;
+      const there = city.stats.siteWorkers?.[to.id] ?? 0;
+      if (count > Math.floor(here)) return { ok: false, reason: `Seulement ${fmt(here)} actif(s) travaillent sur ce site.` };
+      const free = BUILDINGS[to.type].jobs - there;
+      if (count > Math.floor(free)) return { ok: false, reason: `Postes libres sur le site d'arrivée : ${fmt(free)}.` };
+      city.assignments = { ...(city.assignments ?? {}), [from.id]: here - count, [to.id]: there + count };
+      return { ok: true, cost: 0 };
+    }
+    case 'resetAssignments': {
+      delete city.assignments;
       return { ok: true, cost: 0 };
     }
     case 'campaign': {

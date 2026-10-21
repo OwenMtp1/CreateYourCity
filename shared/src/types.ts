@@ -33,6 +33,8 @@ export type BuildingStatus = 'ok' | 'no_road' | 'disconnected';
 
 /** Résultats agrégés d'un tick, tous issus de formules de src/sim/tick.ts. */
 export interface CityStats {
+  /** Actifs qui travaillent sur chaque site d'emploi (dernier tick). */
+  siteWorkers?: Record<number, number>;
   housingCapacity: number;
   jobs: number;
   workforce: number;
@@ -108,6 +110,8 @@ export interface CityState {
   layoutVersion: number;
   /** Campagnes de communication en cours ; `endsTick` exclu. */
   campaigns?: { kind: CampaignKind; endsTick: number }[];
+  /** Effectifs fixés à la main par bâtiment d'emploi ; les autres postes se remplissent automatiquement. */
+  assignments?: Record<number, number>;
   stats: CityStats | null;
   /** Échantillons d'historique (un toutes les 4 h de jeu, 15 jours au plus). */
   history?: HistorySample[];

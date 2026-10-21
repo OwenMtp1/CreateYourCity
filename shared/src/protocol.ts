@@ -87,6 +87,8 @@ export const cityCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('repay'), amount: z.number().positive().max(1e9) }),
   z.object({ type: z.literal('setParkingFee'), id: z.number().int().nonnegative(), fee: z.number().finite().min(0).max(1000) }),
   z.object({ type: z.literal('campaign'), kind: z.enum(['jobs', 'attract']) }),
+  z.object({ type: z.literal('moveWorkers'), fromId: z.number().int().nonnegative(), toId: z.number().int().nonnegative(), count: z.number().int().min(1).max(1_000_000) }),
+  z.object({ type: z.literal('resetAssignments') }),
 ]) satisfies z.ZodType<CityCommand>;
 
 const reqId = z.number().int().optional();

@@ -13,3 +13,4 @@ export * from './sim/modifiers.ts';
 export * from './sim/advisors.ts';
 export * from './sim/routing.ts';
 export * from './sim/milestones.ts';
+export * from './sim/staffing.ts';

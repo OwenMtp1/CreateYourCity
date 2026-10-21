@@ -1,7 +1,7 @@
 // Fiches détaillées des bâtiments : inspecteur flottant (clic sur un bâtiment) et répertoire de la ville.
 import { useMemo, useState } from 'react';
 import {
-  BUILDINGS, COMMERCE, ECONOMY, formatGameTime, SERVICE_KINDS, TRANSIT, type Building, type BuildingCategory, type BuildingEconomy, type CityLayers, type CityState,
+  BUILDINGS, COMMERCE, ECONOMY, formatGameTime, sectorOf, SERVICE_KINDS, TRANSIT, type Building, type BuildingCategory, type BuildingEconomy, type CityLayers, type CityState, type Sector,
 } from '@cyc/shared';
 import { client } from '../../net/client.ts';
 import { activeCity, useGame } from '../../state.ts';
@@ -161,6 +161,7 @@ export function BuildingInspector({ id, onClose, onFocus, onSelect }: { id: numb
       </header>
       <p className="small muted">{def.description}</p>
       <div className="inspector-body">
+        {def.jobs > 0 && <Workers city={city} b={b} />}
         <Accounts city={city} layers={layers} b={b} onSelect={onSelect} />
         {buildingDetails(city, layers, b).map((r) => <Row key={r.label} label={r.label} value={r.value} tone={r.tone} />)}
         {def.parking && <ParkingSettings key={b.id} id={b.id} spaces={def.parking.spaces} fee={b.fee ?? 0} use={layers?.parkingUse?.[b.id]} />}
@@ -174,6 +175,53 @@ export function BuildingInspector({ id, onClose, onFocus, onSelect }: { id: numb
     </aside>
   );
 }
+
+/**
+ * Actifs d'un site d'emploi : répartition automatique, et déplacement manuel vers un autre site du même secteur.
+ */
+function Workers({ city, b }: { city: CityState; b: Building }) {
+  const here = city.stats?.siteWorkers?.[b.id] ?? 0;
+  const jobs = BUILDINGS[b.type].jobs;
+  const sector = sectorOf(b.type);
+  const others = city.buildings.filter((x) => x.id !== b.id && BUILDINGS[x.type].jobs > 0 && sectorOf(x.type) === sector);
+  const [target, setTarget] = useState<number | null>(null);
+  const [count, setCount] = useState(5);
+  const manual = city.assignments?.[b.id] !== undefined;
+  const to = target ?? others[0]?.id ?? null;
+  const free = to === null ? 0 : BUILDINGS[city.buildings.find((x) => x.id === to)!.type].jobs - (city.stats?.siteWorkers?.[to] ?? 0);
+  const max = Math.min(Math.floor(here), Math.floor(free));
+  return (
+    <div className="workers">
+      <h4>Actifs</h4>
+      <Row label={`Postes pourvus (secteur ${SECTOR_LABEL[sector]})`} value={`${fmtInt(here)} / ${fmtInt(jobs)}`} tone={here < jobs * 0.5 ? 'neg' : undefined} />
+      {manual && <p className="small muted">Répartition modifiée à la main pour ce site.</p>}
+      {others.length === 0 ? (
+        <p className="small muted">Aucun autre site de ce secteur : construisez-en un pour pouvoir y déplacer des actifs.</p>
+      ) : (
+        <div className="stack">
+          <label className="small">Déplacer vers
+            <select value={to ?? ''} onChange={(e) => setTarget(Number(e.target.value))}>
+              {others.map((x) => {
+                const free2 = BUILDINGS[x.type].jobs - (city.stats?.siteWorkers?.[x.id] ?? 0);
+                return <option key={x.id} value={x.id}>#{x.id} {BUILDINGS[x.type].label} ({fmtInt(free2)} poste(s) libre(s))</option>;
+              })}
+            </select>
+          </label>
+          <label className="small">Nombre d'actifs
+            <input type="number" min={1} max={max} value={count} onChange={(e) => setCount(Number(e.target.value))} />
+          </label>
+          <button disabled={to === null || count < 1 || count > max}
+            onClick={() => to !== null && void client.cityCommand({ type: 'moveWorkers', fromId: b.id, toId: to, count })}>
+            Déplacer {fmtInt(count)} actif(s)
+          </button>
+        </div>
+      )}
+      {manual && <button className="link" onClick={() => void client.cityCommand({ type: 'resetAssignments' })}>Remettre la répartition automatique</button>}
+    </div>
+  );
+}
+
+const SECTOR_LABEL: Record<Sector, string> = { commerce: 'commerce', bureaux: 'bureaux', industrie: 'industrie', services: 'services' };
 
 /** Répertoire de tous les bâtiments de la ville, par catégorie, avec recherche. */
 export function BuildingsPanel({ selected, onSelect }: { selected: number | null; onSelect: (b: Building) => void }) {

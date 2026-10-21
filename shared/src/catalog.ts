@@ -206,3 +206,13 @@ export const ROADS: Record<RoadType, RoadDef> = {
 };
 
 export const ROAD_TYPES = Object.keys(ROADS) as RoadType[];
+
+/** Secteur d'un bâtiment d'emploi : les actifs ne se déplacent qu'entre sites d'un même secteur. */
+export type Sector = 'commerce' | 'bureaux' | 'industrie' | 'services';
+export function sectorOf(type: BuildingType): Sector {
+  const d = BUILDINGS[type];
+  if (d.goodsSalesCapacityPerDay) return 'commerce';
+  if (d.officeRevenue) return 'bureaux';
+  if (d.category === 'industrial') return 'industrie';
+  return 'services';
+}
