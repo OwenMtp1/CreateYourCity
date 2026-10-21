@@ -1,7 +1,7 @@
 // Vue 3D de construction : outils, accrochage, aperçu validé par les règles partagées.
 import { useEffect, useRef, useState } from 'react';
 import {
-  closestPointOnSegment, curvePoints, footprint, gameHour, pointSegmentDistance, REGIONAL_ACCESS, ROADS, roundaboutPoints, validateRoadPath,
+  closestPointOnSegment, connectRoadEnds, curvePoints, footprint, gameHour, pointSegmentDistance, REGIONAL_ACCESS, ROADS, roundaboutPoints, validateRoadPath,
   validateBuilding, validateRoad, type BuildingType, type CityLayers, type CityState, type Point, type RoadType, type ValidationResult,
 } from '@cyc/shared';
 import { client } from '../net/client.ts';
@@ -172,15 +172,15 @@ export function CityView3D(props: Props) {
       const start = roadStart.current;
       const control = roadControl.current;
       const end = control ? snap(p, true) : snap(p, false);
-      const pts = control ? curvePoints(start, control, end) : [start, end];
+      const pts = connectRoadEnds(c, control ? curvePoints(start, control, end) : [start, end]);
       const v = validateRoadPath(c, t.road, pts);
       result = v.ok ? { ok: true, cost: v.cost } : v;
       scene.setPreview({ kind: 'path', road: t.road, points: pts, ok: v.ok });
     } else if (t.kind === 'road') {
       const start = roadStart.current;
       if (start) {
-        const end = roadEnd(start, p);
-        const seg = { x1: start.x, y1: start.y, x2: end.x, y2: end.y };
+        const [a, b] = connectRoadEnds(c, [start, roadEnd(start, p)]);
+        const seg = { x1: a!.x, y1: a!.y, x2: b!.x, y2: b!.y };
         result = validateRoad(c, t.road, seg);
         scene.setPreview({ kind: 'road', road: t.road, seg, ok: result.ok });
       } else {

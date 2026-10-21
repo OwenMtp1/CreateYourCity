@@ -23,6 +23,8 @@ export const REGIONAL_ACCESS = { x: 0, y: CITY_SIZE_M / 2 } as const;
 export const ROAD_ACCESS_DISTANCE = 12;
 /** Tolérance de raccordement entre deux routes. */
 export const ROAD_JOIN_TOLERANCE = 1.5;
+/** Raccordement automatique : une extrémité de route à moins de cette distance d'un réseau relié s'y greffe. */
+export const ROAD_AUTO_CONNECT_DISTANCE = 12;
 export const ROAD_MIN_LENGTH = 10;
 export const ROAD_MAX_LENGTH = 800;
 /** Taille d'une cellule de terrain. */

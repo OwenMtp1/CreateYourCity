@@ -1,8 +1,13 @@
 // Commandes qui modifient une ville. Le serveur est l'autorité : il appelle applyCityCommand.
 // Le client réutilise les mêmes validations pour l'aperçu de construction (retour immédiat).
 import { BUILDINGS, ROADS, type BuildingType, type RoadType } from './catalog.ts';
-import { CITY_SIZE_M, MAX_DEBT, MAX_TAX_RATE, PARKING, ROAD_ACCESS_DISTANCE, ROAD_MAX_LENGTH, ROAD_MIN_LENGTH } from './constants.ts';
-import { buildingRect, footprint, rectsOverlap, roadWidth, segmentLength, segmentRectDistance, type Segment } from './geometry.ts';
+import {
+  CITY_SIZE_M, MAX_DEBT, MAX_TAX_RATE, PARKING, REGIONAL_ACCESS, ROAD_ACCESS_DISTANCE, ROAD_AUTO_CONNECT_DISTANCE, ROAD_MAX_LENGTH, ROAD_MIN_LENGTH,
+} from './constants.ts';
+import {
+  buildingRect, closestPointOnSegment, footprint, pointSegmentDistance, rectsOverlap, roadWidth, segmentLength, segmentRectDistance, type Point, type Segment,
+} from './geometry.ts';
+import { getLayout } from './sim/layout.ts';
 import { generateTerrain, rectTerrain, roadTerrain, terrainAt, TerrainKind } from './terrain.ts';
 import type { CityState, TaxRates } from './types.ts';
 
@@ -91,6 +96,35 @@ export function validateRoad(city: CityState, type: RoadType, seg: Segment): Val
 
 export const MAX_PATH_POINTS = 48;
 
+/**
+ * Raccordement automatique des extrémités d'un tracé : un point à moins de ROAD_AUTO_CONNECT_DISTANCE
+ * du portique ou d'une route déjà reliée au réseau est déplacé dessus. Ainsi une nouvelle route qui
+ * rejoint le réseau s'y raccorde sans tracé précis, et le bâtiment qu'elle dessert devient en service.
+ */
+export function connectRoadEnds(city: CityState, points: Point[]): Point[] {
+  if (points.length === 0) return points;
+  const layout = getLayout(city);
+  const snap = (p: Point): Point => {
+    if (Math.hypot(p.x - REGIONAL_ACCESS.x, p.y - REGIONAL_ACCESS.y) <= ROAD_AUTO_CONNECT_DISTANCE) return { ...REGIONAL_ACCESS };
+    let best: Point | null = null;
+    let bestD: number = ROAD_AUTO_CONNECT_DISTANCE;
+    for (const r of city.roads) {
+      if (layout.roadConnected.get(r.id) !== true) continue;
+      const d = pointSegmentDistance(p, r);
+      if (d <= bestD) {
+        bestD = d;
+        best = closestPointOnSegment(p, r);
+      }
+    }
+    return best ?? p;
+  };
+  const out = points.slice();
+  out[0] = snap(points[0]!);
+  const last = points.length - 1;
+  if (last > 0) out[last] = snap(points[last]!);
+  return out;
+}
+
 /** Valide un tracé multi-tronçons sur une copie de la ville (les tronçons se suivent). */
 export function validateRoadPath(
   city: CityState, type: RoadType, points: { x: number; y: number }[],
@@ -147,7 +181,8 @@ export function applyCityCommand(city: CityState, cmd: CityCommand): CommandResu
       return v;
     }
     case 'buildRoad': {
-      const seg = { x1: round1(cmd.x1), y1: round1(cmd.y1), x2: round1(cmd.x2), y2: round1(cmd.y2) };
+      const [a, b] = connectRoadEnds(city, [{ x: cmd.x1, y: cmd.y1 }, { x: cmd.x2, y: cmd.y2 }]);
+      const seg = { x1: round1(a!.x), y1: round1(a!.y), x2: round1(b!.x), y2: round1(b!.y) };
       const v = validateRoad(city, cmd.road, seg);
       if (!v.ok) return v;
       city.treasury -= v.cost;
@@ -156,7 +191,7 @@ export function applyCityCommand(city: CityState, cmd: CityCommand): CommandResu
       return v;
     }
     case 'buildRoadPath': {
-      const v = validateRoadPath(city, cmd.road, cmd.points);
+      const v = validateRoadPath(city, cmd.road, connectRoadEnds(city, cmd.points));
       if (!v.ok) return v;
       city.treasury -= v.cost;
       for (const seg of v.segments) city.roads.push({ id: city.nextEntityId++, type: cmd.road, ...seg, builtAtTick: city.tick });
