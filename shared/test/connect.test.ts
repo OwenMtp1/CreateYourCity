@@ -36,4 +36,15 @@ describe('raccordement automatique des routes', () => {
     const c = city([{ type: 'buildRoad', road: 'street', x1: 8, y1: 1005, x2: 200, y2: 1005 }]);
     expect(c.roads[0]).toMatchObject({ x1: 0, y1: 1000 });
   });
+
+  it('une route posée à partir de l’extrémité raccordée reste connectée au réseau', () => {
+    const c = city([
+      { type: 'buildRoad', road: 'street', x1: 0, y1: 1000, x2: 200, y2: 1000 },
+      // Extrémité à 8 m du réseau : elle s'y greffe.
+      { type: 'buildRoad', road: 'street', x1: 200, y1: 1100, x2: 208, y2: 1000 + 8 },
+      { type: 'buildRoad', road: 'street', x1: 208, y1: 1008, x2: 300, y2: 1008 },
+    ]);
+    const layout = getLayout(c);
+    expect(c.roads.every((r) => layout.roadConnected.get(r.id))).toBe(true);
+  });
 });

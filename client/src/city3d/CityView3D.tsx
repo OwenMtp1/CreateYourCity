@@ -282,10 +282,11 @@ export function CityView3D(props: Props) {
           else if (!roadControl.current) roadControl.current = snap(p, false);
           else {
             const start = roadStart.current, control = roadControl.current, end = snap(p, true);
+            const pts = connectRoadEnds(propsRef.current.city, curvePoints(start, control, end));
             await commit(async () => {
-              const ok = await client.cityCommand({ type: 'buildRoadPath', road: t.road, points: curvePoints(start, control, end) });
+              const ok = await client.cityCommand({ type: 'buildRoadPath', road: t.road, points: pts });
               roadControl.current = null;
-              roadStart.current = ok ? end : roadStart.current;
+              roadStart.current = ok ? pts[pts.length - 1]! : roadStart.current;
             });
             return;
           }
@@ -300,11 +301,12 @@ export function CityView3D(props: Props) {
           refresh();
           return;
         }
-        const end = roadEnd(start, p);
+        // Extrémités telles que le serveur les enregistre (raccordement automatique compris) : la route
+        // suivante repart exactement de là où la précédente finit, sans décalage ni séparation.
+        const [a, b] = connectRoadEnds(propsRef.current.city, [start, roadEnd(start, p)]);
         await commit(async () => {
-          const ok = await client.cityCommand({ type: 'buildRoad', road: t.road, x1: start.x, y1: start.y, x2: end.x, y2: end.y });
-          // Tracé continu : la route suivante part de la fin de la précédente.
-          if (ok) roadStart.current = end;
+          const ok = await client.cityCommand({ type: 'buildRoad', road: t.road, x1: a!.x, y1: a!.y, x2: b!.x, y2: b!.y });
+          if (ok) roadStart.current = b!;
         });
         return;
       }
