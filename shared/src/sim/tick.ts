@@ -4,7 +4,7 @@
 import { BUILDINGS, ROADS, SERVICE_KINDS, TRANSIT_MODES, type ServiceKind, type TransitMode } from '../catalog.ts';
 import { COMMERCE, DAYS_PER_YEAR, DT_DAYS, ECONOMY, INDEPENDENCE, LOAN_ANNUAL_RATE, PARKING, POPULATION, POPULATION_POLICY, TRAFFIC, TRANSIT } from '../constants.ts';
 import { segmentLength } from '../geometry.ts';
-import type { Building, BuildingEconomy, CampaignKind, CityLayers, CityState, CityStats, SupplyLink } from '../types.ts';
+import type { Building, BuildingDetail, BuildingEconomy, CampaignKind, CityLayers, CityState, CityStats, SupplyLink } from '../types.ts';
 import { getLayout } from './layout.ts';
 import { assignWorkers } from './staffing.ts';
 import { checkMilestones } from './milestones.ts';
@@ -74,6 +74,8 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   /** Part des postes pourvus sur un site donné. */
   const staff = (id: number) => allocation.staffing.get(id) ?? 0;
   const residents = new Map<number, number>();
+  const details: Record<number, BuildingDetail> = {};
+  const detail = (id: number): BuildingDetail => (details[id] ??= {});
   for (const b of ops) {
     const h = BUILDINGS[b.type].housing;
     if (h > 0) residents.set(b.id, housing > 0 ? (population * h) / housing : 0);
@@ -87,6 +89,8 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     waterDemand += def.waterM3PerDay;
     powerLocal += (def.powerOutputMW ?? 0) * staff(b.id);
     waterLocal += (def.waterOutputM3PerDay ?? 0) * staff(b.id);
+    if (def.powerOutputMW) detail(b.id).capacity = def.powerOutputMW * staff(b.id);
+    if (def.waterOutputM3PerDay) detail(b.id).capacity = def.waterOutputM3PerDay * staff(b.id);
   }
   // Ville indépendante : pas de réseau régional. Un déficit provoque des coupures qui freinent
   // les entreprises et les services (facteur `utilitySupply`) et font fuir les habitants.
@@ -110,6 +114,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     const capacity = BUILDINGS[b.type].goodsSalesCapacityPerDay;
     if (!capacity) continue;
     let left = capacity * staff(b.id) * utilitySupply * goodsSalesFactor, sales = 0;
+    detail(b.id).capacity = left;
     let catchment = 0;
     for (const resId of layout.shopReach.get(b.id) ?? []) {
       catchment += residents.get(resId) ?? 0;
@@ -168,6 +173,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   for (const b of ops) {
     const t = BUILDINGS[b.type].transit;
     if (t && stationCount[t.mode] >= TRANSIT.minStationsPerMode) transitCapacity += t.capacity * staff(b.id) * utilitySupply;
+    if (t) detail(b.id).capacity = t.capacity * staff(b.id) * utilitySupply;
   }
   const employmentRate = population > 0 ? employed / population : 0;
   const potentialShare = new Map<number, number>();
@@ -381,6 +387,8 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
       remaining -= take;
     }
     serviceLoad[b.id] = initial > 0 ? 1 - remaining / initial : 1;
+    detail(b.id).capacity = initial;
+    detail(b.id).served = initial - remaining;
     // Utilisation réelle par rapport à la capacité nominale (pour l'entretien variable).
     serviceUse.set(b.id, Math.min(1, (initial - remaining) / (svc.capacity * serviceCapacityFactor[svc.kind])));
   }
@@ -517,7 +525,10 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     }
   }
   const supply = plan.links.map((l) => ({ from: l.from, to: l.to, qty: r1(l.qty), distance: Math.round(l.distance) }));
-  return { buildingStatus, residentialCoverage, pollution, roadLoad, roadConnected, serviceLoad, parkingUse, economy, supply };
+  for (const f of factories) detail(f.id).capacity = potentialOutput(f);
+  for (const [id, n] of residents) detail(id).residents = n;
+  for (const [id, e] of allocation.employed) Object.assign(detail(id), { workers: e, staffing: staff(id) });
+  return { buildingStatus, details, residentialCoverage, pollution, roadLoad, roadConnected, serviceLoad, parkingUse, economy, supply };
 }
 
 /** Avance une ville de n ticks (rattrapage déterministe). */

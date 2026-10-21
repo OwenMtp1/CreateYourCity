@@ -18,42 +18,46 @@ const MODE_LABEL = { bus: 'Bus', tram: 'Tramway', metro: 'Métro' } as const;
 /** Lignes de détail d'un bâtiment, calculées à partir des règles partagées et du dernier tick. */
 export function buildingDetails(city: CityState, layers: CityLayers | null, b: Building): { label: string; value: string; tone?: 'pos' | 'neg' }[] {
   const def = BUILDINGS[b.type];
-  const s = city.stats;
   const status = layers?.buildingStatus[b.id] ?? 'ok';
   const working = status === 'ok';
-  const staffing = working ? s?.staffingRatio ?? 0 : 0;
+  // Chiffres propres à ce bâtiment (calculés par la simulation), et non moyennes de la ville.
+  const d = layers?.details?.[b.id] ?? {};
+  const staffing = working ? d.staffing ?? 0 : 0;
   const rows: { label: string; value: string; tone?: 'pos' | 'neg' }[] = [];
   const add = (label: string, value: string, tone?: 'pos' | 'neg') => rows.push({ label, value, tone });
 
   add('État', STATUS_LABEL[status], working ? 'pos' : 'neg');
   if (def.housing) {
-    const residents = working && s && s.housingCapacity > 0 ? (city.population * def.housing) / s.housingCapacity : 0;
+    const residents = working ? d.residents ?? 0 : 0;
     add('Logements', fmtInt(def.housing));
-    add('Habitants (estimation)', fmtInt(residents));
-    add('Actifs (estimation)', fmtInt(residents * ECONOMY.workforceShare));
+    add('Habitants dans ce logement', fmtInt(residents));
+    add('Actifs issus de ce logement', fmtInt(residents * ECONOMY.workforceShare));
     const cov = layers?.residentialCoverage[b.id];
     if (cov) for (const k of SERVICE_KINDS) add(`Couverture ${SERVICE_LABEL[k].toLowerCase()}`, fmtPct(cov[k] ?? 0), (cov[k] ?? 0) < 0.5 ? 'neg' : undefined);
     if (layers?.pollution[b.id] !== undefined) add('Exposition à la pollution', fmtPct(layers.pollution[b.id]!), layers.pollution[b.id]! > 0.3 ? 'neg' : undefined);
   }
   if (def.jobs) {
+    const workers = working ? d.workers ?? 0 : 0;
     add('Emplois', fmtInt(def.jobs));
-    add('Postes pourvus', `${fmtInt(def.jobs * staffing)} (${fmtPct(staffing)})`, staffing < 0.6 ? 'neg' : undefined);
+    add('Actifs sur ce site', fmtInt(workers));
+    add('Postes pourvus', `${fmtInt(workers)} / ${fmtInt(def.jobs)} (${fmtPct(staffing)})`, staffing < 0.6 ? 'neg' : undefined);
     add('Salaires versés', `${fmtInt(def.jobs * staffing * ECONOMY.wagePerWorker)} cr/j`);
   }
-  if (def.goodsSalesCapacityPerDay) add('Capacité de vente', `${fmtInt(def.goodsSalesCapacityPerDay * staffing)} biens/j`);
-  if (def.goodsProductionPerDay) add('Capacité de production', `${fmtInt(def.goodsProductionPerDay * staffing)} biens/j`);
+  if (def.goodsSalesCapacityPerDay) add('Capacité de vente', `${fmtInt(d.capacity ?? 0)} biens/j`);
+  if (def.goodsProductionPerDay) add('Production', `${fmtInt(d.capacity ?? 0)} biens/j`);
   if (def.pollution) add('Pollution émise', `rayon ${def.pollution.radius} m · intensité ${fmtPct(def.pollution.intensity)}`, 'neg');
   if (def.service) {
     add('Service', `${SERVICE_LABEL[def.service.kind]} · rayon ${def.service.radius} m`);
-    add('Capacité', `${fmtInt(def.service.capacity * staffing)} habitants`);
+    add('Capacité effective', `${fmtInt(d.capacity ?? 0)} habitants`);
+    add('Habitants servis', `${fmtInt(d.served ?? 0)}`);
     if (layers?.serviceLoad[b.id] !== undefined) add('Utilisation', fmtPct(layers.serviceLoad[b.id]!), layers.serviceLoad[b.id]! > 0.95 ? 'neg' : undefined);
   }
-  if (def.powerOutputMW) add('Production électrique', `${fmtInt(def.powerOutputMW * staffing)} MW`);
-  if (def.waterOutputM3PerDay) add("Production d'eau", `${fmtInt(def.waterOutputM3PerDay * staffing)} m³/j`);
+  if (def.powerOutputMW) add('Production électrique', `${fmtInt(d.capacity ?? 0)} MW`);
+  if (def.waterOutputM3PerDay) add("Production d'eau", `${fmtInt(d.capacity ?? 0)} m³/j`);
   if (def.transit) {
     const same = city.buildings.filter((x) => BUILDINGS[x.type].transit?.mode === def.transit!.mode && layers?.buildingStatus[x.id] === 'ok').length;
     add('Ligne', `${MODE_LABEL[def.transit.mode]} · rayon ${def.transit.radius} m`);
-    add('Capacité', `${fmtInt(def.transit.capacity * staffing)} voyages/j`);
+    add('Capacité effective', `${fmtInt(d.capacity ?? 0)} voyages/j`);
     add('Réseau', same >= TRANSIT.minStationsPerMode ? `${same} stations : en service` : `${same} station : il en faut ${TRANSIT.minStationsPerMode}`, same >= TRANSIT.minStationsPerMode ? 'pos' : 'neg');
   }
   if (def.powerMW) add('Consommation électrique', `${def.powerMW.toLocaleString('fr-FR')} MW`);

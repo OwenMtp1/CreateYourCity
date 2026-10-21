@@ -80,4 +80,16 @@ describe('déplacement des actifs entre sites', () => {
     expect(applyCityCommand(c, { type: 'resetAssignments' }).ok).toBe(true);
     expect(c.assignments).toBeUndefined();
   });
+
+  it('chaque bâtiment a ses propres chiffres : postes pourvus et actifs de son site', () => {
+    const c = city();
+    const [a, b] = ids(c) as [number, number];
+    expect(applyCityCommand(c, { type: 'moveWorkers', fromId: a, toId: b, count: 0 }).ok).toBe(false);
+    const r = applyCityCommand(c, { type: 'moveWorkers', fromId: a, toId: b, count: 1 });
+    expect(r.ok, r.ok ? '' : r.reason).toBe(true);
+    const layers = simulateTick(c);
+    expect(layers.details[b]!.workers!).toBeGreaterThan(0);
+    expect(layers.details[a]!.workers!).not.toBeCloseTo(layers.details[b]!.workers!, 3);
+    expect(layers.details[a]!.staffing).not.toBeCloseTo(layers.details[b]!.staffing!, 3);
+  });
 });

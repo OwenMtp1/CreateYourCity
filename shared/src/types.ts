@@ -142,8 +142,23 @@ export interface HistorySample {
 }
 
 /** Informations par bâtiment/tronçon pour les couches cartographiques. */
+/** Chiffres propres à un bâtiment (et non des moyennes de la ville). */
+export interface BuildingDetail {
+  /** Logement : habitants qui y vivent. */
+  residents?: number;
+  /** Site d'emploi : actifs qui y travaillent et part de ses postes pourvus. */
+  workers?: number;
+  staffing?: number;
+  /** Service : habitants effectivement servis. */
+  served?: number;
+  /** Capacité effective par jour de la fonction du bâtiment : biens vendus ou produits, MW, m³, voyages, personnes. */
+  capacity?: number;
+}
+
 export interface CityLayers {
   buildingStatus: Record<number, BuildingStatus>;
+  /** Chiffres de chaque bâtiment : habitants, actifs, capacité effective, personnes servies. */
+  details: Record<number, BuildingDetail>;
   /** Couverture moyenne des services pour chaque bâtiment résidentiel (0..1). */
   residentialCoverage: Record<number, Record<ServiceKind, number>>;
   pollution: Record<number, number>;
