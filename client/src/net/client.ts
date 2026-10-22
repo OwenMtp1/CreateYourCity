@@ -175,6 +175,25 @@ class GameClient {
       case 'chat':
         setState((s) => ({ chat: [...s.chat, msg.message].slice(-100) }));
         return;
+      case 'friends':
+        setState({ friends: msg.friends });
+        return;
+      case 'friendResults':
+        setState({ friendResults: msg.players });
+        return;
+      case 'dm': {
+        const me = getState().player?.id;
+        const other = msg.message.from === me ? msg.message.to : msg.message.from;
+        setState((s) => ({ dms: { ...s.dms, [other]: [...(s.dms[other] ?? []), msg.message].slice(-200) } }));
+        return;
+      }
+      case 'dmHistory':
+        setState((s) => ({ dms: { ...s.dms, [msg.with]: msg.messages } }));
+        return;
+      case 'invite':
+        setState((s) => ({ invites: [...s.invites, { id: Date.now(), from: msg.from, lobby: msg.lobby }] }));
+        toast(`${msg.from.name} vous invite à « ${msg.lobby.name} ».`);
+        return;
       case 'saved':
         setState({ lastSavedAt: msg.at });
         return;

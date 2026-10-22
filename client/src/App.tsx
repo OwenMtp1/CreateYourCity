@@ -6,6 +6,7 @@ import { LobbyScreen } from './screens/LobbyScreen.tsx';
 import { LoginScreen } from './screens/LoginScreen.tsx';
 import { useGame } from './state.ts';
 import { Toasts } from './ui/Toasts.tsx';
+import { AccountPanel } from './ui/account.tsx';
 
 export function App() {
   const [configError, setConfigError] = useState<string | null>(null);
@@ -37,6 +38,7 @@ export function App() {
   return (
     <>
       {!player ? <LoginScreen /> : !lobby ? <LobbyScreen /> : <GameScreen />}
+      <AccountPanel />
       <Toasts />
     </>
   );

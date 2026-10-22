@@ -1,4 +1,4 @@
-import type { ChatMessage, CityState } from '@cyc/shared';
+import type { ChatMessage, CityState, DirectMessage, PlayerRef } from '@cyc/shared';
 import type { WorldMeta } from '@cyc/shared/game';
 import type { ActionLogEntry, ClaimResult, LobbyClock, LobbyRecord, Store } from './types.ts';
 
@@ -8,14 +8,19 @@ export interface MemoryData {
   members: Record<string, string[]>;
   cities: Record<string, Record<string, CityState>>;
   chat: Record<string, ChatMessage[]>;
+  /** Relations entre joueurs, clé « a|b » avec a < b. */
+  friendships: Record<string, { status: 'pending' | 'accepted'; requestedBy: string }>;
+  direct: DirectMessage[];
 }
+
+const pairKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
 const clone = <T>(v: T): T => structuredClone(v);
 
 /** Stockage en mémoire (tests). Les données sont copiées pour imiter une vraie base. */
 export class MemoryStore implements Store {
   readonly kind: string = 'memory';
-  protected data: MemoryData = { players: {}, lobbies: {}, members: {}, cities: {}, chat: {} };
+  protected data: MemoryData = { players: {}, lobbies: {}, members: {}, cities: {}, chat: {}, friendships: {}, direct: [] };
   readonly actions: ActionLogEntry[] = [];
 
   async init(): Promise<void> {}
@@ -80,4 +85,46 @@ export class MemoryStore implements Store {
   }
 
   async loadChat(lobbyId: string, limit: number) { return (this.data.chat[lobbyId] ?? []).slice(-limit).map(clone); }
+
+  async searchPlayers(query: string, excludeId: string, limit: number): Promise<PlayerRef[]> {
+    const q = query.toLowerCase();
+    return Object.entries(this.data.players)
+      .filter(([id, p]) => id !== excludeId && p.name.toLowerCase().includes(q))
+      .slice(0, limit)
+      .map(([id, p]) => ({ id, name: p.name }));
+  }
+
+  async getPlayer(id: string): Promise<PlayerRef | null> {
+    const p = this.data.players[id];
+    return p ? { id, name: p.name } : null;
+  }
+
+  async loadFriendships(playerId: string) {
+    return Object.entries(this.data.friendships)
+      .filter(([key]) => key.split('|').includes(playerId))
+      .map(([key, f]) => ({ other: key.split('|').find((x) => x !== playerId)!, status: f.status, requestedBy: f.requestedBy }));
+  }
+
+  async saveFriendship(a: string, b: string, status: 'pending' | 'accepted', requestedBy: string) {
+    this.data.friendships[pairKey(a, b)] = { status, requestedBy };
+    await this.changed();
+  }
+
+  async deleteFriendship(a: string, b: string) {
+    delete this.data.friendships[pairKey(a, b)];
+    await this.changed();
+  }
+
+  async appendDirect(message: DirectMessage) {
+    this.data.direct.push(clone(message));
+    if (this.data.direct.length > 5000) this.data.direct.splice(0, this.data.direct.length - 5000);
+    await this.changed();
+  }
+
+  async loadDirect(a: string, b: string, limit: number): Promise<DirectMessage[]> {
+    return this.data.direct
+      .filter((m) => (m.from === a && m.to === b) || (m.from === b && m.to === a))
+      .slice(-limit)
+      .map(clone);
+  }
 }

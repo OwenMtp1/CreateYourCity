@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { client } from '../net/client.ts';
 import { useGame } from '../state.ts';
 import { StatusBadge } from '../ui/StatusBadge.tsx';
+import { AccountButton } from '../ui/account.tsx';
 import { GlobeBackdrop } from '../globe/GlobeView.tsx';
 
 export function LobbyScreen() {
@@ -35,6 +36,7 @@ export function LobbyScreen() {
           <h1>Salons</h1>
           <span className="muted">Connecté en tant que <strong>{player.name}</strong></span>
           <StatusBadge />
+          <AccountButton />
         </header>
         <section className="card glass">
           <h2>Rejoindre avec un code</h2>

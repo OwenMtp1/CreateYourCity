@@ -15,6 +15,7 @@ import { BuildingInspector, BuildingsPanel } from '../ui/panels/buildings.tsx';
 import type { Building } from '@cyc/shared';
 import { Tutorial } from '../ui/Tutorial.tsx';
 import { fmtShort, isMobile, useIsMobile } from '../ui/mobile.ts';
+import { AccountButton } from '../ui/account.tsx';
 
 type Tab = 'history' | 'build' | 'display' | 'buildings' | 'advisors' | 'stats' | 'economy' | 'population' | 'services' | 'territory' | 'trade' | 'diplomacy' | 'army' | 'nation' | 'lobby';
 const TABS: { id: Tab; icon: string; label: string; city?: boolean }[] = [
@@ -251,6 +252,7 @@ function MobileHud() {
           </>
         )}
         <StatusBadge />
+        <AccountButton />
         <button className="ghost small-btn hud-more" onClick={() => setOpen(!open)} aria-expanded={open} aria-label="Plus d'informations">⋯</button>
       </div>
       {open && (
@@ -319,6 +321,7 @@ function Hud() {
         )}
         <span className="small muted">{saveAge === null ? 'Non sauvegardé' : `💾 il y a ${saveAge} s`}</span>
         <StatusBadge />
+        <AccountButton />
         <button className="ghost small-btn" onClick={() => void client.act({ t: 'leaveLobby' })}>Quitter</button>
       </div>
     </header>

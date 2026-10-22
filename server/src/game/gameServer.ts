@@ -4,6 +4,10 @@ import {
   applyCityCommand, clientMessageSchema, createCityState, HISTORY_EVERY_TICKS, simulateTick, simulateTicks, TICK_MS, TICKS_PER_DAY,
   type ChatMessage, type CityState, type ClientMessage, type LobbyInfo, type ServerMessage,
 } from '@cyc/shared';
+import {
+  acceptFriend, directHistory, inviteFriend, pushFriends, pushPresence, removeFriend, requestFriend, searchPlayers, sendDirect, SocialError,
+  type SocialContext,
+} from './social.ts';
 import { applyWorldAction, buildWorldView, checkExpansion, checkForcedAnnexation, cityModifiers, commitExpansion, commitForcedAnnexation, evaluateNation, RuleError } from '@cyc/shared/game';
 import { CITY_BY_ID } from '@cyc/shared/world';
 import { AuthError, type Authenticator, type PlayerIdentity } from '../auth.ts';
@@ -243,6 +247,12 @@ export class GameServer {
   disconnect(s: Session) {
     this.leaveLobby(s);
     this.sessions.delete(s);
+    // Les amis voient le départ du joueur (s'il n'a plus d'autre onglet ouvert).
+    if (s.player) void pushPresence(this.social, s.player.id).catch((e) => console.error('[amis]', e));
+  }
+
+  private get social(): SocialContext {
+    return { store: this.store, sessions: this.sessions, now: () => this.now() };
   }
 
   async handleRaw(s: Session, raw: string) {
@@ -331,6 +341,31 @@ export class GameServer {
           if (msg.action.type !== 'sendMessage') await this.log(world, player.id, msg.action.type, msg.action);
           return;
         }
+        case 'friendSearch':
+          s.conn.send({ t: 'friendResults', players: await searchPlayers(this.social, player, msg.query) });
+          return reply(true);
+        case 'friendRequest':
+          await requestFriend(this.social, player, msg.playerId);
+          return reply(true);
+        case 'friendAccept':
+          await acceptFriend(this.social, player, msg.playerId);
+          return reply(true);
+        case 'friendRemove':
+          await removeFriend(this.social, player, msg.playerId);
+          return reply(true);
+        case 'dmSend':
+          if (!s.chat.take()) throw new UserError('Trop de messages, patientez.');
+          await sendDirect(this.social, player, msg.to, msg.text);
+          return reply(true);
+        case 'dmHistory':
+          s.conn.send({ t: 'dmHistory', with: msg.with, messages: await directHistory(this.social, player, msg.with) });
+          return reply(true);
+        case 'inviteFriend': {
+          if (!s.lobbyId) throw new UserError('Rejoignez un salon pour inviter un ami.');
+          const world = this.currentLobby(s);
+          await inviteFriend(this.social, player, msg.to, { name: world.record.name, code: world.record.code });
+          return reply(true);
+        }
         case 'chat': {
           if (!s.chat.take()) throw new UserError('Trop de messages, patientez.');
           const world = this.currentLobby(s);
@@ -341,7 +376,7 @@ export class GameServer {
         }
       }
     } catch (e) {
-      if (e instanceof UserError || e instanceof AuthError || e instanceof RuleError) return reply(false, e.message);
+      if (e instanceof UserError || e instanceof AuthError || e instanceof RuleError || e instanceof SocialError) return reply(false, e.message);
       console.error('[serveur] erreur inattendue', e);
       return reply(false, 'Erreur interne du serveur.');
     }
@@ -365,6 +400,8 @@ export class GameServer {
     s.player = player;
     s.conn.send({ t: 'authed', player, ...(token ? { token } : {}), authMode: this.auth.mode });
     reply(true);
+    await pushFriends(this.social, player.id);
+    await pushPresence(this.social, player.id);
   }
 
   // --- Salons ---------------------------------------------------------------------------------

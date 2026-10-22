@@ -4,7 +4,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { migrateCityState, type ChatMessage, type CityState } from '@cyc/shared';
+import { migrateCityState, type ChatMessage, type CityState, type DirectMessage, type PlayerRef } from '@cyc/shared';
 import { migrateWorldMeta, type WorldMeta } from '@cyc/shared/game';
 import type { ActionLogEntry, ClaimResult, LobbyClock, LobbyRecord, Store } from './types.ts';
 
@@ -153,6 +153,65 @@ export class PostgresStore implements Store {
     );
     return rows.reverse().map((r) => ({
       id: r.id, playerId: r.player_id, author: r.author, text: r.text, at: new Date(r.created_at).toISOString(),
+    }));
+  }
+
+  async searchPlayers(query: string, excludeId: string, limit: number): Promise<PlayerRef[]> {
+    const pattern = `%${query.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    const { rows } = await this.pool.query(
+      `select id, display_name from players where id <> $1 and display_name ilike $2 order by display_name limit $3`,
+      [excludeId, pattern, limit],
+    );
+    return rows.map((r) => ({ id: r.id, name: r.display_name }));
+  }
+
+  async getPlayer(id: string): Promise<PlayerRef | null> {
+    const { rows } = await this.pool.query(`select id, display_name from players where id = $1`, [id]);
+    return rows[0] ? { id: rows[0].id, name: rows[0].display_name } : null;
+  }
+
+  async loadFriendships(playerId: string) {
+    const { rows } = await this.pool.query(
+      `select player_a, player_b, status, requested_by from friendships where player_a = $1 or player_b = $1`,
+      [playerId],
+    );
+    return rows.map((r) => ({
+      other: r.player_a === playerId ? r.player_b : r.player_a,
+      status: r.status as 'pending' | 'accepted',
+      requestedBy: r.requested_by,
+    }));
+  }
+
+  async saveFriendship(a: string, b: string, status: 'pending' | 'accepted', requestedBy: string) {
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    await this.pool.query(
+      `insert into friendships (player_a, player_b, status, requested_by) values ($1, $2, $3, $4)
+       on conflict (player_a, player_b) do update set status = excluded.status, requested_by = excluded.requested_by`,
+      [lo, hi, status, requestedBy],
+    );
+  }
+
+  async deleteFriendship(a: string, b: string) {
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    await this.pool.query(`delete from friendships where player_a = $1 and player_b = $2`, [lo, hi]);
+  }
+
+  async appendDirect(m: DirectMessage) {
+    await this.pool.query(
+      `insert into direct_messages (id, from_id, to_id, text, created_at) values ($1, $2, $3, $4, $5)`,
+      [m.id, m.from, m.to, m.text, m.at],
+    );
+  }
+
+  async loadDirect(a: string, b: string, limit: number): Promise<DirectMessage[]> {
+    const { rows } = await this.pool.query(
+      `select id, from_id, to_id, text, created_at from direct_messages
+       where (from_id = $1 and to_id = $2) or (from_id = $2 and to_id = $1)
+       order by created_at desc limit $3`,
+      [a, b, limit],
+    );
+    return rows.reverse().map((r) => ({
+      id: r.id, from: r.from_id, to: r.to_id, text: r.text, at: new Date(r.created_at).toISOString(),
     }));
   }
 }

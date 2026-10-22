@@ -392,3 +392,17 @@ html, body { touch-action: pan-x pan-y; }
 .twin-canvas .city3d { position: absolute; inset: 0; }
 .twin-time { display: flex; align-items: center; gap: 0.6rem; }
 .twin-time input { flex: 1; }
+
+/* Compte : bouton, panneau, amis et messages privés */
+.account-btn { position: relative; white-space: nowrap; padding: 0.25rem 0.6rem; font-size: 0.8rem; }
+.account-btn .badge { position: absolute; top: -6px; right: -6px; }
+.account-overlay { position: fixed; inset: 0; z-index: 40; background: rgba(4, 8, 16, 0.55); display: flex; align-items: center; justify-content: center; padding: 12px; }
+.account { width: min(560px, 100%); max-height: calc(100dvh - 24px); overflow: auto; padding: 0.9rem 1rem; border-radius: 16px; display: flex; flex-direction: column; gap: 0.6rem; }
+.account header { display: flex; align-items: center; justify-content: space-between; }
+.account h2 { margin: 0; font-size: 1.1rem; }
+.friend-row { align-items: center; }
+.presence { width: 9px; height: 9px; border-radius: 50%; background: #475569; flex: none; }
+.presence.on { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+.dm-log { max-height: 240px; overflow: auto; display: flex; flex-direction: column; gap: 4px; padding: 0.4rem 0.5rem; border-radius: 10px; background: rgba(8, 12, 20, 0.5); }
+.dm-log p { margin: 0; font-size: 0.85rem; }
+.dm-log p.mine { color: #bfdbfe; }

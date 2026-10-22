@@ -112,6 +112,13 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('command'), reqId, cityId: z.string().max(40), cmd: cityCommandSchema }),
   z.object({ t: z.literal('action'), reqId, action: worldActionSchema }),
   z.object({ t: z.literal('chat'), reqId, text: z.string().trim().min(1).max(500) }),
+  z.object({ t: z.literal('friendSearch'), reqId, query: z.string().trim().min(1).max(24) }),
+  z.object({ t: z.literal('friendRequest'), reqId, playerId: id }),
+  z.object({ t: z.literal('friendAccept'), reqId, playerId: id }),
+  z.object({ t: z.literal('friendRemove'), reqId, playerId: id }),
+  z.object({ t: z.literal('dmSend'), reqId, to: id, text: z.string().trim().min(1).max(500) }),
+  z.object({ t: z.literal('dmHistory'), reqId, with: id }),
+  z.object({ t: z.literal('inviteFriend'), reqId, to: id }),
   z.object({ t: z.literal('ping'), reqId }),
 ]);
 
@@ -125,6 +132,24 @@ export interface LobbyInfo {
   maxPlayers: number;
   playerCount: number;
   createdAt: string;
+}
+
+/** Joueur trouvé par son pseudo (plusieurs joueurs peuvent porter le même). */
+export interface PlayerRef { id: string; name: string }
+
+/** Relation avec un autre joueur : ami, demande reçue, demande envoyée. */
+export interface FriendEntry extends PlayerRef {
+  status: 'friend' | 'incoming' | 'outgoing';
+  online: boolean;
+}
+
+/** Message privé entre deux amis, conservé. */
+export interface DirectMessage {
+  id: string;
+  from: string;
+  to: string;
+  text: string;
+  at: string;
 }
 
 export interface ChatMessage {
@@ -179,4 +204,10 @@ export type ServerMessage =
   | { t: 'world'; world: WorldView }
   | { t: 'summaries'; summaries: CitySummary[] }
   | { t: 'chat'; message: ChatMessage }
+  | { t: 'friends'; friends: FriendEntry[] }
+  | { t: 'friendResults'; players: PlayerRef[] }
+  | { t: 'dm'; message: DirectMessage }
+  | { t: 'dmHistory'; with: string; messages: DirectMessage[] }
+  /** Invitation d'un ami à rejoindre son salon (code à utiliser avec « Rejoindre »). */
+  | { t: 'invite'; from: PlayerRef; lobby: { name: string; code: string } }
   | { t: 'saved'; at: number };

@@ -1,5 +1,6 @@
 // État global du client (copie des données reçues du serveur, qui reste l'autorité).
 import { useSyncExternalStore } from 'react';
+import type { DirectMessage, FriendEntry, PlayerRef } from '@cyc/shared';
 import { expose } from './automation.ts';
 import { validateBuilding, type ChatMessage, type CityLayers, type CityState, type CitySummary, type ClockInfo, type LobbyInfo } from '@cyc/shared';
 import type { WorldView } from '@cyc/shared/game';
@@ -32,12 +33,21 @@ export interface GameState {
   chat: ChatMessage[];
   lastSavedAt: number | null;
   toasts: Toast[];
+  /** Compte : panneau ouvert, amis, résultats de recherche, messages par ami, invitations reçues. */
+  accountOpen: boolean;
+  friends: FriendEntry[];
+  friendResults: PlayerRef[];
+  dms: Record<string, DirectMessage[]>;
+  /** Ami dont la conversation est ouverte. */
+  dmWith: string | null;
+  invites: { id: number; from: PlayerRef; lobby: { name: string; code: string } }[];
 }
 
 let state: GameState = {
   status: 'connecting', authMode: null, player: null, authError: null, lobbies: [], lobby: null, clock: null, tick: 0,
   summaries: [], myCities: {}, twinCities: {}, twinViewId: null, activeCityId: null, layers: {}, world: null, view: 'globe', focusCityId: null, chat: [],
   lastSavedAt: null, toasts: [],
+  accountOpen: false, friends: [], friendResults: [], dms: {}, dmWith: null, invites: [],
 };
 const listeners = new Set<() => void>();
 

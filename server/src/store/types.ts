@@ -1,4 +1,4 @@
-import type { ChatMessage, CityState } from '@cyc/shared';
+import type { ChatMessage, CityState, DirectMessage, PlayerRef } from '@cyc/shared';
 import type { WorldMeta } from '@cyc/shared/game';
 
 export interface LobbyRecord {
@@ -48,4 +48,14 @@ export interface Store {
   logAction(entry: ActionLogEntry): Promise<void>;
   appendChat(lobbyId: string, message: ChatMessage): Promise<void>;
   loadChat(lobbyId: string, limit: number): Promise<ChatMessage[]>;
+  /** Pseudos contenant `query` (insensible à la casse), hors `excludeId`. */
+  searchPlayers(query: string, excludeId: string, limit: number): Promise<PlayerRef[]>;
+  getPlayer(id: string): Promise<PlayerRef | null>;
+  /** Relations d'un joueur : autre joueur, statut, et qui a fait la demande. */
+  loadFriendships(playerId: string): Promise<{ other: string; status: 'pending' | 'accepted'; requestedBy: string }[]>;
+  /** Crée ou met à jour une relation (la paire est normalisée). */
+  saveFriendship(a: string, b: string, status: 'pending' | 'accepted', requestedBy: string): Promise<void>;
+  deleteFriendship(a: string, b: string): Promise<void>;
+  appendDirect(message: DirectMessage): Promise<void>;
+  loadDirect(a: string, b: string, limit: number): Promise<DirectMessage[]>;
 }
