@@ -148,7 +148,14 @@ export function fundedMeasures(nation: NationState | undefined): { laws: Partial
   return { laws: nation.laws, projects: nation.projects };
 }
 
+/** Deux villes jumelées : échanges entre elles moins chers, et chaque joueur peut consulter l'historique de l'autre. */
+export function twinned(meta: WorldMeta, cityA: string, cityB: string): boolean {
+  return meta.treaties.some((t) => t.type === 'twin' && t.status === 'active' && !!t.cities &&
+    ((t.cities.a === cityA && t.cities.b === cityB) || (t.cities.a === cityB && t.cities.b === cityA)));
+}
+
 export const TREATY_LABEL: Record<TreatyType, string> = {
+  twin: 'Jumelage de villes',
   alliance: 'Alliance',
   non_aggression: 'Pacte de non-agression',
   defense: 'Accord de défense',

@@ -123,7 +123,7 @@ class GameClient {
       }
       case 'lobbyLeft':
         rememberLobby(null);
-        setState({ lobby: null, myCities: {}, activeCityId: null, layers: {}, world: null, summaries: [], chat: [], clock: null, view: 'globe' });
+        setState({ lobby: null, myCities: {}, twinCities: {}, twinViewId: null, activeCityId: null, layers: {}, world: null, summaries: [], chat: [], clock: null, view: 'globe' });
         return;
       case 'tick':
         setState({ tick: msg.tick });
@@ -136,6 +136,16 @@ class GameClient {
         }));
         notifyMilestones(msg.city.cityId, msg.city.milestones);
         return;
+      case 'twinCity':
+        setState((s) => ({ twinCities: { ...s.twinCities, [msg.city.cityId]: msg.city } }));
+        break;
+      case 'twinRemoved':
+        setState((s) => {
+          const twinCities = { ...s.twinCities };
+          delete twinCities[msg.cityId];
+          return { twinCities, twinViewId: s.twinViewId === msg.cityId ? null : s.twinViewId };
+        });
+        break;
       case 'cityRemoved': {
         const name = CITY_BY_ID.get(msg.cityId)?.name ?? msg.cityId;
         toast(`Vous ne contrôlez plus ${name}.`, 'error');

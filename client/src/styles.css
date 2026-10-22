@@ -383,3 +383,12 @@ html, body { touch-action: pan-x pan-y; }
 
 .coast-note { color: #7cc4f0; margin-top: 4px; }
 .force-annex { padding: 0.45rem 0.6rem; border-radius: 10px; border: 1px solid var(--border); background: rgba(15, 23, 42, 0.45); gap: 0.3rem; }
+
+/* Ville jumelée : vue plein écran en lecture seule */
+.twin-overlay { position: fixed; inset: 8px; z-index: 30; display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 14px; }
+.twin-overlay header { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.twin-overlay header .ghost { margin-left: auto; }
+.twin-canvas { position: relative; flex: 1; min-height: 0; border-radius: 10px; overflow: hidden; }
+.twin-canvas .city3d { position: absolute; inset: 0; }
+.twin-time { display: flex; align-items: center; gap: 0.6rem; }
+.twin-time input { flex: 1; }

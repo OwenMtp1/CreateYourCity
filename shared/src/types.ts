@@ -115,6 +115,8 @@ export interface CityState {
   layoutVersion: number;
   /** Campagnes de communication en cours ; `endsTick` exclu. */
   campaigns?: { kind: CampaignKind; endsTick: number }[];
+  /** Tarif de chaque mode de transport en commun (absent : tarif de base). */
+  transitFares?: Partial<Record<'bus' | 'tram' | 'metro', number>>;
   /** Effectifs fixés à la main par bâtiment d'emploi ; les autres postes se remplissent automatiquement. */
   assignments?: Record<number, number>;
   stats: CityStats | null;

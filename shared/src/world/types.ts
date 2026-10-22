@@ -4,7 +4,7 @@ import type { CityState } from '../types.ts';
 
 export const WORLD_SCHEMA_VERSION = 1;
 
-export type TreatyType = 'alliance' | 'non_aggression' | 'defense' | 'trade' | 'intel' | 'peace' | 'city_transfer';
+export type TreatyType = 'alliance' | 'non_aggression' | 'defense' | 'trade' | 'intel' | 'peace' | 'city_transfer' | 'twin';
 
 export interface Treaty {
   id: number;
@@ -19,6 +19,8 @@ export interface Treaty {
   endsAtTick: number | null;
   /** Cession de ville : ville, vendeur, prix, ville qui paie (côté acheteur). */
   terms?: { cityId: string; seller: string; price: number; payFromCityId?: string };
+  /** Jumelage : ville de a et ville de b. */
+  cities?: { a: string; b: string };
   /** Traité conclu par des dirigeants nationaux au nom de leurs pays. */
   nations?: { a: string; b: string };
 }

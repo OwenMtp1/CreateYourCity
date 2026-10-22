@@ -169,6 +169,7 @@ export function BuildingInspector({ id, onClose, onFocus, onSelect }: { id: numb
         <Accounts city={city} layers={layers} b={b} onSelect={onSelect} />
         {buildingDetails(city, layers, b).map((r) => <Row key={r.label} label={r.label} value={r.value} tone={r.tone} />)}
         {def.parking && <ParkingSettings key={b.id} id={b.id} spaces={def.parking.spaces} fee={b.fee ?? 0} use={layers?.parkingUse?.[b.id]} />}
+        {def.transit && <TransitSettings key={def.transit.mode} mode={def.transit.mode} fare={city.transitFares?.[def.transit.mode] ?? TRANSIT.farePerRide} riders={city.stats?.transit.riders} />}
       </div>
       <div className="row">
         <button onClick={() => onFocus(b)}>🎯 Centrer la vue</button>
@@ -226,6 +227,26 @@ function Workers({ city, b }: { city: CityState; b: Building }) {
 }
 
 const SECTOR_LABEL: Record<Sector, string> = { commerce: 'commerce', bureaux: 'bureaux', industrie: 'industrie', services: 'services' };
+
+/** Tarif d'une ligne de transport : gratuite, tarif de base, ou plus cher (moins de voyageurs). */
+function TransitSettings({ mode, fare, riders }: { mode: 'bus' | 'tram' | 'metro'; fare: number; riders: number | undefined }) {
+  const [price, setPrice] = useState(fare);
+  const dirty = price !== fare;
+  return (
+    <form className="stack" onSubmit={(e) => { e.preventDefault(); void client.cityCommand({ type: 'setTransitFare', mode, fee: price }); }}>
+      <Row label={`Tarif de la ligne ${MODE_LABEL[mode].toLowerCase()}`} value={fare === 0 ? 'Gratuit' : `${fare.toLocaleString('fr-FR')} cr / voyage`} />
+      <Row label="Voyageurs de la ville" value={riders === undefined ? '—' : fmtInt(riders)} />
+      <label>
+        Nouveau tarif : {price === 0 ? 'gratuit' : `${price.toLocaleString('fr-FR')} cr`}
+        <input type="range" min={0} max={TRANSIT.maxFare} step={0.5} value={price} onChange={(e) => setPrice(Number(e.target.value))} />
+      </label>
+      <p className="small muted">
+        Plus cher, la ligne perd des voyageurs au profit de la voiture ; gratuite, elle en attire davantage mais ne rapporte rien.
+      </p>
+      <button type="submit" disabled={!dirty}>Appliquer le tarif</button>
+    </form>
+  );
+}
 
 /** Répertoire de tous les bâtiments de la ville, par catégorie, avec recherche. */
 export function BuildingsPanel({ selected, onSelect }: { selected: number | null; onSelect: (b: Building) => void }) {

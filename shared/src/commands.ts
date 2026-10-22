@@ -2,7 +2,7 @@
 // Le client réutilise les mêmes validations pour l'aperçu de construction (retour immédiat).
 import { BUILDINGS, ROADS, sectorOf, type BuildingType, type RoadType } from './catalog.ts';
 import {
-  CITY_SIZE_M, MAX_DEBT, MAX_TAX_RATE, PARKING, POPULATION_POLICY, REGIONAL_ACCESS, TICKS_PER_DAY, ROAD_ACCESS_DISTANCE, ROAD_AUTO_CONNECT_DISTANCE, ROAD_MAX_LENGTH, ROAD_MIN_LENGTH,
+  CITY_SIZE_M, MAX_DEBT, MAX_TAX_RATE, PARKING, POPULATION_POLICY, REGIONAL_ACCESS, TICKS_PER_DAY, TRANSIT, ROAD_ACCESS_DISTANCE, ROAD_AUTO_CONNECT_DISTANCE, ROAD_MAX_LENGTH, ROAD_MIN_LENGTH,
 } from './constants.ts';
 import {
   buildingRect, closestPointOnSegment, footprint, pointSegmentDistance, rectsOverlap, roadWidth, segmentLength, segmentRectDistance, type Point, type Segment,
@@ -30,7 +30,9 @@ export type CityCommand =
   /** Déplace `count` actifs d'un site d'emploi vers un autre du même secteur. */
   | { type: 'moveWorkers'; fromId: number; toId: number; count: number }
   /** Rend la répartition des actifs entièrement automatique. */
-  | { type: 'resetAssignments' };
+  | { type: 'resetAssignments' }
+  /** Tarif d'une ligne de transport en commun (0 : gratuite ; tarif de base par défaut). */
+  | { type: 'setTransitFare'; mode: 'bus' | 'tram' | 'metro'; fee: number };
 
 export type ValidationResult = { ok: true; cost: number } | { ok: false; reason: string };
 
@@ -243,6 +245,14 @@ export function applyCityCommand(city: CityState, cmd: CityCommand): CommandResu
       const free = BUILDINGS[to.type].jobs - there;
       if (count > Math.floor(free)) return { ok: false, reason: `Postes libres sur le site d'arrivée : ${fmt(free)}.` };
       city.assignments = { ...(city.assignments ?? {}), [from.id]: here - count, [to.id]: there + count };
+      return { ok: true, cost: 0 };
+    }
+    case 'setTransitFare': {
+      if (!(cmd.fee >= 0 && cmd.fee <= TRANSIT.maxFare)) return { ok: false, reason: `Tarif entre 0 et ${TRANSIT.maxFare} cr.` };
+      const fee = Math.round(cmd.fee * 10) / 10;
+      city.transitFares = { ...(city.transitFares ?? {}) };
+      if (fee === TRANSIT.farePerRide) delete city.transitFares[cmd.mode];
+      else city.transitFares[cmd.mode] = fee;
       return { ok: true, cost: 0 };
     }
     case 'resetAssignments': {

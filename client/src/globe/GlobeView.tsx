@@ -175,6 +175,11 @@ function PlaceCard({ cityId, countryId, onFocus }: { cityId: string | null; coun
   const country = COUNTRY_BY_ID.get(city?.countryId ?? countryId ?? '');
   const relation = owner ? relationOf(world, player?.id, owner.ownerId) : null;
   const detail = city ? world?.cityDetails.find((d) => d.cityId === city.id) : undefined;
+  const twinCities = useGame((s) => s.twinCities);
+  // Ville jumelée : la ville de l'autre joueur est consultable, si elle est reçue.
+  const twinPartner = city && world ? world.treaties.find((t) => t.type === 'twin' && t.status === 'active' && t.cities &&
+    (t.cities.a === city.id || t.cities.b === city.id))?.cities : undefined;
+  const twinId = twinPartner ? (twinPartner.a === city?.id ? twinPartner.b : twinPartner.a) : null;
   const source = fromCity || mineIds[0] || '';
 
   const nearestSource = useMemo(() => {
@@ -218,6 +223,9 @@ function PlaceCard({ cityId, countryId, onFocus }: { cityId: string | null; coun
               {relation === 'mine' && (
                 <button className="primary" onClick={() => setState({ activeCityId: city.id, view: 'city' })}>Construire ici</button>
               )}
+              {twinId && twinCities[twinId] && (
+                <button onClick={() => setState({ twinViewId: twinId })}>🏙️ Voir la ville jumelle</button>
+              )}
               {relation !== 'mine' && owner && (
                 <div className="stack">
                   {mineIds.length > 0 && relation !== 'enemy' && (
@@ -227,6 +235,11 @@ function PlaceCard({ cityId, countryId, onFocus }: { cityId: string | null; coun
                         Proposer l'achat
                       </button>
                     </div>
+                  )}
+                  {relation !== 'enemy' && mineIds.length > 0 && (
+                    <button onClick={() => void client.action({ type: 'proposeTwin', to: owner.ownerId, myCityId: source, otherCityId: city.id })}>
+                      🏙️ Proposer un jumelage avec {CITY_BY_ID.get(source)?.name}
+                    </button>
                   )}
                   {relation !== 'enemy' && mineIds.length > 0 && (
                     <button className="danger" onClick={() => { if (confirm(`Déclarer la guerre à ${owner.ownerName} ?`)) void client.action({ type: 'declareWar', target: owner.ownerId }); }}>

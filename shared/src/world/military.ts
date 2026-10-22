@@ -253,5 +253,7 @@ export function changeOwner(world: World, city: CityState, newOwner: string) {
   // Contrats et cessions en cours liés à cette ville deviennent caducs.
   meta.contracts = meta.contracts.filter((c) => c.sellerCityId !== city.cityId && c.buyerCityId !== city.cityId);
   meta.treaties = meta.treaties.filter((t) => !(t.type === 'city_transfer' && t.terms?.cityId === city.cityId));
+  // Une ville jumelée qui change de main perd son jumelage.
+  meta.treaties = meta.treaties.filter((t) => !(t.type === 'twin' && (t.cities?.a === city.cityId || t.cities?.b === city.cityId)));
   // Les armées payées par cette ville pour l'ancien propriétaire sont rattachées ailleurs au tick suivant.
 }

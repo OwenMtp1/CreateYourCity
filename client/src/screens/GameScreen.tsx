@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { formatGameTime, GAME_MINUTES_PER_TICK, TICK_MS } from '@cyc/shared';
+import { formatGameTime, GAME_MINUTES_PER_TICK, TICK_MS, TICKS_PER_DAY } from '@cyc/shared';
 import { CITY_BY_ID } from '@cyc/shared/world';
 import type { CityLayer } from '../city3d/CityScene.ts';
 import { CityView3D, type Tool } from '../city3d/CityView3D.tsx';
@@ -184,11 +184,42 @@ export function GameScreen() {
       {showCity && (
         <Tutorial setTool={setTool} openTab={(t) => openTab(t)} visitedEconomy={visitedEconomy} visitedGlobe={visitedGlobe} compact={mobile} />
       )}
+      <TwinView />
       {view === 'globe' && cityCount === 0 && (
         <div className="onboarding glass">
           <strong>Bienvenue !</strong> Faites tourner le globe, zoomez, puis choisissez une ville libre : vous en deviendrez le dirigeant.
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Ville jumelée d'un partenaire, en plein écran et en lecture seule : on peut remonter son historique
+ * sans rien modifier.
+ */
+function TwinView() {
+  const twinViewId = useGame((s) => s.twinViewId);
+  const twin = useGame((s) => (twinViewId ? s.twinCities[twinViewId] : undefined));
+  const [at, setAt] = useState<number | null>(null);
+  if (!twinViewId || !twin) return null;
+  const tick = at ?? twin.tick;
+  return (
+    <div className="twin-overlay glass">
+      <header>
+        <strong>🏙️ {CITY_BY_ID.get(twin.cityId)?.name}</strong>
+        <span className="small muted">ville jumelée de {twin.ownerName} · lecture seule</span>
+        <button className="ghost small-btn" onClick={() => setState({ twinViewId: null })}>Fermer</button>
+      </header>
+      <div className="twin-canvas">
+        <CityView3D city={twin} layers={null} tool={{ kind: 'select' }} setTool={() => undefined} grid={false} setGrid={() => undefined}
+          layer="none" selected={null} setSelected={() => undefined} dayNight focus={null} historyTick={tick} />
+      </div>
+      <div className="twin-time">
+        <input type="range" min={twin.claimedAtTick} max={twin.tick} step={TICKS_PER_DAY} value={tick}
+          onChange={(e) => setAt(Number(e.target.value) >= twin.tick ? null : Number(e.target.value))} />
+        <span className="small">{formatGameTime(tick)}</span>
+      </div>
     </div>
   );
 }

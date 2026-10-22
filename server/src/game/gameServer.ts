@@ -1,7 +1,7 @@
 // Serveur de jeu autoritaire : sessions, salons, commandes, boucle de simulation et sauvegardes.
 import { randomInt, randomUUID } from 'node:crypto';
 import {
-  applyCityCommand, clientMessageSchema, createCityState, HISTORY_EVERY_TICKS, simulateTick, simulateTicks, TICK_MS,
+  applyCityCommand, clientMessageSchema, createCityState, HISTORY_EVERY_TICKS, simulateTick, simulateTicks, TICK_MS, TICKS_PER_DAY,
   type ChatMessage, type CityState, type ClientMessage, type LobbyInfo, type ServerMessage,
 } from '@cyc/shared';
 import { applyWorldAction, buildWorldView, checkExpansion, checkForcedAnnexation, cityModifiers, commitExpansion, commitForcedAnnexation, evaluateNation, RuleError } from '@cyc/shared/game';
@@ -21,6 +21,8 @@ export class Session {
   lobbyId: string | null = null;
   /** Villes du joueur déjà envoyées en entier (détection des gains et pertes). */
   knownCities = new Set<string>();
+  /** Villes jumelées envoyées à ce joueur, avec le tick du dernier envoi. */
+  twinSent = new Map<string, number>();
   /** Nombre de paliers déjà transmis par ville (renvoi seulement en cas de nouveauté). */
   readonly milestonesSent = new Map<string, number>();
   readonly commands = new TokenBucket(10, 30);
@@ -155,6 +157,36 @@ export class GameServer {
     }
     for (const id of s.knownCities) if (!ids.has(id)) s.conn.send({ t: 'cityRemoved', cityId: id });
     s.knownCities = ids;
+    this.syncTwins(world, s);
+  }
+
+  /**
+   * Villes jumelées : chaque partenaire reçoit la ville de l'autre (une fois par jour de jeu),
+   * pour consulter son historique en lecture seule.
+   */
+  private syncTwins(world: LobbyWorld, s: Session) {
+    if (!s.player) return;
+    const partners = new Set<string>();
+    for (const t of world.world.meta.treaties) {
+      if (t.type !== 'twin' || t.status !== 'active' || !t.cities) continue;
+      const a = world.cities.get(t.cities.a), b = world.cities.get(t.cities.b);
+      const theirs = a?.ownerId === s.player.id ? b : b?.ownerId === s.player.id ? a : undefined;
+      if (theirs && theirs.ownerId !== s.player.id) partners.add(theirs.cityId);
+    }
+    for (const id of partners) {
+      const city = world.cities.get(id)!;
+      const last = s.twinSent.get(id);
+      if (last === undefined || world.world.tick - last >= TICKS_PER_DAY) {
+        s.conn.send({ t: 'twinCity', city });
+        s.twinSent.set(id, world.world.tick);
+      }
+    }
+    for (const id of [...s.twinSent.keys()]) {
+      if (!partners.has(id)) {
+        s.conn.send({ t: 'twinRemoved', cityId: id });
+        s.twinSent.delete(id);
+      }
+    }
   }
 
   /** Après une action : vues du monde, villes et résumés à jour pour tout le salon. */

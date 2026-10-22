@@ -1,12 +1,12 @@
 // Un tick du monde : villes (avec marché, contrats et politique nationale), budgets nationaux,
 // contrats, marché commun, armées, traités et nations. Ordre fixe, itérations triées : déterministe.
-import { DT_DAYS } from '../constants.ts';
+import { DT_DAYS, TWIN_TRADE } from '../constants.ts';
 import { DEFAULT_MODIFIERS, type CityModifiers } from '../sim/modifiers.ts';
 import { simulateTick } from '../sim/tick.ts';
 import type { CityLayers } from '../types.ts';
 import { stepMilitary } from './military.ts';
 import { evaluateNation } from './nations.ts';
-import { cityName, distanceKm, freeTrade, fundedMeasures, hasBuilding, LOGISTICS, MARKET, marketPrices, measuresUpkeep, playerName, pushEvent, TRANSPORT, TREATY_LABEL } from './rules.ts';
+import { cityName, distanceKm, freeTrade, fundedMeasures, twinned, hasBuilding, LOGISTICS, MARKET, marketPrices, measuresUpkeep, playerName, pushEvent, TRANSPORT, TREATY_LABEL } from './rules.ts';
 import type { World } from './types.ts';
 
 
@@ -40,12 +40,13 @@ export function cityModifiers(world: World, cityId: string): CityModifiers {
       // Livraisons du tick précédent (le vendeur peut ne pas tout produire).
       const q = c.qtyPerDay * c.deliveredRatio;
       const seller = world.cities.get(c.sellerCityId);
-      const discount = hasLogistics(city) && hasLogistics(seller) ? TRANSPORT.logisticsDiscount : 1;
+      const twin = twinned(meta, cityId, c.sellerCityId);
+      const discount = (hasLogistics(city) && hasLogistics(seller) ? TRANSPORT.logisticsDiscount : 1) * (twin ? TWIN_TRADE.transportFactor : 1);
       const transport = (distanceKm(c.sellerCityId, cityId) / 1000) * TRANSPORT.costPer1000Km * discount;
       contractIn.qty += q;
       contractIn.cost += q * (c.pricePerUnit + transport);
       const foreign = seller ? seller.countryId !== city.countryId : true;
-      if (foreign && !freeTrade(meta, c.buyerId, c.sellerId)) contractIn.tariff += q * c.pricePerUnit * tariffRate;
+      if (foreign && !twin && !freeTrade(meta, c.buyerId, c.sellerId)) contractIn.tariff += q * c.pricePerUnit * tariffRate;
     }
     if (c.sellerCityId === cityId) {
       contractOut.qty += c.qtyPerDay;

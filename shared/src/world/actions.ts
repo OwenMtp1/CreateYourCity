@@ -17,6 +17,8 @@ import { armySize } from './military.ts';
 
 export type WorldAction =
   | { type: 'transferFunds'; fromCityId: string; toCityId: string; amount: number }
+  /** Propose de jumeler ma ville avec une ville d'un autre joueur. */
+  | { type: 'proposeTwin'; to: string; myCityId: string; otherCityId: string }
   /** Déplace des habitants d'une de vos villes vers une autre ; payé par la ville d'origine. */
   | { type: 'transferResidents'; fromCityId: string; toCityId: string; count: number }
   | { type: 'proposeTreaty'; to: string; treaty: TreatyType; cityId?: string; price?: number; payFromCityId?: string; nation?: { from: string; to: string } }
@@ -213,6 +215,24 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
   const meta = world.meta;
   const name = (id: string) => playerName(meta, id);
   switch (action.type) {
+    case 'proposeTwin': {
+      requirePlayer(world, action.to);
+      if (action.to === player) fail('Vous ne pouvez pas jumeler deux de vos villes.');
+      const mine = ownCity(world, player, action.myCityId);
+      const other = world.cities.get(action.otherCityId);
+      if (!other || other.ownerId !== action.to) fail("La ville jumelle doit appartenir à ce joueur.");
+      if (atWar(meta, player, action.to)) fail('Impossible pendant une guerre.');
+      const busy = (id: string) => meta.treaties.some((t) => t.type === 'twin' && !!t.cities && (t.cities.a === id || t.cities.b === id));
+      if (busy(mine.cityId) || busy(other!.cityId)) fail('Une de ces villes est déjà jumelée.');
+      meta.treaties.push({
+        id: nextId(meta), type: 'twin', a: player, b: action.to, status: 'proposed',
+        proposedAtTick: world.tick, activeSinceTick: null, endsAtTick: null,
+        cities: { a: mine.cityId, b: other!.cityId },
+      });
+      pushEvent(world, 'treaty', `${name(player)} propose de jumeler ${cityName(mine.cityId)} avec ${cityName(other!.cityId)}.`, [player, action.to], true);
+      return;
+    }
+
     case 'transferResidents': {
       const from = ownCity(world, player, action.fromCityId);
       const to = ownCity(world, player, action.toCityId);
@@ -249,6 +269,7 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
     }
 
     case 'proposeTreaty': {
+      if (action.treaty === 'twin') fail('Le jumelage relie deux villes : utilisez « Jumeler ».');
       if (action.nation) return proposeNationalTreaty(world, player, action);
       requirePlayer(world, action.to);
       if (action.to === player) fail('Vous ne pouvez pas traiter avec vous-même.');

@@ -19,6 +19,10 @@ export interface GameState {
   tick: number;
   summaries: CitySummary[];
   myCities: Record<string, CityState>;
+  /** Villes jumelées d'un partenaire, en lecture seule. */
+  twinCities: Record<string, CityState>;
+  /** Ville jumelée affichée en plein écran (null : aucune). */
+  twinViewId: string | null;
   activeCityId: string | null;
   layers: Record<string, CityLayers>;
   world: WorldView | null;
@@ -32,7 +36,7 @@ export interface GameState {
 
 let state: GameState = {
   status: 'connecting', authMode: null, player: null, authError: null, lobbies: [], lobby: null, clock: null, tick: 0,
-  summaries: [], myCities: {}, activeCityId: null, layers: {}, world: null, view: 'globe', focusCityId: null, chat: [],
+  summaries: [], myCities: {}, twinCities: {}, twinViewId: null, activeCityId: null, layers: {}, world: null, view: 'globe', focusCityId: null, chat: [],
   lastSavedAt: null, toasts: [],
 };
 const listeners = new Set<() => void>();

@@ -10,7 +10,7 @@ import type { WorldView } from './world/view.ts';
 const id = z.string().min(1).max(80);
 const cityId = z.string().min(1).max(40);
 const unit = z.enum(['infantry', 'armor', 'artillery', 'navy', 'air']);
-const treatyType = z.enum(['alliance', 'non_aggression', 'defense', 'trade', 'intel', 'peace', 'city_transfer']);
+const treatyType = z.enum(['alliance', 'non_aggression', 'defense', 'trade', 'intel', 'peace', 'city_transfer', 'twin']);
 const amount = z.number().finite().positive().max(1e10);
 
 export const worldActionSchema = z.discriminatedUnion('type', [
@@ -56,6 +56,7 @@ export const worldActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('secede'), cityId: id }),
   z.object({ type: z.literal('rejoinCountry'), cityId: id }),
   z.object({ type: z.literal('transferResidents'), fromCityId: cityId, toCityId: cityId, count: z.number().int().min(1).max(1_000_000) }),
+  z.object({ type: z.literal('proposeTwin'), to: id, myCityId: cityId, otherCityId: cityId }),
   z.object({ type: z.literal('annexByForce'), fromCityId: cityId, cityId, troops: z.number().int().min(1).max(1_000_000).optional(), betray: z.boolean().optional() }),
 ]) satisfies z.ZodType<WorldAction>;
 
@@ -89,6 +90,7 @@ export const cityCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('campaign'), kind: z.enum(['jobs', 'attract']) }),
   z.object({ type: z.literal('moveWorkers'), fromId: z.number().int().nonnegative(), toId: z.number().int().nonnegative(), count: z.number().int().min(1).max(1_000_000) }),
   z.object({ type: z.literal('resetAssignments') }),
+  z.object({ type: z.literal('setTransitFare'), mode: z.enum(['bus', 'tram', 'metro']), fee: z.number().finite().min(0).max(100) }),
 ]) satisfies z.ZodType<CityCommand>;
 
 const reqId = z.number().int().optional();
@@ -162,6 +164,9 @@ export type ServerMessage =
   | { t: 'tick'; tick: number }
   | { t: 'city'; city: CityState; layers: CityLayers }
   | { t: 'cityRemoved'; cityId: string }
+  /** Ville jumelée d'un partenaire (lecture seule : historique et état, mis à jour une fois par jour). */
+  | { t: 'twinCity'; city: CityState }
+  | { t: 'twinRemoved'; cityId: string }
   | {
       t: 'cityStats'; cityId: string; tick: number; treasury: number; debt: number; population: number; taxes: TaxRates;
       stats: CityStats | null;

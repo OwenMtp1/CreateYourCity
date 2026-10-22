@@ -90,6 +90,9 @@ export const POPULATION = {
   comfortableTaxRate: 0.08,
 } as const;
 
+/** Villes jumelées : transport entre elles divisé par deux, sans droits de douane. */
+export const TWIN_TRADE = { transportFactor: 0.5 } as const;
+
 /**
  * Gestion des habitants. Une campagne coûte un montant fixe et dure `campaignDays` jours.
  * - « jobs » : davantage d'habitants en âge de travailler se présentent aux emplois.
@@ -140,4 +143,6 @@ export const TRANSIT = {
   modeShare: { bus: 0.25, tram: 0.35, metro: 0.5 },
   minStationsPerMode: 2,
   farePerRide: 1.5,
+  /** Tarif maximal d'une ligne (crédits par voyage). 0 : gratuite. */
+  maxFare: 6,
 } as const;

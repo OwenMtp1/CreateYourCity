@@ -169,13 +169,17 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   // --- Transports en commun : part modale des logements desservis, bornée par la capacité ---------
   const stationCount: Record<TransitMode, number> = { bus: 0, tram: 0, metro: 0 };
   let transitCapacity = 0;
+  const modeCapacity: Record<TransitMode, number> = { bus: 0, tram: 0, metro: 0 };
   for (const b of ops) {
     const t = BUILDINGS[b.type].transit;
     if (t) stationCount[t.mode]++;
   }
   for (const b of ops) {
     const t = BUILDINGS[b.type].transit;
-    if (t && stationCount[t.mode] >= TRANSIT.minStationsPerMode) transitCapacity += t.capacity * staff(b.id) * utilitySupply;
+    if (t && stationCount[t.mode] >= TRANSIT.minStationsPerMode) {
+      transitCapacity += t.capacity * staff(b.id) * utilitySupply;
+      modeCapacity[t.mode] += t.capacity * staff(b.id) * utilitySupply;
+    }
     if (t) detail(b.id).capacity = t.capacity * staff(b.id) * utilitySupply;
   }
   const employmentRate = population > 0 ? employed / population : 0;
@@ -190,17 +194,26 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     transitDemand += n * employmentRate * 2 * share;
   }
   const transitFill = transitDemand > 0 ? Math.min(1, transitCapacity / transitDemand) : 0;
+  // Bus à tarif libre : un tarif plus bas retient davantage de voyageurs, un tarif plus haut les renvoie en voiture.
+  const baseFare = TRANSIT.farePerRide;
+  const busFare = city.transitFares?.bus ?? baseFare;
+  const busWeight = transitCapacity > 0 ? modeCapacity.bus / transitCapacity : 0;
+  const busRetention = Math.min(1.3, Math.max(0.4, 1 - (0.5 * (busFare - baseFare)) / baseFare));
+  const busNormal = 1 - busWeight + busWeight * busRetention;
+  const busPart = busNormal > 0 ? (busWeight * busRetention) / busNormal : 0;
+  let busRiders = 0;
 
   // --- Trafic : itinéraires sur le graphe routier (domicile-travail, achats, fret) ---------------
   const routing = layout.routing;
   const edgeLoad = new Float64Array(routing.edges.length);
   let carTrips = 0, riders = 0, personalCarTrips = 0;
   for (const [id, n] of residents) {
-    const share = (potentialShare.get(id) ?? 0) * transitFill;
+    const share = Math.min(1, (potentialShare.get(id) ?? 0) * transitFill * busNormal);
     const commuteTrips = n * employmentRate * 2;
     const shopTrips = (purchased.get(id) ?? 0) * TRAFFIC.tripsPerGoodSold;
     const car = (commuteTrips + shopTrips) * (1 - share);
     riders += (commuteTrips + shopTrips) * share;
+    busRiders += (commuteTrips + shopTrips) * share * busPart;
     carTrips += car;
     personalCarTrips += car;
     const cw = routing.commute.get(id);
@@ -455,7 +468,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   }
   // Impôt national prélevé sur les revenus des habitants ; versé au budget national par le monde.
   const nationalTax = mod.nationalTaxRate * employed * wage;
-  const transitFares = riders * TRANSIT.farePerRide;
+  const transitFares = (riders - busRiders) * baseFare + busRiders * busFare;
   const net = residentialTax + commercialTax + industrialTax + transitFares + parkingFees - upkeep - utilityImports - loanInterest;
   city.treasury += net * DT_DAYS;
 
