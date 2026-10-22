@@ -25,7 +25,7 @@ const ICON: Record<string, string> = {
   house: '🏡', apartment: '🏢', tower: '🏙️', shop: '🛍️', office: '💼', factory: '🏭', clinic: '🏥', school: '🏫', police: '🚓',
   power_plant: '⚡', water_tower: '💧', park: '🌳', barracks: '🎖️', street: '🛣️', avenue: '🛤️', bridge: '🌉',
   bus_station: '🚌', tram_station: '🚋', metro_station: '🚇', train_station: '🚆', port: '⚓', airbase: '✈️',
-  parking: '🅿️', parking_garage: '🚗',
+  parking: '🅿️', parking_garage: '🚗', urban_forest: '🌳', solar_plant: '☀️',
 };
 
 /** Réglages d'affichage de la ville : grille, cycle jour/nuit, qualité, couche d'information. */

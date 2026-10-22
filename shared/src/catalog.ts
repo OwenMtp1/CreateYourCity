@@ -21,7 +21,9 @@ export type BuildingType =
   | 'port'
   | 'airbase'
   | 'parking'
-  | 'parking_garage';
+  | 'parking_garage'
+  | 'urban_forest'
+  | 'solar_plant';
 
 export type RoadType = 'street' | 'avenue' | 'bridge';
 export type BuildingCategory = 'residential' | 'commercial' | 'industrial' | 'service' | 'utility' | 'transport' | 'military';
@@ -53,6 +55,10 @@ export interface BuildingDef {
   powerOutputMW?: number;
   waterOutputM3PerDay?: number;
   pollution?: { radius: number; intensity: number };
+  /** Absorbe la pollution des logements proches : `amount` points à la limite du rayon, plein effet au centre. */
+  pollutionAbsorption?: { radius: number; amount: number };
+  /** Produit de l'électricité seulement le jour (powerOutputMW est alors la puissance de pointe). */
+  sunPowered?: boolean;
   /** Les salaires sont payés par la ville via l'entretien (pas d'impôt sur les bénéfices). */
   publicSector?: boolean;
   /** Station de transport en commun : rayon desservi et capacité en voyages par jour. */
@@ -126,6 +132,18 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     description: "Fournit de l'eau ; sinon la ville importe de l'eau régionale.",
     w: 20, h: 20, cost: 50_000, upkeepPerDay: 300, jobs: 5, housing: 0, powerMW: 0.1, waterM3PerDay: 0,
     waterOutputM3PerDay: 2_000, publicSector: true,
+  },
+  urban_forest: {
+    type: 'urban_forest', label: 'Forêt urbaine', category: 'service',
+    description: 'Boisement de quartier : absorbe 15 points de pollution des logements dans un rayon de 200 m. Peu d\'entretien, aucune pollution.',
+    w: 50, h: 50, cost: 60_000, upkeepPerDay: 120, jobs: 2, housing: 0, powerMW: 0, waterM3PerDay: 5,
+    pollutionAbsorption: { radius: 200, amount: 0.15 }, publicSector: true,
+  },
+  solar_plant: {
+    type: 'solar_plant', label: 'Centrale solaire', category: 'utility',
+    description: "Électricité sans pollution : 4 MW de pointe, seulement de jour (du lever au coucher du soleil). La nuit, la ville importe du réseau.",
+    w: 40, h: 40, cost: 300_000, upkeepPerDay: 250, jobs: 3, housing: 0, powerMW: 0, waterM3PerDay: 2,
+    powerOutputMW: 4, sunPowered: true, publicSector: true,
   },
   park: {
     type: 'park', label: 'Parc', category: 'service',

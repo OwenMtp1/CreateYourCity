@@ -4,6 +4,7 @@
 import { BUILDINGS, ROADS, SERVICE_KINDS, TRANSIT_MODES, type ServiceKind, type TransitMode } from '../catalog.ts';
 import { COMMERCE, DAYS_PER_YEAR, DT_DAYS, ECONOMY, INDEPENDENCE, LOAN_ANNUAL_RATE, PARKING, POPULATION, POPULATION_POLICY, TRAFFIC, TRANSIT } from '../constants.ts';
 import { segmentLength } from '../geometry.ts';
+import { daylight } from '../time.ts';
 import type { Building, BuildingDetail, BuildingEconomy, CampaignKind, CityLayers, CityState, CityStats, SupplyLink } from '../types.ts';
 import { getLayout } from './layout.ts';
 import { assignWorkers } from './staffing.ts';
@@ -87,9 +88,11 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     const def = BUILDINGS[b.type];
     powerDemand += def.powerMW;
     waterDemand += def.waterM3PerDay;
-    powerLocal += (def.powerOutputMW ?? 0) * staff(b.id);
+    // Le solaire ne produit que le jour ; les autres centrales produisent à toute heure.
+    const sun = def.sunPowered ? daylight(city.tick) : 1;
+    powerLocal += (def.powerOutputMW ?? 0) * staff(b.id) * sun;
     waterLocal += (def.waterOutputM3PerDay ?? 0) * staff(b.id);
-    if (def.powerOutputMW) detail(b.id).capacity = def.powerOutputMW * staff(b.id);
+    if (def.powerOutputMW) detail(b.id).capacity = def.powerOutputMW * staff(b.id) * sun;
     if (def.waterOutputM3PerDay) detail(b.id).capacity = def.waterOutputM3PerDay * staff(b.id);
   }
   // Ville indépendante : pas de réseau régional. Un déficit provoque des coupures qui freinent

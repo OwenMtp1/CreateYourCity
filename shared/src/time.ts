@@ -14,3 +14,10 @@ export function formatGameTime(tick: number): string {
 export function gameHour(tick: number): number {
   return ((GAME_START_HOUR * 60 + tick * GAME_MINUTES_PER_TICK) % 1440) / 60;
 }
+
+/** Ensoleillement 0..1 : nul la nuit, maximal à midi (de 6 h à 20 h). */
+export function daylight(tick: number): number {
+  const h = gameHour(tick);
+  if (h <= 6 || h >= 20) return 0;
+  return Math.sin((Math.PI * (h - 6)) / 14);
+}

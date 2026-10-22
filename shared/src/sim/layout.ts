@@ -76,6 +76,8 @@ export function analyzeLayout(city: CityState): CityLayout {
   const residential = buildings.filter((b) => BUILDINGS[b.type].category === 'residential' && status.get(b.id) === 'ok');
   const serviceReach = new Map<number, number[]>();
   const pollution = new Map<number, number>(residential.map((r) => [r.id, 0]));
+  // Pollution des logements : sources (usines, centrales) moins les bâtiments qui absorbent (forêts).
+  const absorbers = buildings.filter((b) => BUILDINGS[b.type].pollutionAbsorption && status.get(b.id) === 'ok');
   for (const s of buildings) {
     const def = BUILDINGS[s.type];
     if (status.get(s.id) !== 'ok') continue;
@@ -96,6 +98,15 @@ export function analyzeLayout(city: CityState): CityLayout {
           pollution.set(r.id, Math.min(1, (pollution.get(r.id) ?? 0) + def.pollution.intensity * (1 - d / def.pollution.radius)));
         }
       }
+    }
+  }
+
+  for (const a of absorbers) {
+    const def = BUILDINGS[a.type].pollutionAbsorption!;
+    const arect = buildingRect(a);
+    for (const r of residential) {
+      const d = rectDistance(arect, buildingRect(r));
+      if (d < def.radius) pollution.set(r.id, Math.max(0, (pollution.get(r.id) ?? 0) - def.amount * (1 - d / def.radius)));
     }
   }
 

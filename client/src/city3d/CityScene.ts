@@ -6,7 +6,7 @@ import { MapControls } from 'three/addons/controls/MapControls.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import {
-  BUILDINGS, CITY_SIZE_M, footprint, generateTerrain, hashString, mulberry32, REGIONAL_ACCESS, ROADS, seaBand, segmentLength,
+  BUILDINGS, CITY_SIZE_M, footprint, segmentEfficiency, generateTerrain, hashString, mulberry32, REGIONAL_ACCESS, ROADS, seaBand, segmentLength,
   roadTerrain, terrainAt, TerrainKind, analyzeLayout, type BuildingType, type CityLayers, type CityLayout, type CityState, type Point, type RoadType, type Segment,
 } from '@cyc/shared';
 import { getQuality } from './quality.ts';
@@ -29,6 +29,11 @@ const ramp = (v: number) => {
 };
 
 interface BuildingEntry { key: string; obj: THREE.Group; info: ModelInfo; smoke: THREE.Points[] }
+
+/** Nombre de camions d'un flux : un par tranche de `perTruck` unités, entre 1 et `max`. */
+function truckCount(qty: number, perTruck: number, max: number): number {
+  return Math.max(1, Math.min(max, Math.ceil(qty / perTruck)));
+}
 
 export class CityScene {
   readonly renderer: THREE.WebGLRenderer;
@@ -173,6 +178,7 @@ export class CityScene {
     } else {
       this.colorRoads(city, layers, layer);
     }
+    this.roadEfficiency = new Map(Object.entries(layers?.roadLoad ?? {}).map(([id, ratio]) => [Number(id), segmentEfficiency(ratio)]));
     this.updateTraffic(city);
     this.updateTrucks(layers);
     this.rebuildOverlays(city, layers, layer, selected);
@@ -193,8 +199,8 @@ export class CityScene {
       .filter(([, e]) => (e.exported ?? 0) > 15)
       .map(([id, e]) => ({ id: Number(id), qty: e.exported ?? 0 }));
     const key = [
-      ...links.map((l) => `${l.from}>${l.to}:${Math.min(3, Math.ceil(l.qty / 50))}`),
-      ...exports.map((x) => `${x.id}^${Math.min(2, Math.ceil(x.qty / 80))}`),
+      ...links.map((l) => `${l.from}>${l.to}:${truckCount(l.qty, 25, 8)}`),
+      ...exports.map((x) => `${x.id}^${truckCount(x.qty, 80, 4)}`),
     ].join(',');
     if (key === this.truckKey && (this.trucks || !key)) return;
     this.truckKey = key;
@@ -224,9 +230,10 @@ export class CityScene {
         colors.push(color);
       }
     };
-    for (const l of links) addTrucks(routing.deliveries.get(l.from)?.find((d) => d.shopId === l.to)?.points, Math.max(1, Math.min(3, Math.ceil(l.qty / 50))), 0xf97316);
-    for (const x of exports) addTrucks(routing.exportPaths.get(x.id), Math.max(1, Math.min(2, Math.ceil(x.qty / 80))), 0x94a3b8);
-    const n = Math.min(this.truckState.length, this.low ? 40 : 140);
+    // Un camion par tranche de 25 biens/j (plafonné) : un gros flux se voit, un petit flux reste discret.
+    for (const l of links) addTrucks(routing.deliveries.get(l.from)?.find((d) => d.shopId === l.to)?.points, truckCount(l.qty, 25, this.low ? 4 : 8), 0xf97316);
+    for (const x of exports) addTrucks(routing.exportPaths.get(x.id), truckCount(x.qty, 80, this.low ? 2 : 4), 0x94a3b8);
+    const n = Math.min(this.truckState.length, this.low ? 60 : 160);
     this.truckState.length = n;
     if (!n) return;
     const geo = sharedGeometry('truck', () => {
@@ -245,7 +252,7 @@ export class CityScene {
   private layout: CityLayout | null = null;
   private cars: THREE.InstancedMesh | null = null;
   private carState: { path: number; s: number; dir: 1 | -1; speed: number }[] = [];
-  private paths: { pts: THREE.Vector3[]; cum: number[]; total: number; weight?: number }[] = [];
+  private paths: { pts: THREE.Vector3[]; cum: number[]; total: number; weight?: number; roadId?: number }[] = [];
   private trafficEfficiency = 1;
 
   private trafficRouting: unknown = null;
@@ -254,6 +261,9 @@ export class CityScene {
    * Voitures sur chaque tronçon relié : un minimum partout pour que toute la voirie vive, plus une densité
    * proportionnelle aux trajets qui l'empruntent (domicile-travail, commerces, fret).
    */
+  /** Vitesse relative des voitures par tronçon (1 = fluide) : un tronçon saturé se voit à l'écran. */
+  private roadEfficiency = new Map<number, number>();
+
   private updateTraffic(city: CityState) {
     const routing = this.layout?.routing;
     const trips = city.stats?.traffic.trips ?? 0;
@@ -280,7 +290,7 @@ export class CityScene {
     // Chaque tronçon est un aller-retour ; son poids dépend de son trafic (un tronçon vide garde un poids de base).
     this.paths = edges.map((e) => {
       const pts = [new THREE.Vector3(e.ax - HALF, 0.9, e.ay - HALF), new THREE.Vector3(e.bx - HALF, 0.9, e.by - HALF)];
-      return { pts, cum: [0, pts[0]!.distanceTo(pts[1]!)], total: pts[0]!.distanceTo(pts[1]!), weight: 1 + 8 * ((load.get(e.id) ?? 0) / maxLoad) };
+      return { pts, cum: [0, pts[0]!.distanceTo(pts[1]!)], total: pts[0]!.distanceTo(pts[1]!), weight: 1 + 8 * ((load.get(e.id) ?? 0) / maxLoad), roadId: e.roadId };
     });
     if (!this.paths.length) return;
     const geo = sharedGeometry('car', () => new THREE.BoxGeometry(4.4, 1.6, 2));
@@ -314,7 +324,7 @@ export class CityScene {
   /** Avance des véhicules instanciés le long de leurs tracés (aller-retour, circulation à droite). */
   private moveAlong(
     mesh: THREE.InstancedMesh, states: { path: number; s: number; dir: 1 | -1; speed: number }[],
-    paths: { pts: THREE.Vector3[]; cum: number[]; total: number }[], dt: number, slow: number, height: number,
+    paths: { pts: THREE.Vector3[]; cum: number[]; total: number; roadId?: number }[], dt: number, slow: number, height: number,
   ) {
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
@@ -322,7 +332,9 @@ export class CityScene {
     const pos = new THREE.Vector3();
     states.forEach((c, i) => {
       const p = paths[c.path]!;
-      c.s += c.dir * c.speed * slow * dt * 4;
+      // Un tronçon saturé ralentit ses véhicules : l'embouteillage se voit sur la route.
+      const jam = p.roadId !== undefined ? this.roadEfficiency.get(p.roadId) ?? 1 : 1;
+      c.s += c.dir * c.speed * slow * jam * dt * 4;
       if (c.s > p.total) { c.s = p.total; c.dir = -1; }
       if (c.s < 0) { c.s = 0; c.dir = 1; }
       let k = 1;

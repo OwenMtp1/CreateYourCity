@@ -323,6 +323,36 @@ export function buildModel(type: BuildingType, seed: number): { group: THREE.Gro
       info.height = 8;
       break;
     }
+    case 'urban_forest': {
+      // Boisement dense : sol forestier et arbres serrés, sentier au centre.
+      g.add(ground(W, D, 0x3f6b35));
+      const trail = ground(4, D, 0xb8a77a);
+      trail.position.y = 0.09;
+      g.add(trail);
+      for (let i = 0; i < 26; i++) {
+        const x = (rnd() - 0.5) * (W - 4);
+        const z = (rnd() - 0.5) * (D - 4);
+        if (Math.abs(x) < 4) continue;
+        g.add(tree(x, z, 1.1 + rnd() * 0.7, rnd));
+      }
+      info.height = 10;
+      break;
+    }
+    case 'solar_plant': {
+      // Champ de panneaux inclinés, onduleur au bord.
+      g.add(ground(W, D, 0x8a9199));
+      const panelMat = solid(0x1e3a5f, { roughness: 0.2, metalness: 0.6 });
+      for (let row = -1; row <= 1; row++) {
+        for (let col = -1; col <= 1; col++) {
+          const panel = box(9, 0.5, 6, panelMat, col * 12, 2.2, row * 11);
+          panel.rotation.x = -0.45;
+          g.add(panel);
+        }
+      }
+      g.add(box(6, 3, 4, solid(0xd1d5db), W / 2 - 6, 1.5, D / 2 - 6));
+      info.height = 5;
+      break;
+    }
     case 'barracks': {
       g.add(ground(W, D, 0x8a8a6a));
       const khaki = facade('brick', 50, 7);
