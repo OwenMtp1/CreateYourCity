@@ -6,7 +6,7 @@ import { MapControls } from 'three/addons/controls/MapControls.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import {
-  BUILDINGS, CITY_SIZE_M, footprint, segmentEfficiency, generateTerrain, hashString, mulberry32, REGIONAL_ACCESS, ROADS, seaBand, segmentLength,
+  BUILDINGS, CITY_SIZE_M, footprint, generateTerrain, hashString, mulberry32, REGIONAL_ACCESS, ROADS, seaBand, segmentLength,
   roadTerrain, terrainAt, TerrainKind, analyzeLayout, type BuildingType, type CityLayers, type CityLayout, type CityState, type Point, type RoadType, type Segment,
 } from '@cyc/shared';
 import { getQuality } from './quality.ts';
