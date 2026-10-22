@@ -90,6 +90,9 @@ export interface CityStats {
 
 export type CampaignKind = 'jobs' | 'attract';
 
+/** Élément démoli, gardé pour reconstituer la ville à une date passée (vue historique). */
+export type RemovedItem = { removedAtTick: number } & ({ kind: 'building'; item: Building } | { kind: 'road'; item: Road });
+
 export interface CityState {
   schemaVersion: number;
   cityId: string;
@@ -99,6 +102,8 @@ export interface CityState {
   /** Dernier tick simulé pour cette ville. */
   tick: number;
   claimedAtTick: number;
+  /** Démolitions récentes (les plus anciennes sont oubliées) : permettent la vue historique. */
+  removed?: RemovedItem[];
   treasury: number;
   debt: number;
   population: number;
@@ -220,6 +225,8 @@ export interface SupplyLink {
 /** Vue publique d'une ville appartenant à un autre joueur (informations générales). */
 export interface CitySummary {
   cityId: string;
+  /** Silhouette : 16 colonnes d'ouest en est, hauteur relative 0..1 (densité de logements et d'emplois). */
+  skyline?: number[];
   countryId: string;
   ownerId: string;
   ownerName: string;

@@ -1,5 +1,5 @@
 // Vue 3D de construction : outils, accrochage, aperçu validé par les règles partagées.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   closestPointOnSegment, connectRoadEnds, curvePoints, footprint, gameHour, pointSegmentDistance, REGIONAL_ACCESS, ROADS, roundaboutPoints, validateRoadPath,
   validateBuilding, validateRoad, type BuildingType, type CityLayers, type CityState, type Point, type RoadType, type ValidationResult,
@@ -9,6 +9,7 @@ import { useGame } from '../state.ts';
 import { useIsMobile } from '../ui/mobile.ts';
 import { fmtMoney } from '../ui/format.ts';
 import { CityScene, type CityLayer } from './CityScene.ts';
+import { cityAt } from '@cyc/shared';
 
 export type RoadMode = 'straight' | 'curve' | 'roundabout';
 
@@ -31,10 +32,15 @@ interface Props {
   dayNight: boolean;
   /** Recentrage demandé sur un point de la ville (n change à chaque demande). */
   focus?: { x: number; y: number; n: number } | null;
+  /** Instant affiché en vue historique (null : la ville d'aujourd'hui). */
+  historyTick?: number | null;
 }
 
 export function CityView3D(props: Props) {
-  const { city, layers, tool, grid, layer, selected, dayNight } = props;
+  const { tool, grid, layer, selected, dayNight, historyTick } = props;
+  // Vue historique : la ville telle qu'elle était à cet instant, en lecture seule (sans couches économiques).
+  const city = useMemo(() => (historyTick == null ? props.city : cityAt(props.city, historyTick)), [props.city, historyTick]);
+  const layers = historyTick == null ? props.layers : null;
   const ref = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<CityScene | null>(null);
   const propsRef = useRef(props);
@@ -154,6 +160,10 @@ export function CityView3D(props: Props) {
     const scene = sceneRef.current;
     const cur = cursor.current;
     if (!scene || !cur || scene.street) return;
+    if (propsRef.current.historyTick != null) {
+      scene.setPreview(null);
+      return;
+    }
     const p = scene.screenToCity(cur.sx, cur.sy);
     const { tool: t, city: c } = propsRef.current;
     if (!p) return;
@@ -245,6 +255,8 @@ export function CityView3D(props: Props) {
    * s'affiche et la commande attend la confirmation (barre ✓ / ↻ / ✕), pour éviter les constructions involontaires.
    */
   const apply = async (sx: number, sy: number, confirmed: boolean) => {
+    // Lecture seule en vue historique : aucune construction, démolition ni sélection d'outil.
+    if (propsRef.current.historyTick != null) return;
     const scene = sceneRef.current;
     const p = scene?.screenToCity(sx, sy);
     if (!p) return;

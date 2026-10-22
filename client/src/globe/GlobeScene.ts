@@ -24,7 +24,7 @@ export interface GlobeArmy {
 }
 
 export interface GlobeData {
-  owners: Map<string, { relation: Relation; label: string; independent?: boolean }>;
+  owners: Map<string, { relation: Relation; label: string; independent?: boolean; skyline?: number[] }>;
   playedCountries: Set<string>;
   selectedCountry: string | null;
   selectedCity: string | null;
@@ -521,7 +521,7 @@ export class GlobeScene {
     const boxes: [number, number, number, number][] = [];
     let used = 0;
     const labelRank = Math.max(0, maxRank - 1);
-    const place = (i: number, text: string, cls: string) => {
+    const place = (i: number, text: string, cls: string, skyline?: number[]) => {
       if (used >= 90) return;
       const p = this.cityPositions[i]!;
       if (p.dot(camDir) < 0.25) return;
@@ -541,6 +541,17 @@ export class GlobeScene {
       }
       el.className = `globe-label ${cls}`;
       el.textContent = text;
+      if (skyline) {
+        // Silhouette de la ville : une colonne par tranche, hauteur selon la densité.
+        const sky = document.createElement('span');
+        sky.className = 'skyline';
+        for (const h of skyline) {
+          const bar = document.createElement('span');
+          bar.style.height = `${Math.max(2, Math.round(h * 22))}px`;
+          sky.appendChild(bar);
+        }
+        el.appendChild(sky);
+      }
       el.style.transform = `translate(${Math.round(x + 7)}px, ${Math.round(y - 8)}px)`;
       el.style.display = '';
       used++;
@@ -549,7 +560,7 @@ export class GlobeScene {
     WORLD_CITIES.forEach((c, i) => { if (c.id === this.data.selectedCity) place(i, c.name, 'sel'); });
     WORLD_CITIES.forEach((c, i) => {
       const o = this.data.owners.get(c.id);
-      if (o && c.id !== this.data.selectedCity) place(i, `${o.independent ? '⚑ ' : ''}${c.name} · ${o.label}`, `occupied${o.relation === 'mine' ? ' mine' : ''}${o.independent ? ' independent' : ''}`);
+      if (o && c.id !== this.data.selectedCity) place(i, `${o.independent ? '⚑ ' : ''}${c.name} · ${o.label}`, `occupied${o.relation === 'mine' ? ' mine' : ''}${o.independent ? ' independent' : ''}`, o.skyline);
     });
     WORLD_CITIES.forEach((c, i) => {
       if (c.rank <= labelRank && !this.data.owners.has(c.id) && c.id !== this.data.selectedCity) place(i, c.name, '');

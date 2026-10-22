@@ -7,7 +7,7 @@ import { GlobeView } from '../globe/GlobeView.tsx';
 import { client } from '../net/client.ts';
 import { activeCity, setState, toast, useGame } from '../state.ts';
 import { fmtInt, fmtMoney } from '../ui/format.ts';
-import { BuildPanel, DisplayOptions, EconomyPanel, MobileBuildBar, PopulationPanel, ServicesPanel } from '../ui/panels/city.tsx';
+import { BuildPanel, DisplayOptions, EconomyPanel, HistoryPanel, MobileBuildBar, PopulationPanel, ServicesPanel } from '../ui/panels/city.tsx';
 import { ArmyPanel, DiplomacyPanel, LobbyPanel, NationPanel, TerritoryPanel, TradePanel } from '../ui/panels/world.tsx';
 import { StatusBadge } from '../ui/StatusBadge.tsx';
 import { AdvisorsPanel, StatsPanel, useAdvice } from '../ui/panels/insights.tsx';
@@ -16,7 +16,7 @@ import type { Building } from '@cyc/shared';
 import { Tutorial } from '../ui/Tutorial.tsx';
 import { fmtShort, isMobile, useIsMobile } from '../ui/mobile.ts';
 
-type Tab = 'build' | 'display' | 'buildings' | 'advisors' | 'stats' | 'economy' | 'population' | 'services' | 'territory' | 'trade' | 'diplomacy' | 'army' | 'nation' | 'lobby';
+type Tab = 'history' | 'build' | 'display' | 'buildings' | 'advisors' | 'stats' | 'economy' | 'population' | 'services' | 'territory' | 'trade' | 'diplomacy' | 'army' | 'nation' | 'lobby';
 const TABS: { id: Tab; icon: string; label: string; city?: boolean }[] = [
   { id: 'build', icon: '🏗️', label: 'Construire', city: true },
   { id: 'buildings', icon: '🏘️', label: 'Bâtiments', city: true },
@@ -26,6 +26,7 @@ const TABS: { id: Tab; icon: string; label: string; city?: boolean }[] = [
   { id: 'population', icon: '👥', label: 'Population', city: true },
   { id: 'services', icon: '🏥', label: 'Services', city: true },
   { id: 'display', icon: '🎛️', label: 'Affichage', city: true },
+  { id: 'history', icon: '🕰️', label: 'Historique', city: true },
   { id: 'territory', icon: '🗺️', label: 'Territoire' },
   { id: 'trade', icon: '📦', label: 'Commerce' },
   { id: 'diplomacy', icon: '🤝', label: 'Diplomatie' },
@@ -46,6 +47,8 @@ export function GameScreen() {
   const [layer, setLayer] = useState<CityLayer>('none');
   const [selected, setSelected] = useState<number | null>(null);
   const [dayNight, setDayNight] = useState(true);
+  /** Instant affiché en vue historique (null : aujourd'hui). */
+  const [historyTick, setHistoryTick] = useState<number | null>(null);
   /** Demande de recentrage de la caméra sur un bâtiment (n change à chaque demande). */
   const [focus, setFocus] = useState<{ x: number; y: number; n: number } | null>(null);
   const focusOn = (b: Building) => {
@@ -80,6 +83,8 @@ export function GameScreen() {
   const alerts = advice.filter((a) => a.severity !== 'info').length;
   useEventNotifications();
   useEffect(() => { if (tab === 'economy') setVisitedEconomy(true); }, [tab]);
+  // La vue historique ne reste active que tant que son panneau est ouvert.
+  useEffect(() => { if (tab !== 'history') setHistoryTick(null); }, [tab]);
   useEffect(() => { if (view === 'globe' && cityCount > 0) setVisitedGlobe(true); }, [view, cityCount]);
 
   const showCity = view === 'city' && city;
@@ -92,7 +97,7 @@ export function GameScreen() {
       <div className="viewport">
         {showCity ? (
           <CityView3D city={city} layers={layers} tool={tool} setTool={setTool} grid={grid} setGrid={setGrid}
-            layer={layer} selected={selected} setSelected={setSelected} dayNight={dayNight} focus={focus} />
+            layer={layer} selected={selected} setSelected={setSelected} dayNight={dayNight} focus={focus} historyTick={historyTick} />
         ) : (
           <GlobeView />
         )}
@@ -163,6 +168,7 @@ export function GameScreen() {
             {tab === 'economy' && <EconomyPanel onSelect={openBuilding} />}
             {tab === 'population' && <PopulationPanel />}
             {tab === 'services' && <ServicesPanel layer={layer} setLayer={setLayer} />}
+            {tab === 'history' && city && <HistoryPanel city={city} value={historyTick} onChange={setHistoryTick} />}
             {tab === 'territory' && <TerritoryPanel />}
             {tab === 'trade' && <TradePanel />}
             {tab === 'diplomacy' && <DiplomacyPanel />}

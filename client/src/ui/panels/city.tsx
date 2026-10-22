@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
-  BUILDING_TYPES, BUILDINGS, MAX_DEBT, MAX_TAX_RATE, PARKING, POPULATION_POLICY, ROAD_TYPES, ROADS, SERVICE_KINDS, TICKS_PER_DAY,
-  type Building, type BuildingCategory, type CampaignKind, type ServiceKind,
+  BUILDING_TYPES, BUILDINGS, formatGameTime, MAX_DEBT, MAX_TAX_RATE, PARKING, POPULATION_POLICY, ROAD_TYPES, ROADS, SERVICE_KINDS, TICKS_PER_DAY,
+  type Building, type BuildingCategory, type CampaignKind, type CityState, type ServiceKind,
 } from '@cyc/shared';
 import { CITY_BY_ID } from '@cyc/shared/world';
 import { distanceKm } from '@cyc/shared/game';
@@ -305,6 +305,27 @@ export function EconomyPanel({ onSelect }: { onSelect?: (b: Building) => void })
 
       {s && <GoodsCircuit />}
       {s && <Businesses onSelect={onSelect} />}
+    </div>
+  );
+}
+
+/** Curseur de la vue historique : la ville telle qu'elle était à une date (lecture seule). */
+export function HistoryPanel({ city, value, onChange }: { city: CityState; value: number | null; onChange: (t: number | null) => void }) {
+  const now = city.tick;
+  const from = city.claimedAtTick;
+  const shown = value ?? now;
+  const built = city.buildings.length + (city.removed ?? []).filter((r) => r.kind === 'building').length;
+  return (
+    <div className="stack">
+      <p className="small muted">Remontez le temps pour voir comment la ville s'est construite. Lecture seule : rien ne se modifie.</p>
+      <input type="range" min={from} max={now} step={TICKS_PER_DAY} value={shown}
+        onChange={(e) => onChange(Number(e.target.value) >= now ? null : Number(e.target.value))} />
+      <div className="row">
+        <strong>{formatGameTime(shown)}</strong>
+        {value !== null && <button className="small-btn" onClick={() => onChange(null)}>Revenir à aujourd'hui</button>}
+      </div>
+      <Row label="Ville fondée" value={formatGameTime(from)} />
+      <Row label="Bâtiments connus (y compris démolis)" value={fmtInt(built)} />
     </div>
   );
 }

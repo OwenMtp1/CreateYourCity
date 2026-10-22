@@ -74,8 +74,8 @@ export function GlobeView() {
   }, [generation]);
 
   const data: GlobeData = useMemo(() => {
-    const owners = new Map<string, { relation: Relation; label: string; independent?: boolean }>();
-    for (const s of summaries) owners.set(s.cityId, { relation: relationOf(world, player?.id, s.ownerId), label: s.ownerName, independent: !!s.independent });
+    const owners = new Map<string, { relation: Relation; label: string; independent?: boolean; skyline?: number[] }>();
+    for (const s of summaries) owners.set(s.cityId, { relation: relationOf(world, player?.id, s.ownerId), label: s.ownerName, independent: !!s.independent, skyline: s.skyline });
     const armies = (world?.armies ?? []).map((a) => ({
       id: a.id,
       position: a.position,

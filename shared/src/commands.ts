@@ -9,7 +9,10 @@ import {
 } from './geometry.ts';
 import { getLayout } from './sim/layout.ts';
 import { generateTerrain, rectTerrain, roadTerrain, terrainAt, TerrainKind } from './terrain.ts';
-import type { CampaignKind, CityState, TaxRates } from './types.ts';
+import type { Building, CampaignKind, CityState, Road, TaxRates } from './types.ts';
+
+/** Nombre de démolitions gardées pour la vue historique. */
+export const REMOVED_HISTORY_LIMIT = 400;
 
 export type CityCommand =
   | { type: 'build'; building: BuildingType; x: number; y: number; rotation: 0 | 90 }
@@ -208,7 +211,12 @@ export function applyCityCommand(city: CityState, cmd: CityCommand): CommandResu
       const list: { id: number }[] = cmd.target === 'building' ? city.buildings : city.roads;
       const idx = list.findIndex((e) => e.id === cmd.id);
       if (idx < 0) return { ok: false, reason: 'Élément introuvable.' };
-      list.splice(idx, 1);
+      const [gone] = list.splice(idx, 1) as ({ id: number } & (Building | Road))[];
+      // Mémorise la démolition pour la vue historique (plafonnée).
+      const entry = cmd.target === 'building'
+        ? { kind: 'building' as const, item: gone as Building, removedAtTick: city.tick }
+        : { kind: 'road' as const, item: gone as Road, removedAtTick: city.tick };
+      city.removed = [...(city.removed ?? []), entry].slice(-REMOVED_HISTORY_LIMIT);
       city.layoutVersion++;
       return { ok: true, cost: 0 };
     }

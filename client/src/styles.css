@@ -167,6 +167,9 @@ button.build { display: flex; flex-direction: column; align-items: flex-start; g
 .globe-label.sel { color: #fff; font-weight: 700; font-size: 13px; }
 .globe-label.occupied { color: #4ade80; font-weight: 600; }
 .globe-label.occupied.mine { font-weight: 700; }
+/* Silhouette de la ville, sous son nom sur le globe */
+.skyline { display: flex; align-items: flex-end; gap: 1px; height: 22px; margin-top: 1px; opacity: 0.85; }
+.skyline span { width: 3px; background: linear-gradient(#86efac, #166534); border-radius: 1px 1px 0 0; }
 .globe-label.occupied.independent { color: #fca5a5; }
 .globe-search { position: absolute; top: 72px; right: 10px; width: 300px; border-radius: 14px; padding: 0.5rem; z-index: 4; }
 .globe-search .list { margin-top: 0.4rem; }
