@@ -1,9 +1,10 @@
 // Analyse géométrique de l'agencement d'une ville : raccordement des routes, desserte des
 // bâtiments, zones de service et pollution. Recalculée seulement quand layoutVersion change.
 import { BUILDINGS, type TransitMode } from '../catalog.ts';
-import { buildRouting, type Routing } from './routing.ts';
+import { buildRouting, ROAD_SPEED_KMH, type Routing } from './routing.ts';
+import { busRoutes, nearRoute, type TransitRoute } from './transit.ts';
 import { COMMERCE, REGIONAL_ACCESS, ROAD_ACCESS_DISTANCE, ROAD_JOIN_TOLERANCE } from '../constants.ts';
-import { buildingRect, pointSegmentDistance, rectDistance, roadWidth, segmentDistance, segmentRectDistance } from '../geometry.ts';
+import { buildingRect, pointSegmentDistance, rectCenter, rectDistance, roadWidth, segmentDistance, segmentRectDistance } from '../geometry.ts';
 import type { BuildingStatus, CityState } from '../types.ts';
 
 export interface CityLayout {
@@ -18,6 +19,8 @@ export interface CityLayout {
   pollution: Map<number, number>;
   /** Modes de transport en commun desservant chaque logement. */
   transitCover: Map<number, Set<TransitMode>>;
+  /** Lignes de bus : tracés suivant les routes entre les stations. */
+  busRoutes: TransitRoute[];
   /** Graphe routier et répartition des itinéraires. */
   routing: Routing;
   /** Clientèle de chaque commerce : logements à moins du rayon de chalandise, du plus proche au plus lointain. */
@@ -113,7 +116,7 @@ export function analyzeLayout(city: CityState): CityLayout {
   const transitCover = new Map<number, Set<TransitMode>>(residential.map((r) => [r.id, new Set()]));
   for (const s of buildings) {
     const t = BUILDINGS[s.type].transit;
-    if (!t || status.get(s.id) !== 'ok') continue;
+    if (!t || status.get(s.id) !== 'ok' || t.mode === 'bus') continue;
     const srect = buildingRect(s);
     for (const r of residential) if (rectDistance(srect, buildingRect(r)) <= t.radius) transitCover.get(r.id)!.add(t.mode);
   }
@@ -138,7 +141,14 @@ export function analyzeLayout(city: CityState): CityLayout {
   }
   const connected = new Set([...roadConnected].filter(([, v]) => v).map(([k]) => k));
   const routing = buildRouting(city, connected, access, buildings.filter((b) => status.get(b.id) === 'ok'));
-  return { key: `${city.cityId}:${city.layoutVersion}`, roadConnected, access, status, serviceReach, pollution, transitCover, routing, shopReach, educatedOffices };
+  // Bus : desservi le long du tracé des lignes (sur les routes), pas autour de la station.
+  const roadSpeed = new Map(roads.map((r) => [r.id, ROAD_SPEED_KMH[r.type === 'bridge' ? 'bridge' : r.type === 'avenue' ? 'avenue' : 'street']]));
+  const busStations = buildings.filter((b) => BUILDINGS[b.type].transit?.mode === 'bus' && status.get(b.id) === 'ok');
+  const busLines = busRoutes(routing, busStations, (id) => roadSpeed.get(id) ?? 30, (b) => rectCenter(buildingRect(b)));
+  for (const line of busLines) {
+    for (const r of residential) if (nearRoute(line, buildingRect(r))) transitCover.get(r.id)!.add('bus');
+  }
+  return { key: `${city.cityId}:${city.layoutVersion}`, roadConnected, access, status, serviceReach, pollution, transitCover, busRoutes: busLines, routing, shopReach, educatedOffices };
 }
 
 const layoutCache = new WeakMap<CityState, CityLayout>();

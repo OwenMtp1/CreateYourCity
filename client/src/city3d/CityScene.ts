@@ -369,59 +369,68 @@ export class CityScene {
       metro: { color: 0xfacc15, y: 9, vehicle: () => box3(40, 3.2, 3, 0xe5e7eb), speed: 22 },
     } as const;
     for (const mode of ['bus', 'tram', 'metro'] as const) {
-      const stations = city.buildings.filter((b) => BUILDINGS[b.type].transit?.mode === mode && this.layout?.status.get(b.id) === 'ok');
-      if (stations.length < 2) continue;
-      // Chaîne du plus proche voisin, depuis la station la plus à l'ouest.
-      const rest = [...stations].sort((a, b) => a.x - b.x);
-      const chain = [rest.shift()!];
-      while (rest.length) {
-        const last = chain.at(-1)!;
-        rest.sort((a, b) => Math.hypot(a.x - last.x, a.y - last.y) - Math.hypot(b.x - last.x, b.y - last.y));
-        chain.push(rest.shift()!);
-      }
       const st = style[mode];
-      const pts = chain.map((b) => new THREE.Vector3(b.x - HALF, st.y, b.y - HALF));
-      const cum = [0];
-      for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1]! + pts[i]!.distanceTo(pts[i - 1]!));
-      for (let i = 0; i < pts.length - 1; i++) {
-        const a = pts[i]!, b = pts[i + 1]!;
-        const len = a.distanceTo(b);
-        const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
-        const angle = Math.atan2(b.z - a.z, b.x - a.x);
-        if (mode === 'metro') {
-          const deck = new THREE.Mesh(new THREE.BoxGeometry(len, 1.2, 6), solid(0x9ca3af));
-          deck.position.copy(mid).setY(st.y - 1.4);
-          deck.rotation.y = -angle;
-          deck.castShadow = deck.receiveShadow = true;
-          this.transitGroup.add(deck);
-          for (let k = 0; k <= Math.floor(len / 40); k++) {
-            const p = new THREE.Vector3().lerpVectors(a, b, len > 0 ? (k * 40) / len : 0);
-            const pillar = new THREE.Mesh(sharedGeometry('pillar', () => new THREE.CylinderGeometry(0.8, 1, 7.6, 8)), solid(0xa8a29e));
-            pillar.position.set(p.x, 3.8, p.z);
-            pillar.castShadow = true;
-            this.transitGroup.add(pillar);
-          }
-        } else if (mode === 'tram') {
-          for (const off of [-0.8, 0.8]) {
-            const rail = new THREE.Mesh(new THREE.BoxGeometry(len, 0.2, 0.25), solid(0xd1d5db, { metalness: 0.8, roughness: 0.3 }));
-            rail.position.copy(mid).add(new THREE.Vector3(-Math.sin(angle) * off, 0, Math.cos(angle) * off));
-            rail.rotation.y = -angle;
-            this.transitGroup.add(rail);
-          }
-        } else {
-          const line = new THREE.Mesh(new THREE.PlaneGeometry(len, 1.2), new THREE.MeshBasicMaterial({ color: st.color, transparent: true, opacity: 0.55, depthWrite: false }));
-          line.rotation.x = -Math.PI / 2;
-          line.rotation.z = -angle;
-          line.position.copy(mid).setY(0.6);
-          this.transitGroup.add(line);
+      // Bus : tracés suivant les routes (calculés par la simulation). Tram et métro : chaîne de stations, voie propre.
+      let chains: THREE.Vector3[][] = [];
+      if (mode === 'bus') {
+        chains = (this.layout?.busRoutes ?? []).map((r) => r.points.map((p) => new THREE.Vector3(p.x - HALF, st.y, p.y - HALF)));
+      } else {
+        const stations = city.buildings.filter((b) => BUILDINGS[b.type].transit?.mode === mode && this.layout?.status.get(b.id) === 'ok');
+        if (stations.length < 2) continue;
+        // Chaîne du plus proche voisin, depuis la station la plus à l'ouest.
+        const rest = [...stations].sort((a, b) => a.x - b.x);
+        const chain = [rest.shift()!];
+        while (rest.length) {
+          const last = chain.at(-1)!;
+          rest.sort((a, b) => Math.hypot(a.x - last.x, a.y - last.y) - Math.hypot(b.x - last.x, b.y - last.y));
+          chain.push(rest.shift()!);
         }
+        chains = [chain.map((b) => new THREE.Vector3(b.x - HALF, st.y, b.y - HALF))];
       }
-      const total = cum.at(-1)!;
-      const count = Math.max(1, Math.min(4, Math.round(total / 400)));
-      for (let k = 0; k < count; k++) {
-        const mesh = st.vehicle();
-        this.transitGroup.add(mesh);
-        this.vehicles.push({ mesh, pts, cum, total, s: (k / count) * total, dir: k % 2 ? -1 : 1, speed: st.speed });
+      for (const pts of chains) {
+        if (pts.length < 2) continue;
+        const cum = [0];
+        for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1]! + pts[i]!.distanceTo(pts[i - 1]!));
+        for (let i = 0; i < pts.length - 1; i++) {
+          const a = pts[i]!, b = pts[i + 1]!;
+          const len = a.distanceTo(b);
+          const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
+          const angle = Math.atan2(b.z - a.z, b.x - a.x);
+          if (mode === 'metro') {
+            const deck = new THREE.Mesh(new THREE.BoxGeometry(len, 1.2, 6), solid(0x9ca3af));
+            deck.position.copy(mid).setY(st.y - 1.4);
+            deck.rotation.y = -angle;
+            deck.castShadow = deck.receiveShadow = true;
+            this.transitGroup.add(deck);
+            for (let k = 0; k <= Math.floor(len / 40); k++) {
+              const p = new THREE.Vector3().lerpVectors(a, b, len > 0 ? (k * 40) / len : 0);
+              const pillar = new THREE.Mesh(sharedGeometry('pillar', () => new THREE.CylinderGeometry(0.8, 1, 7.6, 8)), solid(0xa8a29e));
+              pillar.position.set(p.x, 3.8, p.z);
+              pillar.castShadow = true;
+              this.transitGroup.add(pillar);
+            }
+          } else if (mode === 'tram') {
+            for (const off of [-0.8, 0.8]) {
+              const rail = new THREE.Mesh(new THREE.BoxGeometry(len, 0.2, 0.25), solid(0xd1d5db, { metalness: 0.8, roughness: 0.3 }));
+              rail.position.copy(mid).add(new THREE.Vector3(-Math.sin(angle) * off, 0, Math.cos(angle) * off));
+              rail.rotation.y = -angle;
+              this.transitGroup.add(rail);
+            }
+          } else {
+            const line = new THREE.Mesh(new THREE.PlaneGeometry(len, 1.2), new THREE.MeshBasicMaterial({ color: st.color, transparent: true, opacity: 0.55, depthWrite: false }));
+            line.rotation.x = -Math.PI / 2;
+            line.rotation.z = -angle;
+            line.position.copy(mid).setY(0.6);
+            this.transitGroup.add(line);
+          }
+        }
+        const total = cum.at(-1)!;
+        const count = Math.max(1, Math.min(4, Math.round(total / 400)));
+        for (let k = 0; k < count; k++) {
+          const mesh = st.vehicle();
+          this.transitGroup.add(mesh);
+          this.vehicles.push({ mesh, pts, cum, total, s: (k / count) * total, dir: k % 2 ? -1 : 1, speed: st.speed });
+        }
       }
     }
   }
