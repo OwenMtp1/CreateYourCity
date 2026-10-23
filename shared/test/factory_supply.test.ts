@@ -56,4 +56,15 @@ describe('approvisionnement des commerces par usine', () => {
     const c = city();
     expect(applyCityCommand(c, { type: 'setFactorySupply', id: factory(c).id, shops: [999999], exportSurplus: true }).ok).toBe(false);
   });
+
+  it("un commerce garde sa demande affichée même quand l'usine le remplit entièrement", () => {
+    const c = city();
+    const layers = simulateTick(c);
+    const shop = shops(c)[0]!;
+    const demand = layers.economy![shop]!.demand!;
+    expect(demand).toBeGreaterThan(0);
+    applyCityCommand(c, { type: 'setFactorySupply', id: factory(c).id, shops: null, exportSurplus: true });
+    const again = simulateTick(c);
+    expect(again.economy![shop]!.demand).toBeCloseTo(demand, 5);
+  });
 });

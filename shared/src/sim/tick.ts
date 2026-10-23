@@ -349,7 +349,8 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
       commercialTax += tax;
       economy[b.id] = {
         revenue, costs: purchases + wages, profit, tax, customers: (shopCustomers.get(b.id) ?? 0) * (wanted > 0 ? q / wanted : 0), sold: q, local: local.qty, contract,
-        catchment: shopCatchment.get(b.id) ?? 0, staffed: staff(b.id) > 0, powered: utilitySupply > 0,
+        catchment: shopCatchment.get(b.id) ?? 0, demand: (shopCatchment.get(b.id) ?? 0) * ECONOMY.goodsDemandPerResident,
+        staffed: staff(b.id) > 0, powered: utilitySupply > 0,
         imported: imp, unitCost: q > 0 ? purchases / q : 0,
       };
     } else if (def.officeRevenue) {

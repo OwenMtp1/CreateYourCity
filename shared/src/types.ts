@@ -200,6 +200,8 @@ export interface BuildingEconomy {
   customers?: number;
   /** Habitants dans la zone de chalandise, et conditions de vente (emploi, électricité et eau). */
   catchment?: number;
+  /** Demande de biens des habitants de la zone (biens/j), indépendante des livraisons. */
+  demand?: number;
   staffed?: boolean;
   powered?: boolean;
   sold?: number;

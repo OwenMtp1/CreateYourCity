@@ -230,42 +230,51 @@ function Workers({ city, b }: { city: CityState; b: Building }) {
 const SECTOR_LABEL: Record<Sector, string> = { commerce: 'commerce', bureaux: 'bureaux', industrie: 'industrie', services: 'services' };
 
 /**
- * Approvisionnement d'une usine : choix des commerces livrés et export du surplus (sinon stock).
+ * Approvisionnement d'une usine : liste des commerces avec leur demande ; un clic pour les approvisionner.
+ * La demande reste affichée même si d'autres usines la couvrent : on voit ce qui reste à couvrir.
  */
 function FactorySupply({ city, b, layers }: { city: CityState; b: Building; layers: CityLayers | null }) {
   const shops = city.buildings.filter((x) => BUILDINGS[x.type].goodsSalesCapacityPerDay);
-  const current = b.supplyShops;
-  const [all, setAll] = useState(current === undefined);
-  const [picked, setPicked] = useState<number[]>(current ?? shops.map((x) => x.id));
-  const [exportSurplus, setExportSurplus] = useState(b.exportSurplus !== false);
-  const dirty = all !== (current === undefined)
-    || (!all && picked.slice().sort().join() !== (current ?? []).slice().sort().join())
-    || exportSurplus !== (b.exportSurplus !== false);
+  const shopIds = shops.map((x) => x.id);
+  // Sans liste explicite, l'usine approvisionne tous les commerces.
+  const served = new Set(b.supplyShops ?? shopIds);
+  const exportSurplus = b.exportSurplus !== false;
+  const save = (ids: number[], exp = exportSurplus) => {
+    const all = shopIds.every((id) => ids.includes(id));
+    void client.cityCommand({ type: 'setFactorySupply', id: b.id, shops: all ? null : ids, exportSurplus: exp });
+  };
+  const toggle = (id: number) => save(served.has(id) ? [...served].filter((x) => x !== id) : [...served, id]);
   const stock = layers?.economy?.[b.id]?.stock ?? b.stock ?? 0;
-  const apply = () => void client.cityCommand({ type: 'setFactorySupply', id: b.id, shops: all ? null : picked, exportSurplus });
   return (
-    <form className="stack supply" onSubmit={(e) => { e.preventDefault(); apply(); }}>
+    <div className="stack supply">
       <h4>Approvisionnement</h4>
-      <label className="check"><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> Livrer tous les commerces (par proximité)</label>
-      {!all && (
-        <div className="stack">
-          {shops.length === 0 && <p className="small muted">Aucun commerce dans la ville pour l'instant.</p>}
-          {shops.map((x) => {
-            const link = layers?.supply?.find((l) => l.from === b.id && l.to === x.id);
-            return (
-              <label key={x.id} className="check">
-                <input type="checkbox" checked={picked.includes(x.id)}
-                  onChange={(e) => setPicked(e.target.checked ? [...picked, x.id] : picked.filter((id) => id !== x.id))} />
-                Commerce #{x.id} {link ? <span className="small muted">· {fmtInt(link.qty)} biens/j</span> : null}
-              </label>
-            );
-          })}
-        </div>
-      )}
-      <label className="check"><input type="checkbox" checked={exportSurplus} onChange={(e) => setExportSurplus(e.target.checked)} /> Exporter le surplus</label>
-      {!exportSurplus && <p className="small muted">Stock conservé : {fmtInt(stock)} biens (jusqu'à {FACTORY_STOCK_DAYS} jours de production), en attente d'un commerce.</p>}
-      <button type="submit" disabled={!dirty}>Appliquer</button>
-    </form>
+      {shops.length === 0 && <p className="small muted">Aucun commerce dans la ville pour l'instant.</p>}
+      {shops.map((x) => {
+        const demand = layers?.economy?.[x.id]?.demand ?? 0;
+        const links = (layers?.supply ?? []).filter((l) => l.to === x.id);
+        const fromThis = links.find((l) => l.from === b.id)?.qty ?? 0;
+        const total = links.reduce((sum, l) => sum + l.qty, 0);
+        const isServed = served.has(x.id);
+        return (
+          <div key={x.id} className="row supply-row">
+            <span>Commerce #{x.id}</span>
+            <span className="small">Demande {fmtInt(demand)} biens/j</span>
+            <span className="small muted">
+              {isServed ? `${fmtInt(fromThis)} de cette usine` : 'non approvisionné'}
+              {total > 0 ? ` · ${fmtInt(total)} au total` : ''}
+              {demand > total ? ` · reste ${fmtInt(demand - total)}` : ''}
+            </span>
+            <button className={isServed ? 'active small-btn' : 'primary small-btn'} onClick={() => toggle(x.id)}>
+              {isServed ? '✓ Approvisionné' : 'Approvisionner'}
+            </button>
+          </div>
+        );
+      })}
+      <label className="check">
+        <input type="checkbox" checked={exportSurplus} onChange={(e) => save([...served], e.target.checked)} /> Exporter le surplus
+      </label>
+      {!exportSurplus && <p className="small muted">Stock conservé : {fmtInt(stock)} biens (jusqu'à {FACTORY_STOCK_DAYS} jours de production).</p>}
+    </div>
   );
 }
 
