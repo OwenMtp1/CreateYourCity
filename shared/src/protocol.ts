@@ -90,6 +90,7 @@ export const cityCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('campaign'), kind: z.enum(['jobs', 'attract']) }),
   z.object({ type: z.literal('moveWorkers'), fromId: z.number().int().nonnegative(), toId: z.number().int().nonnegative(), count: z.number().int().min(1).max(1_000_000) }),
   z.object({ type: z.literal('resetAssignments') }),
+  z.object({ type: z.literal('setFactorySupply'), id: z.number().int().nonnegative(), shops: z.array(z.number().int().nonnegative()).max(500).nullable(), exportSurplus: z.boolean() }),
   z.object({ type: z.literal('setTransitFare'), mode: z.enum(['bus', 'tram', 'metro']), fee: z.number().finite().min(0).max(100) }),
 ]) satisfies z.ZodType<CityCommand>;
 

@@ -1,7 +1,7 @@
 // Fiches détaillées des bâtiments : inspecteur flottant (clic sur un bâtiment) et répertoire de la ville.
 import { useMemo, useState } from 'react';
 import {
-  BUILDINGS, COMMERCE, ECONOMY, formatGameTime, sectorOf, SERVICE_KINDS, TRANSIT, type Building, type BuildingCategory, type BuildingEconomy, type CityLayers, type CityState, type Sector,
+  BUILDINGS, COMMERCE, ECONOMY, FACTORY_STOCK_DAYS, formatGameTime, sectorOf, SERVICE_KINDS, TRANSIT, type Building, type BuildingCategory, type BuildingEconomy, type CityLayers, type CityState, type Sector,
 } from '@cyc/shared';
 import { client } from '../../net/client.ts';
 import { activeCity, useGame } from '../../state.ts';
@@ -166,6 +166,7 @@ export function BuildingInspector({ id, onClose, onFocus, onSelect }: { id: numb
       <p className="small muted">{def.description}</p>
       <div className="inspector-body">
         {def.jobs > 0 && <Workers city={city} b={b} />}
+        {def.goodsProductionPerDay && <FactorySupply city={city} b={b} layers={layers} />}
         <Accounts city={city} layers={layers} b={b} onSelect={onSelect} />
         {buildingDetails(city, layers, b).map((r) => <Row key={r.label} label={r.label} value={r.value} tone={r.tone} />)}
         {def.parking && <ParkingSettings key={b.id} id={b.id} spaces={def.parking.spaces} fee={b.fee ?? 0} use={layers?.parkingUse?.[b.id]} />}
@@ -227,6 +228,46 @@ function Workers({ city, b }: { city: CityState; b: Building }) {
 }
 
 const SECTOR_LABEL: Record<Sector, string> = { commerce: 'commerce', bureaux: 'bureaux', industrie: 'industrie', services: 'services' };
+
+/**
+ * Approvisionnement d'une usine : choix des commerces livrés et export du surplus (sinon stock).
+ */
+function FactorySupply({ city, b, layers }: { city: CityState; b: Building; layers: CityLayers | null }) {
+  const shops = city.buildings.filter((x) => BUILDINGS[x.type].goodsSalesCapacityPerDay);
+  const current = b.supplyShops;
+  const [all, setAll] = useState(current === undefined);
+  const [picked, setPicked] = useState<number[]>(current ?? shops.map((x) => x.id));
+  const [exportSurplus, setExportSurplus] = useState(b.exportSurplus !== false);
+  const dirty = all !== (current === undefined)
+    || (!all && picked.slice().sort().join() !== (current ?? []).slice().sort().join())
+    || exportSurplus !== (b.exportSurplus !== false);
+  const stock = layers?.economy?.[b.id]?.stock ?? b.stock ?? 0;
+  const apply = () => void client.cityCommand({ type: 'setFactorySupply', id: b.id, shops: all ? null : picked, exportSurplus });
+  return (
+    <form className="stack supply" onSubmit={(e) => { e.preventDefault(); apply(); }}>
+      <h4>Approvisionnement</h4>
+      <label className="check"><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> Livrer tous les commerces (par proximité)</label>
+      {!all && (
+        <div className="stack">
+          {shops.length === 0 && <p className="small muted">Aucun commerce dans la ville pour l'instant.</p>}
+          {shops.map((x) => {
+            const link = layers?.supply?.find((l) => l.from === b.id && l.to === x.id);
+            return (
+              <label key={x.id} className="check">
+                <input type="checkbox" checked={picked.includes(x.id)}
+                  onChange={(e) => setPicked(e.target.checked ? [...picked, x.id] : picked.filter((id) => id !== x.id))} />
+                Commerce #{x.id} {link ? <span className="small muted">· {fmtInt(link.qty)} biens/j</span> : null}
+              </label>
+            );
+          })}
+        </div>
+      )}
+      <label className="check"><input type="checkbox" checked={exportSurplus} onChange={(e) => setExportSurplus(e.target.checked)} /> Exporter le surplus</label>
+      {!exportSurplus && <p className="small muted">Stock conservé : {fmtInt(stock)} biens (jusqu'à {FACTORY_STOCK_DAYS} jours de production), en attente d'un commerce.</p>}
+      <button type="submit" disabled={!dirty}>Appliquer</button>
+    </form>
+  );
+}
 
 /** Tarif d'une ligne de transport : gratuite, tarif de base, ou plus cher (moins de voyageurs). */
 function TransitSettings({ mode, fare, riders }: { mode: 'bus' | 'tram' | 'metro'; fare: number; riders: number | undefined }) {

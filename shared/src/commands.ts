@@ -31,6 +31,8 @@ export type CityCommand =
   | { type: 'moveWorkers'; fromId: number; toId: number; count: number }
   /** Rend la répartition des actifs entièrement automatique. */
   | { type: 'resetAssignments' }
+  /** Commerces approvisionnés par une usine (null : tous) et export du surplus (sinon stock). */
+  | { type: 'setFactorySupply'; id: number; shops: number[] | null; exportSurplus: boolean }
   /** Tarif d'une ligne de transport en commun (0 : gratuite ; tarif de base par défaut). */
   | { type: 'setTransitFare'; mode: 'bus' | 'tram' | 'metro'; fee: number };
 
@@ -245,6 +247,18 @@ export function applyCityCommand(city: CityState, cmd: CityCommand): CommandResu
       const free = BUILDINGS[to.type].jobs - there;
       if (count > Math.floor(free)) return { ok: false, reason: `Postes libres sur le site d'arrivée : ${fmt(free)}.` };
       city.assignments = { ...(city.assignments ?? {}), [from.id]: here - count, [to.id]: there + count };
+      return { ok: true, cost: 0 };
+    }
+    case 'setFactorySupply': {
+      const f = city.buildings.find((x) => x.id === cmd.id);
+      if (!f || !(BUILDINGS[f.type].goodsProductionPerDay ?? 0)) return { ok: false, reason: 'Usine introuvable.' };
+      if (cmd.shops !== null) {
+        const shopIds = new Set(city.buildings.filter((b) => BUILDINGS[b.type].goodsSalesCapacityPerDay).map((b) => b.id));
+        if (cmd.shops.some((id) => !shopIds.has(id))) return { ok: false, reason: 'Commerce introuvable dans la ville.' };
+        f.supplyShops = [...new Set(cmd.shops)];
+      } else delete f.supplyShops;
+      if (cmd.exportSurplus) delete f.exportSurplus;
+      else f.exportSurplus = false;
       return { ok: true, cost: 0 };
     }
     case 'setTransitFare': {

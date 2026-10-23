@@ -11,6 +11,12 @@ export interface Building {
   builtAtTick: number;
   /** Parkings : prix d'un stationnement en crédits (absent ou 0 : gratuit). */
   fee?: number;
+  /** Usines : commerces approvisionnés (absent : tous, par ordre de proximité). */
+  supplyShops?: number[];
+  /** Usines : surplus exporté (absent : oui). Sinon il reste en stock, jusqu'à FACTORY_STOCK_DAYS de production. */
+  exportSurplus?: boolean;
+  /** Usines : biens en stock, non écoulés. */
+  stock?: number;
 }
 
 export interface Road {
@@ -202,6 +208,8 @@ export interface BuildingEconomy {
   imported?: number;
   /** Prix moyen payé par bien (achats / quantité). */
   unitCost?: number;
+  /** Usines : stock conservé à la fin du jour (surplus non exporté). */
+  stock?: number;
   /** Usines : production, livraisons aux commerces de la ville, exportations, contrats honorés. */
   produced?: number;
   shipped?: number;

@@ -90,6 +90,9 @@ export const POPULATION = {
   comfortableTaxRate: 0.08,
 } as const;
 
+/** Stock maximal d'une usine qui n'exporte pas son surplus, en jours de production. */
+export const FACTORY_STOCK_DAYS = 3;
+
 /** Villes jumelées : transport entre elles divisé par deux, sans droits de douane. */
 export const TWIN_TRADE = { transportFactor: 0.5 } as const;
 

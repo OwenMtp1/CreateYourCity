@@ -2,7 +2,7 @@
 // même résultat (aucun aléa, aucune horloge). Toutes les formules sont exprimées par jour de
 // jeu puis multipliées par DT_DAYS.
 import { BUILDINGS, ROADS, SERVICE_KINDS, TRANSIT_MODES, type ServiceKind, type TransitMode } from '../catalog.ts';
-import { COMMERCE, DAYS_PER_YEAR, DT_DAYS, ECONOMY, INDEPENDENCE, LOAN_ANNUAL_RATE, PARKING, POPULATION, POPULATION_POLICY, TRAFFIC, TRANSIT } from '../constants.ts';
+import { COMMERCE, DAYS_PER_YEAR, FACTORY_STOCK_DAYS, DT_DAYS, ECONOMY, INDEPENDENCE, LOAN_ANNUAL_RATE, PARKING, POPULATION, POPULATION_POLICY, TRAFFIC, TRANSIT } from '../constants.ts';
 import { segmentLength } from '../geometry.ts';
 import { daylight } from '../time.ts';
 import type { Building, BuildingDetail, BuildingEconomy, CampaignKind, CityLayers, CityState, CityStats, SupplyLink } from '../types.ts';
@@ -149,9 +149,11 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     const links: SupplyLink[] = [];
     const shipped = new Map<number, number>();
     for (const f of factories) {
-      let left = outputOf(f) * keep;
+      // Production du jour et stock conservé ; le joueur peut restreindre les commerces servis.
+      let left = outputOf(f) * keep + (f.stock ?? 0);
       for (const d of layout.routing.deliveries.get(f.id) ?? []) {
         if (left <= 1e-9) break;
+        if (f.supplyShops && !f.supplyShops.includes(d.shopId)) continue;
         const n = need.get(d.shopId) ?? 0;
         if (n <= 1e-9) continue;
         const q = Math.min(n, left);
@@ -362,16 +364,23 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
       const out = potentialOutput(b) * trafficEfficiency;
       const share = plan.total > 0 ? out / plan.total : 0;
       const shipped = plan.shipped.get(b.id) ?? 0;
-      const surplus = Math.max(0, out - contractDelivered * share - shipped);
+      const stockBefore = b.stock ?? 0;
+      const leftover = Math.max(0, out + stockBefore - contractDelivered * share - shipped);
+      // Surplus : exporté (par défaut), ou gardé en stock jusqu'à FACTORY_STOCK_DAYS de production.
+      const stockCap = FACTORY_STOCK_DAYS * (BUILDINGS[b.type].goodsProductionPerDay ?? 0);
+      const keepStock = b.exportSurplus === false;
+      const newStock = keepStock && !isolated ? Math.min(stockCap, leftover) : 0;
+      const surplus = leftover - newStock;
+      b.stock = newStock > 0 ? newStock : undefined;
       // Ville indépendante : le surplus ne peut pas être exporté, il reste invendu.
-      const exp = isolated ? 0 : surplus;
+      const exp = isolated || keepStock ? 0 : surplus;
       if (isolated) unsoldGoods += surplus;
       exported += exp;
       const revenue = shipped * ECONOMY.localWholesalePrice + exp * mod.goodsExportPrice + mod.contractOut.revenue * contractDeliveredRatio * share;
       const profit = revenue - wages;
       const tax = city.taxes.industrial * Math.max(0, profit);
       industrialTax += tax;
-      economy[b.id] = { revenue, costs: wages, profit, tax, produced: out, shipped, exported: exp, ...(isolated ? { unsold: surplus } : {}) };
+      economy[b.id] = { revenue, costs: wages, profit, tax, produced: out, shipped, exported: exp, stock: newStock, ...(isolated || keepStock ? { unsold: surplus } : {}) };
     }
   }
   sold -= lostSales;
