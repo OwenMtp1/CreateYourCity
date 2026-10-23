@@ -15,6 +15,8 @@ export interface GameState {
   player: { id: string; name: string } | null;
   authError: string | null;
   lobbies: LobbyInfo[];
+  /** Parties du joueur : salons dont il est membre, avec son nombre de villes. */
+  myLobbies: (LobbyInfo & { cities: number })[];
   lobby: LobbyInfo | null;
   clock: ClockInfo | null;
   tick: number;
@@ -44,7 +46,7 @@ export interface GameState {
 }
 
 let state: GameState = {
-  status: 'connecting', authMode: null, player: null, authError: null, lobbies: [], lobby: null, clock: null, tick: 0,
+  status: 'connecting', authMode: null, player: null, authError: null, lobbies: [], myLobbies: [], lobby: null, clock: null, tick: 0,
   summaries: [], myCities: {}, twinCities: {}, twinViewId: null, activeCityId: null, layers: {}, world: null, view: 'globe', focusCityId: null, chat: [],
   lastSavedAt: null, toasts: [],
   accountOpen: false, friends: [], friendResults: [], dms: {}, dmWith: null, invites: [],

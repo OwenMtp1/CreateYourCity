@@ -288,6 +288,7 @@ export class GameServer {
       switch (msg.t) {
         case 'listLobbies':
           s.conn.send({ t: 'lobbies', lobbies: this.publicLobbies() });
+          s.conn.send({ t: 'myLobbies', lobbies: this.lobbiesOf(player.id) });
           return reply(true);
         case 'createLobby': {
           const world = await this.createLobby(player, msg.name, msg.isPublic, msg.maxPlayers);
@@ -417,6 +418,14 @@ export class GameServer {
       .map((w) => w.info())
       .sort((a, b) => b.playerCount - a.playerCount || a.createdAt.localeCompare(b.createdAt))
       .slice(0, 50);
+  }
+
+  /** Salons dont le joueur est membre, avec le nombre de villes qu'il y possède. */
+  lobbiesOf(playerId: string): (LobbyInfo & { cities: number })[] {
+    return [...this.lobbies.values()]
+      .filter((w) => w.members.has(playerId))
+      .map((w) => ({ ...w.info(), cities: w.citiesOf(playerId).length }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   private async createLobby(player: PlayerIdentity, name: string, isPublic: boolean, maxPlayers: number) {

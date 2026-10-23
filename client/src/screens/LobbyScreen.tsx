@@ -8,6 +8,8 @@ import { GlobeBackdrop } from '../globe/GlobeView.tsx';
 export function LobbyScreen() {
   const player = useGame((s) => s.player)!;
   const lobbies = useGame((s) => s.lobbies);
+  const myLobbies = useGame((s) => s.myLobbies);
+  const [tab, setTab] = useState<'mine' | 'browse'>('mine');
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [isPublic, setIsPublic] = useState(false);
@@ -38,6 +40,30 @@ export function LobbyScreen() {
           <StatusBadge />
           <AccountButton />
         </header>
+        <nav className="tabs lobby-tabs">
+          <button className={tab === 'mine' ? 'active' : ''} onClick={() => setTab('mine')}>Parties en cours ({myLobbies.length})</button>
+          <button className={tab === 'browse' ? 'active' : ''} onClick={() => setTab('browse')}>Rejoindre ou créer</button>
+        </nav>
+        {tab === 'mine' ? (
+          <section className="card glass lobby-mine">
+            <h2>Parties en cours</h2>
+            {myLobbies.length === 0 ? (
+              <p className="muted">Vous n'êtes dans aucune partie. Rejoignez un salon ou créez-en un.</p>
+            ) : (
+              <ul className="lobby-list">
+                {myLobbies.map((l) => (
+                  <li key={l.id}>
+                    <div>
+                      <strong>{l.name}</strong>
+                      <span className="muted"> · {l.cities} ville{l.cities > 1 ? 's' : ''} · {l.playerCount}/{l.maxPlayers} joueurs</span>
+                    </div>
+                    <button className="primary" onClick={() => void client.act({ t: 'joinLobby', code: l.code })}>Reprendre</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ) : (<>
         <section className="card glass">
           <h2>Rejoindre avec un code</h2>
           <form onSubmit={join} className="row">
@@ -81,6 +107,7 @@ export function LobbyScreen() {
             Le monde d'un salon est persistant : la simulation continue sur le serveur à vitesse fixe, même sans joueur connecté.
           </p>
         </section>
+        </>)}
       </div>
     </div>
   );

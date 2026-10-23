@@ -107,6 +107,9 @@ class GameClient {
       case 'lobbies':
         setState({ lobbies: msg.lobbies });
         return;
+      case 'myLobbies':
+        setState({ myLobbies: msg.lobbies });
+        return;
       case 'lobbyJoined': {
         rememberLobby(msg.lobby.code);
         const myCities = Object.fromEntries(msg.myCities.map((c) => [c.cityId, c]));

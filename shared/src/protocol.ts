@@ -177,6 +177,8 @@ export type ServerMessage =
   | { t: 'result'; reqId: number; ok: boolean; error?: string; cost?: number }
   | { t: 'error'; message: string }
   | { t: 'lobbies'; lobbies: LobbyInfo[] }
+  /** Parties du joueur (salons dont il est membre), avec le nombre de villes qu'il y possède. */
+  | { t: 'myLobbies'; lobbies: (LobbyInfo & { cities: number })[] }
   | {
       t: 'lobbyJoined';
       lobby: LobbyInfo;
