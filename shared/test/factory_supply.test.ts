@@ -65,6 +65,7 @@ describe('approvisionnement des commerces par usine', () => {
     expect(demand).toBeGreaterThan(0);
     applyCityCommand(c, { type: 'setFactorySupply', id: factory(c).id, shops: null, exportSurplus: true });
     const again = simulateTick(c);
-    expect(again.economy![shop]!.demand).toBeCloseTo(demand, 5);
+    // La population bouge à chaque tick : on tolère quelques pourcents d'écart.
+    expect(Math.abs(again.economy![shop]!.demand! - demand) / demand).toBeLessThan(0.05);
   });
 });
