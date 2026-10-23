@@ -1,6 +1,6 @@
 // Gouvernance nationale : élection continue à la majorité absolue, mandat sans échéance,
 // démission ou destitution à la majorité absolue des électeurs.
-import { eligibleVoters, playerName, pushEvent } from './rules.ts';
+import { eligibleVoters, NATION, playerName, pushEvent } from './rules.ts';
 import type { NationState, World } from './types.ts';
 import { COUNTRY_BY_ID } from '../world.ts';
 
@@ -49,6 +49,12 @@ export function evaluateNation(world: World, countryId: string) {
       nation.leaderId = winner[0];
       nation.electedAtTick = world.tick;
       nation.impeach = [];
+      if (!nation.endowed) {
+        // Premier vote de la partie : la nation reçoit un budget proportionnel aux villes qu'elle administre.
+        const administered = [...world.cities.values()].filter((c) => c.countryId === countryId).length;
+        nation.treasury += administered * NATION.startingBudgetPerCity;
+        nation.endowed = true;
+      }
       pushEvent(world, 'election', `${playerName(world.meta, winner[0])} est élu(e) à la tête de ${countryName(countryId)} (${winner[1]}/${voters.length} voix).`);
     }
   }

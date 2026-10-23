@@ -116,6 +116,8 @@ export const ORGANIZATION = { maxMembers: 20, maxPerPlayer: 5 } as const;
 
 export const NATION = {
   maxTaxRate: 0.1,
+  /** Budget accordé à la nation lors de son premier vote de la partie, par ville administrée. */
+  startingBudgetPerCity: 100_000,
   maxTariff: 0.5,
   /** Coût de réalisation unique d'un grand projet. */
   projectCost: {
