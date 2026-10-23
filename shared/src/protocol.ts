@@ -15,6 +15,7 @@ const amount = z.number().finite().positive().max(1e10);
 
 export const worldActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('transferFunds'), fromCityId: cityId, toCityId: cityId, amount }),
+  z.object({ type: z.literal('payDebt'), fromCityId: cityId, toCityId: cityId, amount }),
   z.object({
     type: z.literal('proposeTreaty'), to: id, treaty: treatyType, cityId: cityId.optional(), price: z.number().finite().min(0).max(1e10).optional(),
     payFromCityId: cityId.optional(), nation: z.object({ from: id, to: id }).optional(),

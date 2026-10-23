@@ -600,6 +600,7 @@ export function NationPanel() {
         </select>
       )}
       {countryId && <NationDetail world={world} me={player.id} countryId={countryId} />}
+      {countryId && <NationDebts countryId={countryId} />}
     </div>
   );
 }
@@ -731,6 +732,43 @@ function NationDetail({ world, me, countryId }: { world: WorldView; me: string; 
         </div>
       )}
     </>
+  );
+}
+
+/** Dettes des villes de la nation : chaque membre peut en solder une partie ou la totalité. */
+function NationDebts({ countryId }: { countryId: string }) {
+  const debts = useGame((s) => s.world?.nationDebts ?? []);
+  const myCities = useGame((s) => s.myCities);
+  const sources = Object.values(myCities).filter((c) => c.countryId === countryId);
+  const [from, setFrom] = useState('');
+  const [amounts, setAmounts] = useState<Record<string, number>>({});
+  const list = debts.filter((d) => d.countryId === countryId && d.debt > 0);
+  const sourceId = sources.some((c) => c.cityId === from) ? from : (sources[0]?.cityId ?? '');
+  if (list.length === 0) return <p className="muted small">Aucune dette dans la nation.</p>;
+  const total = list.reduce((a, d) => a + d.debt, 0);
+  return (
+    <div className="card compact stack">
+      <h4>Dettes de la nation</h4>
+      <p className="small muted">Total : {fmtMoney(total)}</p>
+      <label>Payer depuis
+        <select value={sourceId} onChange={(e) => setFrom(e.target.value)}>
+          {sources.map((c) => <option key={c.cityId} value={c.cityId}>{cityLabel(c.cityId)} ({fmtMoney(c.treasury)})</option>)}
+        </select>
+      </label>
+      {list.map((d) => {
+        const amount = amounts[d.cityId] ?? d.debt;
+        return (
+          <div key={d.cityId} className="row">
+            <span>{cityLabel(d.cityId)} <span className="muted small">{d.ownerName}</span></span>
+            <strong className="neg">{fmtMoney(d.debt)}</strong>
+            <input type="number" min={1} max={d.debt} step={1000} value={amount}
+              onChange={(e) => setAmounts({ ...amounts, [d.cityId]: Number(e.target.value) })} />
+            <button disabled={!sourceId} onClick={() => void client.action({ type: 'payDebt', fromCityId: sourceId, toCityId: d.cityId, amount })}>Contribuer</button>
+            <button className="ghost" disabled={!sourceId} onClick={() => void client.action({ type: 'payDebt', fromCityId: sourceId, toCityId: d.cityId, amount: d.debt })}>Solder</button>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

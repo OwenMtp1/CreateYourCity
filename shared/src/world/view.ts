@@ -43,8 +43,19 @@ export interface CityDetail {
   netPerDay: number;
 }
 
+/** Dette d'une ville de la nation du spectateur. */
+export interface NationDebt {
+  cityId: string;
+  countryId: string;
+  ownerName: string;
+  debt: number;
+  treasury: number;
+}
+
 export interface WorldView {
   tick: number;
+  /** Villes des nations où le spectateur a une ville : dettes visibles par tous leurs membres. */
+  nationDebts: NationDebt[];
   players: { id: string; name: string; cityIds: string[] }[];
   market: MarketState & { buyPrice: number; sellPrice: number };
   treaties: Treaty[];
@@ -96,6 +107,10 @@ export function buildWorldView(world: World, viewer: string): WorldView {
     });
   }
 
+  const myCountries = new Set(cities.filter((c) => c.ownerId === viewer).map((c) => c.countryId));
+  const nationDebts: NationDebt[] = cities
+    .filter((c) => myCountries.has(c.countryId))
+    .map((c) => ({ cityId: c.cityId, countryId: c.countryId, ownerName: meta.players[c.ownerId]?.name ?? '', debt: c.debt, treasury: c.treasury }));
   const cityDetails: CityDetail[] = cities
     .filter((c) => c.ownerId !== viewer && detailVisible(meta, viewer, c.ownerId))
     .map((c) => ({
@@ -106,6 +121,7 @@ export function buildWorldView(world: World, viewer: string): WorldView {
   const prices = marketPrices(meta.market.price);
   return {
     tick: world.tick,
+    nationDebts,
     players,
     market: { ...meta.market, buyPrice: prices.buy, sellPrice: prices.sell },
     treaties: meta.treaties.filter((t) => t.a === viewer || t.b === viewer || (t.status === 'active' && ['alliance', 'defense', 'non_aggression'].includes(t.type))),

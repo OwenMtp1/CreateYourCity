@@ -17,6 +17,8 @@ import { armySize } from './military.ts';
 
 export type WorldAction =
   | { type: 'transferFunds'; fromCityId: string; toCityId: string; amount: number }
+  /** Solde tout ou partie de la dette d'une ville de ma nation, payée avec la trésorerie d'une de mes villes. */
+  | { type: 'payDebt'; fromCityId: string; toCityId: string; amount: number }
   /** Propose de jumeler ma ville avec une ville d'un autre joueur. */
   | { type: 'proposeTwin'; to: string; myCityId: string; otherCityId: string }
   /** Déplace des habitants d'une de vos villes vers une autre ; payé par la ville d'origine. */
@@ -251,6 +253,20 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
       return;
     }
 
+    case 'payDebt': {
+      const from = ownCity(world, player, action.fromCityId);
+      const to = world.cities.get(action.toCityId);
+      if (!to) fail('Ville introuvable.');
+      if (to!.countryId !== from.countryId) fail("Vous ne pouvez solder que les dettes de votre nation.");
+      if (to!.debt <= 0) fail("Cette ville n'a pas de dette.");
+      const amount = Math.min(Math.floor(action.amount), to!.debt);
+      if (!(amount > 0)) fail('Montant invalide.');
+      if (amount > from.treasury) fail('Trésorerie insuffisante.');
+      from.treasury -= amount;
+      to!.debt -= amount;
+      pushEvent(world, 'funds', `${name(player)} solde ${fmt(amount)} cr de la dette de ${cityName(to!.cityId)}.`, [player, to!.ownerId], true);
+      return;
+    }
     case 'transferFunds': {
       const from = ownCity(world, player, action.fromCityId);
       const to = world.cities.get(action.toCityId);
