@@ -125,6 +125,18 @@ function Accounts({ city, layers, b, onSelect }: { city: CityState; layers: City
             {suppliers.map((l) => (
               <li key={l.from}>{link(l.from)}<span className="small">{fmtInt(l.qty)} biens · {fmtInt(l.distance)} m</span></li>
             ))}
+            {/* Usines envoyées ici mais qui ne livrent rien : on dit pourquoi. */}
+            {suppliers.length === 0 && (city.buildings.filter((f) => (f.supplyPlan?.[b.id] ?? 0) > 0)).map((f) => {
+              const produces = (layers?.details?.[f.id]?.capacity ?? 0) > 0;
+              return (
+                <li key={`sent-${f.id}`} className="neg">
+                  {link(f.id)}
+                  <span className="small">{produces
+                    ? ((e.sold ?? 0) >= 0.5 ? 'envoi sans livraison : aucune route entre cette usine et le commerce' : 'envoi en attente : le commerce ne vend rien pour l\'instant')
+                    : 'ne produit rien : personnel, électricité ou eau manquants'}</span>
+                </li>
+              );
+            })}
             {(e.contract ?? 0) > 0.5 && <li><span>🤝 Contrats</span><span className="small">{fmtInt(e.contract ?? 0)} biens</span></li>}
             {(e.imported ?? 0) > 0.5 && <li className="neg"><span>🌍 Importations (plus chères)</span><span className="small">{fmtInt(e.imported ?? 0)} biens</span></li>}
             {e.sold < 0.5 && <li className="muted">{saleBlocker(e)}</li>}
