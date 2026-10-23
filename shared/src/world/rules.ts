@@ -33,7 +33,6 @@ export const MILITARY = {
   retreatSpeedFactor: 0.5,
   /** Attrition par jour hors ravitaillement / sans solde. */
   unsuppliedAttrition: 0.03,
-  unpaidAttrition: 0.01,
   unsuppliedStrength: 0.6,
   unpaidStrength: 0.7,
   /** Bonus défensif en ville. */

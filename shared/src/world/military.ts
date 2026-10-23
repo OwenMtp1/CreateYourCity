@@ -102,7 +102,7 @@ export function stepMilitary(world: World): void {
       army.paid = !!other;
     }
     if (!army.supplied) scale(army, MILITARY.unsuppliedAttrition * DT_DAYS);
-    if (!army.paid) scale(army, MILITARY.unpaidAttrition * DT_DAYS);
+    // Une armée non payée garde ses effectifs : elle combat moins bien (unpaidStrength), mais ne fond plus.
   }
 
   // Fusion des armées stationnées d'un même joueur dans une même ville.
