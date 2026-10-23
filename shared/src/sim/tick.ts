@@ -319,8 +319,10 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   let parkingFees = 0;
   const parkingUse: Record<number, number> = {};
   for (const l of lots) {
-    parkingFees += l.used * l.fee * PARKING.turnoverPerDay;
+    const revenue = l.used * l.fee * PARKING.turnoverPerDay;
+    parkingFees += revenue;
     parkingUse[l.id] = l.spaces > 0 ? l.used / l.spaces : 0;
+    detail(l.id).revenue = revenue;
   }
   // Coût moyen du stationnement par trajet en voiture : au-delà de la tolérance, la ville déplaît.
   const feePerTrip = personalCarTrips > 0 ? parkingFees / personalCarTrips : 0;
@@ -498,6 +500,15 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   // Impôt national prélevé sur les revenus des habitants ; versé au budget national par le monde.
   const nationalTax = mod.nationalTaxRate * employed * wage;
   const transitFares = (riders - busRiders) * baseFare + busRiders * busFare;
+  // Voyageurs et recettes par station : part proportionnelle à sa capacité (estimation).
+  for (const b of ops) {
+    const t = BUILDINGS[b.type].transit;
+    if (!t || transitCapacity <= 0 || !(detail(b.id).capacity ?? 0)) continue;
+    const share = (detail(b.id).capacity ?? 0) / transitCapacity;
+    const stationRiders = riders * share;
+    detail(b.id).riders = stationRiders;
+    detail(b.id).revenue = stationRiders * (city.transitFares?.[t.mode] ?? baseFare);
+  }
   const net = residentialTax + commercialTax + industrialTax + transitFares + parkingFees - upkeep - utilityImports - loanInterest;
   city.treasury += net * DT_DAYS;
 

@@ -171,6 +171,10 @@ export interface BuildingDetail {
   served?: number;
   /** Capacité effective par jour de la fonction du bâtiment : biens vendus ou produits, MW, m³, voyages, personnes. */
   capacity?: number;
+  /** Transport : voyageurs par jour (estimation proportionnelle à la capacité). */
+  riders?: number;
+  /** Transport ou parking : recettes du jour (cr). */
+  revenue?: number;
 }
 
 export interface CityLayers {

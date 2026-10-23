@@ -220,7 +220,7 @@ export function BuildPanel(props: {
 }
 
 /** Réglage du tarif d'un parking : gratuit, ou payant avec un prix par stationnement. */
-export function ParkingSettings({ id, spaces, fee, use }: { id: number; spaces: number; fee: number; use: number | undefined }) {
+export function ParkingSettings({ id, spaces, fee, use, revenue }: { id: number; spaces: number; fee: number; use: number | undefined; revenue: number | undefined }) {
   const [paid, setPaid] = useState(fee > 0);
   const [price, setPrice] = useState(fee > 0 ? fee : 2);
   const dirty = (paid ? price : 0) !== fee;
@@ -231,6 +231,7 @@ export function ParkingSettings({ id, spaces, fee, use }: { id: number; spaces: 
   return (
     <form className="stack" onSubmit={(e) => void apply(e)}>
       <Row label="Places" value={fmtInt(spaces)} />
+      <Row label="Recettes de ce parking" value={revenue === undefined ? '—' : `${fmtInt(revenue)} cr/j`} />
       <Row label="Occupation" value={use === undefined ? '—' : `${fmtPct(use)} (${fmtInt(use * spaces)} places)`} />
       <Row label="Tarif actuel" value={fee > 0 ? `${fee.toLocaleString('fr-FR')} cr / stationnement` : 'Gratuit'} />
       <label className="check"><input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} /> Parking payant</label>
