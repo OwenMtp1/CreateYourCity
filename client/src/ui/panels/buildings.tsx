@@ -388,7 +388,7 @@ function summary(b: Building): string {
 /** Cause la plus probable d'un commerce sans vente, dans l'ordre où le joueur peut la corriger. */
 function saleBlocker(e: BuildingEconomy): string {
   if ((e.catchment ?? 0) < 1) return "Aucune vente : aucun habitant ne vit dans les logements à moins de 450 m. Un immeuble voisin vide ne compte pas tant qu'il n'a pas d'habitants.";
-  if (e.staffed === false) return "Aucune vente : personne ne travaille dans la ville. Créez des emplois.";
+  if (e.staffed === false) return "Aucune vente : aucun employé affecté à ce commerce.";
   if (e.powered === false) return "Aucune vente : pas d'électricité ni d'eau pour le commerce.";
-  return "Aucune vente : la ville n'a pas assez de biens à vendre (approvisionnement).";
+  return "Aucune vente : les habitants de la zone achètent déjà dans d'autres commerces.";
 }
