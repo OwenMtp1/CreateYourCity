@@ -148,19 +148,37 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     for (const [id, q] of shopSold) need.set(id, sold > 0 ? q * (1 - contractUsed / sold) : 0);
     const links: SupplyLink[] = [];
     const shipped = new Map<number, number>();
+    const ship = (f: Building, shopId: number, qty: number, distance: number) => {
+      need.set(shopId, (need.get(shopId) ?? 0) - qty);
+      shipped.set(f.id, (shipped.get(f.id) ?? 0) + qty);
+      links.push({ from: f.id, to: shopId, qty, distance });
+    };
     for (const f of factories) {
-      // Production du jour et stock conservé ; le joueur peut restreindre les commerces servis.
+      // Production du jour et stock conservé.
       let left = outputOf(f) * keep + (f.stock ?? 0);
-      for (const d of layout.routing.deliveries.get(f.id) ?? []) {
+      const routes = layout.routing.deliveries.get(f.id) ?? [];
+      if (f.supplyPlan) {
+        // Choix du joueur : la capacité envoyée à chaque commerce, dans la limite de la demande et de la route.
+        for (const [key, planned] of Object.entries(f.supplyPlan)) {
+          const shopId = Number(key);
+          const route = routes.find((d) => d.shopId === shopId);
+          const n = need.get(shopId) ?? 0;
+          if (!route || n <= 1e-9) continue;
+          const q = Math.min(planned, n, left);
+          if (q <= 1e-9) continue;
+          left -= q;
+          ship(f, shopId, q, route.distance);
+        }
+        continue;
+      }
+      // Répartition automatique : les commerces les plus proches d'abord.
+      for (const d of routes) {
         if (left <= 1e-9) break;
-        if (f.supplyShops && !f.supplyShops.includes(d.shopId)) continue;
         const n = need.get(d.shopId) ?? 0;
         if (n <= 1e-9) continue;
         const q = Math.min(n, left);
-        need.set(d.shopId, n - q);
         left -= q;
-        shipped.set(f.id, (shipped.get(f.id) ?? 0) + q);
-        links.push({ from: f.id, to: d.shopId, qty: q, distance: d.distance });
+        ship(f, d.shopId, q, d.distance);
       }
     }
     return { total, contractDelivered, links, shipped };
@@ -341,6 +359,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
       const imp = isolated ? 0 : missing;
       const q = isolated ? wanted - missing : wanted;
       if (isolated) lostSales += missing;
+      b.demand = (shopCatchment.get(b.id) ?? 0) * ECONOMY.goodsDemandPerResident;
       imported += imp;
       const purchases = local.cost + contract * contractUnit + imp * importUnit;
       const revenue = q * ECONOMY.retailPrice;

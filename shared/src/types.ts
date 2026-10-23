@@ -11,8 +11,13 @@ export interface Building {
   builtAtTick: number;
   /** Parkings : prix d'un stationnement en crédits (absent ou 0 : gratuit). */
   fee?: number;
-  /** Usines : commerces approvisionnés (absent : tous, par ordre de proximité). */
-  supplyShops?: number[];
+  /**
+   * Usines : capacité envoyée à chaque commerce (biens/j), choisie par le joueur. Absent : répartition
+   * automatique par proximité. Présent (même vide) : seuls les commerces listés sont approvisionnés.
+   */
+  supplyPlan?: Record<number, number>;
+  /** Commerces : demande de biens des habitants de la zone (biens/j), mise à jour à chaque tick. */
+  demand?: number;
   /** Usines : surplus exporté (absent : oui). Sinon il reste en stock, jusqu'à FACTORY_STOCK_DAYS de production. */
   exportSurplus?: boolean;
   /** Usines : biens en stock, non écoulés. */

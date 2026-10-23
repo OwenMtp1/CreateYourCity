@@ -32,7 +32,11 @@ export type CityCommand =
   /** Rend la répartition des actifs entièrement automatique. */
   | { type: 'resetAssignments' }
   /** Commerces approvisionnés par une usine (null : tous) et export du surplus (sinon stock). */
-  | { type: 'setFactorySupply'; id: number; shops: number[] | null; exportSurplus: boolean }
+  /** Envoie `qty` biens/j de la capacité d'une usine vers un commerce (0 : retire). */
+  | { type: 'assignSupply'; factoryId: number; shopId: number; qty: number }
+  /** Rétablit la répartition automatique d'une usine. */
+  | { type: 'resetSupply'; factoryId: number }
+  | { type: 'setFactoryExport'; id: number; exportSurplus: boolean }
   /** Tarif d'une ligne de transport en commun (0 : gratuite ; tarif de base par défaut). */
   | { type: 'setTransitFare'; mode: 'bus' | 'tram' | 'metro'; fee: number };
 
@@ -249,14 +253,36 @@ export function applyCityCommand(city: CityState, cmd: CityCommand): CommandResu
       city.assignments = { ...(city.assignments ?? {}), [from.id]: here - count, [to.id]: there + count };
       return { ok: true, cost: 0 };
     }
-    case 'setFactorySupply': {
+    case 'assignSupply': {
+      const f = city.buildings.find((x) => x.id === cmd.factoryId);
+      const shop = city.buildings.find((x) => x.id === cmd.shopId);
+      const capacity = BUILDINGS[f?.type ?? 'house'].goodsProductionPerDay ?? 0;
+      if (!f || !capacity) return { ok: false, reason: 'Usine introuvable.' };
+      if (!shop || !BUILDINGS[shop.type].goodsSalesCapacityPerDay) return { ok: false, reason: 'Commerce introuvable.' };
+      if (!(cmd.qty >= 0) || !Number.isFinite(cmd.qty)) return { ok: false, reason: 'Quantité invalide.' };
+      const own = f.supplyPlan ?? {};
+      const current = own[shop.id] ?? 0;
+      const others = city.buildings.filter((x) => x.id !== f.id && BUILDINGS[x.type].goodsProductionPerDay).reduce((sum, x) => sum + (x.supplyPlan?.[shop.id] ?? 0), 0);
+      const usedElsewhere = Object.entries(own).reduce((sum, [id, q]) => sum + (Number(id) === shop.id ? 0 : q), 0);
+      if (cmd.qty > 0 && current === 0 && shop.demand !== undefined && others >= shop.demand - 1e-6) {
+        return { ok: false, reason: 'Ce commerce est déjà couvert par d\'autres usines.' };
+      }
+      if (usedElsewhere + cmd.qty > capacity + 1e-6) return { ok: false, reason: `Capacité de l'usine dépassée (${fmt(capacity)} biens/j au maximum).` };
+      const plan = { ...own };
+      if (cmd.qty > 0) plan[shop.id] = cmd.qty;
+      else delete plan[shop.id];
+      f.supplyPlan = plan;
+      return { ok: true, cost: 0 };
+    }
+    case 'resetSupply': {
+      const f = city.buildings.find((x) => x.id === cmd.factoryId);
+      if (!f || !BUILDINGS[f.type].goodsProductionPerDay) return { ok: false, reason: 'Usine introuvable.' };
+      delete f.supplyPlan;
+      return { ok: true, cost: 0 };
+    }
+    case 'setFactoryExport': {
       const f = city.buildings.find((x) => x.id === cmd.id);
-      if (!f || !(BUILDINGS[f.type].goodsProductionPerDay ?? 0)) return { ok: false, reason: 'Usine introuvable.' };
-      if (cmd.shops !== null) {
-        const shopIds = new Set(city.buildings.filter((b) => BUILDINGS[b.type].goodsSalesCapacityPerDay).map((b) => b.id));
-        if (cmd.shops.some((id) => !shopIds.has(id))) return { ok: false, reason: 'Commerce introuvable dans la ville.' };
-        f.supplyShops = [...new Set(cmd.shops)];
-      } else delete f.supplyShops;
+      if (!f || !BUILDINGS[f.type].goodsProductionPerDay) return { ok: false, reason: 'Usine introuvable.' };
       if (cmd.exportSurplus) delete f.exportSurplus;
       else f.exportSurplus = false;
       return { ok: true, cost: 0 };

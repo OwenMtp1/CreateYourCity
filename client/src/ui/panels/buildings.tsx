@@ -230,50 +230,62 @@ function Workers({ city, b }: { city: CityState; b: Building }) {
 const SECTOR_LABEL: Record<Sector, string> = { commerce: 'commerce', bureaux: 'bureaux', industrie: 'industrie', services: 'services' };
 
 /**
- * Approvisionnement d'une usine : liste des commerces avec leur demande ; un clic pour les approvisionner.
- * La demande reste affichée même si d'autres usines la couvrent : on voit ce qui reste à couvrir.
+ * Approvisionnement d'une usine. Chaque commerce affiche sa demande. On envoie la capacité de l'usine à un
+ * commerce ; un commerce couvert par d'autres usines est grisé pour celle-ci. Sans choix, la répartition est
+ * automatique (commerces les plus proches d'abord).
  */
 function FactorySupply({ city, b, layers }: { city: CityState; b: Building; layers: CityLayers | null }) {
+  const capacity = BUILDINGS[b.type].goodsProductionPerDay ?? 0;
   const shops = city.buildings.filter((x) => BUILDINGS[x.type].goodsSalesCapacityPerDay);
-  const shopIds = shops.map((x) => x.id);
-  // Sans liste explicite, l'usine approvisionne tous les commerces.
-  const served = new Set(b.supplyShops ?? shopIds);
+  const plan = b.supplyPlan;
+  const planned = (shopId: number) => plan?.[shopId] ?? 0;
+  const used = Object.values(plan ?? {}).reduce((sum, q) => sum + q, 0);
+  const free = Math.max(0, capacity - used);
   const exportSurplus = b.exportSurplus !== false;
-  const save = (ids: number[], exp = exportSurplus) => {
-    const all = shopIds.every((id) => ids.includes(id));
-    void client.cityCommand({ type: 'setFactorySupply', id: b.id, shops: all ? null : ids, exportSurplus: exp });
-  };
-  const toggle = (id: number) => save(served.has(id) ? [...served].filter((x) => x !== id) : [...served, id]);
-  const stock = layers?.economy?.[b.id]?.stock ?? b.stock ?? 0;
+  const demandOf = (x: Building) => layers?.economy?.[x.id]?.demand ?? x.demand ?? 0;
+  // Biens déjà envoyés à un commerce par les autres usines de la ville.
+  const fromOthers = (shopId: number) => city.buildings
+    .filter((x) => x.id !== b.id && BUILDINGS[x.type].goodsProductionPerDay)
+    .reduce((sum, x) => sum + (x.supplyPlan?.[shopId] ?? 0), 0);
+  const send = (shopId: number, qty: number) => void client.cityCommand({ type: 'assignSupply', factoryId: b.id, shopId, qty });
   return (
     <div className="stack supply">
       <h4>Approvisionnement</h4>
+      {!plan && <p className="small muted">Répartition automatique : les commerces les plus proches d'abord. Envoyez la capacité de l'usine à un commerce pour la piloter.</p>}
+      <p className="small muted">Capacité : {fmtInt(free)} / {fmtInt(capacity)} biens/j libres</p>
       {shops.length === 0 && <p className="small muted">Aucun commerce dans la ville pour l'instant.</p>}
       {shops.map((x) => {
-        const demand = layers?.economy?.[x.id]?.demand ?? 0;
-        const links = (layers?.supply ?? []).filter((l) => l.to === x.id);
-        const fromThis = links.find((l) => l.from === b.id)?.qty ?? 0;
-        const total = links.reduce((sum, l) => sum + l.qty, 0);
-        const isServed = served.has(x.id);
+        const demand = demandOf(x);
+        const others = fromOthers(x.id);
+        const mine = planned(x.id);
+        const covered = mine === 0 && demand > 0 && others >= demand - 1e-6;
+        const remaining = Math.max(0, demand - others);
         return (
           <div key={x.id} className="row supply-row">
             <span>Commerce #{x.id}</span>
             <span className="small">Demande {fmtInt(demand)} biens/j</span>
             <span className="small muted">
-              {isServed ? `${fmtInt(fromThis)} de cette usine` : 'non approvisionné'}
-              {total > 0 ? ` · ${fmtInt(total)} au total` : ''}
-              {demand > total ? ` · reste ${fmtInt(demand - total)}` : ''}
+              {mine > 0 ? `${fmtInt(mine)} biens/j de cette usine` : others > 0 ? `${fmtInt(others)} biens/j d'autres usines` : 'non approvisionné'}
             </span>
-            <button className={isServed ? 'active small-btn' : 'primary small-btn'} onClick={() => toggle(x.id)}>
-              {isServed ? '✓ Approvisionné' : 'Approvisionner'}
-            </button>
+            {mine > 0 ? (
+              <button className="active small-btn" onClick={() => send(x.id, 0)}>✓ Retirer</button>
+            ) : covered ? (
+              <button className="small-btn" disabled>Couvert par une autre usine</button>
+            ) : free <= 0 ? (
+              <button className="small-btn" disabled>Capacité utilisée</button>
+            ) : (
+              <button className="primary small-btn" onClick={() => send(x.id, Math.min(free, remaining || free))}>
+                Envoyer {fmtInt(Math.min(free, remaining || free))}/j
+              </button>
+            )}
           </div>
         );
       })}
       <label className="check">
-        <input type="checkbox" checked={exportSurplus} onChange={(e) => save([...served], e.target.checked)} /> Exporter le surplus
+        <input type="checkbox" checked={exportSurplus} onChange={(e) => void client.cityCommand({ type: 'setFactoryExport', id: b.id, exportSurplus: e.target.checked })} /> Exporter le surplus
       </label>
-      {!exportSurplus && <p className="small muted">Stock conservé : {fmtInt(stock)} biens (jusqu'à {FACTORY_STOCK_DAYS} jours de production).</p>}
+      {!exportSurplus && <p className="small muted">Stock conservé : {fmtInt(layers?.economy?.[b.id]?.stock ?? b.stock ?? 0)} biens (jusqu'à {FACTORY_STOCK_DAYS} jours de production).</p>}
+      {plan && <button className="link small-btn" onClick={() => void client.cityCommand({ type: 'resetSupply', factoryId: b.id })}>Rétablir la répartition automatique</button>}
     </div>
   );
 }
