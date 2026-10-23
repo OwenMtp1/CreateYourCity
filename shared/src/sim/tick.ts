@@ -132,21 +132,22 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     }
     shopCatchment.set(b.id, catchment);
   }
-  // La demande d'un habitant se répartit entre les commerces qui le couvrent, à proportion de leur capacité libre :
-  // un commerce déjà saturé laisse la demande à ceux qui ont encore de la place. Plusieurs passes servent la capacité libérée.
-  for (let pass = 0; pass < 3; pass++) {
-    for (const [resId, shopIds] of coveredBy) {
-      const want = (residents.get(resId) ?? 0) * ECONOMY.goodsDemandPerResident - (purchased.get(resId) ?? 0);
-      const open = shopIds.filter((id) => (room.get(id) ?? 0) > 1e-9);
-      const free = open.reduce((s, id) => s + (room.get(id) ?? 0), 0);
-      if (want <= 1e-9 || free <= 1e-9) continue;
+  // Chaque habitant achète d'abord au commerce le plus proche qui a encore du stock ; quand il est épuisé, il passe au suivant.
+  const at = new Map(city.buildings.map((b) => [b.id, b]));
+  const distance = (a: Building | undefined, b: Building | undefined) => (a && b ? Math.hypot(a.x - b.x, a.y - b.y) : Infinity);
+  for (const [resId, shopIds] of coveredBy) {
+    let want = (residents.get(resId) ?? 0) * ECONOMY.goodsDemandPerResident;
+    const home = at.get(resId);
+    const nearestFirst = [...shopIds].sort((a, b) => distance(home, at.get(a)) - distance(home, at.get(b)));
+    for (const id of nearestFirst) {
+      if (want <= 1e-9) break;
+      const free = room.get(id) ?? 0;
+      if (free <= 1e-9) continue;
       const take = Math.min(want, free);
+      want -= take;
+      room.set(id, free - take);
+      shopSold.set(id, (shopSold.get(id) ?? 0) + take);
       purchased.set(resId, (purchased.get(resId) ?? 0) + take);
-      for (const id of open) {
-        const part = take * ((room.get(id) ?? 0) / free);
-        room.set(id, (room.get(id) ?? 0) - part);
-        shopSold.set(id, (shopSold.get(id) ?? 0) + part);
-      }
     }
   }
   for (const [id, sales] of shopSold) {

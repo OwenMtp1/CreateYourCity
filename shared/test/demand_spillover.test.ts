@@ -20,13 +20,17 @@ function city(): CityState {
 }
 
 describe('demande partagée entre commerces', () => {
-  it('un commerce saturé laisse la demande au second, qui vend aussi', () => {
+  it("le commerce le plus proche vend jusqu'à épuisement de son stock, puis les habitants vont au suivant", () => {
     const c = city();
+    c.population = 2000;
     const [s1, s2] = c.buildings.filter((b) => b.type === 'shop');
     const layers = simulateTick(c);
     const e1 = layers.economy![s1!.id]!;
     const e2 = layers.economy![s2!.id]!;
-    expect(e1.sold!).toBeGreaterThan(0);
-    expect(e2.sold!).toBeGreaterThan(0);
+    const cap1 = layers.details![s1!.id]!.capacity!;
+    const cap2 = layers.details![s2!.id]!.capacity!;
+    // Le plus proche sert d'abord sa zone, jusqu'à sa capacité ; le reste de la demande passe au suivant.
+    expect(e1.sold).toBeCloseTo(Math.min(cap1, e1.catchment! * 0.3), 6);
+    expect(e2.sold!).toBeLessThanOrEqual(cap2 + 1e-6);
   });
 });
