@@ -8,7 +8,7 @@ import {
   acceptFriend, directHistory, inviteFriend, pushFriends, pushPresence, removeFriend, requestFriend, searchPlayers, sendDirect, SocialError,
   type SocialContext,
 } from './social.ts';
-import { applyWorldAction, buildWorldView, checkExpansion, checkForcedAnnexation, cityModifiers, commitExpansion, commitForcedAnnexation, evaluateNation, RuleError } from '@cyc/shared/game';
+import { applyWorldAction, buildWorldView, cityName, checkExpansion, checkForcedAnnexation, cityModifiers, commitExpansion, commitForcedAnnexation, evaluateNation, RuleError } from '@cyc/shared/game';
 import { CITY_BY_ID } from '@cyc/shared/world';
 import { AuthError, type Authenticator, type PlayerIdentity } from '../auth.ts';
 import { TokenBucket } from '../rateLimit.ts';
@@ -210,6 +210,8 @@ export class GameServer {
   saveLobby(world: LobbyWorld): Promise<void> {
     const id = world.record.id;
     const chain = (this.saveChains.get(id) ?? Promise.resolve()).then(async () => {
+      // Une partie supprimée pendant une sauvegarde ne doit pas être réécrite.
+      if (!this.lobbies.has(id)) return;
       const clock = world.clock();
       const cities = [...world.cities.values()].map((c) => structuredClone(c));
       const meta = structuredClone(world.world.meta);
@@ -301,6 +303,9 @@ export class GameServer {
           await this.joinLobby(s, player, world);
           return reply(true);
         }
+        case 'deleteLobby':
+          await this.deleteLobby(player, msg.lobbyId);
+          return reply(true);
         case 'leaveLobby':
           this.leaveLobby(s);
           s.conn.send({ t: 'lobbyLeft' });
@@ -421,11 +426,28 @@ export class GameServer {
   }
 
   /** Salons dont le joueur est membre, avec le nombre de villes qu'il y possède. */
-  lobbiesOf(playerId: string): (LobbyInfo & { cities: number })[] {
+  lobbiesOf(playerId: string): (LobbyInfo & { cities: { cityId: string; name: string }[] })[] {
     return [...this.lobbies.values()]
       .filter((w) => w.members.has(playerId))
-      .map((w) => ({ ...w.info(), cities: w.citiesOf(playerId).length }))
+      .map((w) => ({ ...w.info(), cities: w.citiesOf(playerId).map((c) => ({ cityId: c.cityId, name: cityName(c.cityId) })) }))
       .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** Suppression par l'hôte : les joueurs connectés reviennent à l'accueil. */
+  private async deleteLobby(player: PlayerIdentity, lobbyId: string) {
+    const world = this.lobbies.get(lobbyId);
+    if (!world) throw new UserError('Partie introuvable.');
+    if (world.record.ownerId !== player.id) throw new UserError("Seul l'hôte peut supprimer la partie.");
+    this.lobbies.delete(lobbyId);
+    this.byCode.delete(world.record.code);
+    this.saveScheduled.delete(lobbyId);
+    const sessions = this.lobbySessions.get(lobbyId) ?? [];
+    this.lobbySessions.delete(lobbyId);
+    await this.store.deleteLobby(lobbyId);
+    for (const s of sessions) {
+      if (s.lobbyId === lobbyId) { s.lobbyId = null; s.knownCities = new Set(); }
+      s.conn.send({ t: 'lobbyClosed', name: world.record.name });
+    }
   }
 
   private async createLobby(player: PlayerIdentity, name: string, isPublic: boolean, maxPlayers: number) {

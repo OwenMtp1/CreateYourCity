@@ -77,6 +77,11 @@ export class PostgresStore implements Store {
     );
   }
 
+  async deleteLobby(lobbyId: string) {
+    // Les tables liées suppriment leurs lignes en cascade.
+    await this.pool.query(`delete from lobbies where id = $1`, [lobbyId]);
+  }
+
   async loadMembers(lobbyId: string) {
     const { rows } = await this.pool.query(`select player_id from lobby_members where lobby_id = $1 order by joined_at`, [lobbyId]);
     return rows.map((r) => r.player_id as string);

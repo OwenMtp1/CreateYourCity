@@ -43,6 +43,14 @@ export class MemoryStore implements Store {
     await this.changed();
   }
 
+  async deleteLobby(lobbyId: string) {
+    delete this.data.lobbies[lobbyId];
+    delete this.data.members[lobbyId];
+    delete this.data.cities[lobbyId];
+    delete this.data.chat[lobbyId];
+    await this.changed();
+  }
+
   async loadMembers(lobbyId: string) { return [...(this.data.members[lobbyId] ?? [])]; }
 
   async addMember(lobbyId: string, playerId: string) {

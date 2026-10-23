@@ -15,8 +15,8 @@ export interface GameState {
   player: { id: string; name: string } | null;
   authError: string | null;
   lobbies: LobbyInfo[];
-  /** Parties du joueur : salons dont il est membre, avec son nombre de villes. */
-  myLobbies: (LobbyInfo & { cities: number })[];
+  /** Parties du joueur : salons dont il est membre, avec ses villes. */
+  myLobbies: (LobbyInfo & { cities: { cityId: string; name: string }[] })[];
   lobby: LobbyInfo | null;
   clock: ClockInfo | null;
   tick: number;

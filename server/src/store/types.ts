@@ -38,6 +38,8 @@ export interface Store {
   upsertPlayer(id: string, name: string): Promise<void>;
   loadLobbies(): Promise<LobbyRecord[]>;
   createLobby(lobby: LobbyRecord): Promise<void>;
+  /** Supprime la partie avec ses membres, villes et messages. */
+  deleteLobby(lobbyId: string): Promise<void>;
   loadMembers(lobbyId: string): Promise<string[]>;
   addMember(lobbyId: string, playerId: string): Promise<void>;
   loadCities(lobbyId: string): Promise<CityState[]>;

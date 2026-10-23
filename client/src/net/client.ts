@@ -110,6 +110,11 @@ class GameClient {
       case 'myLobbies':
         setState({ myLobbies: msg.lobbies });
         return;
+      case 'lobbyClosed':
+        rememberLobby(null);
+        setState({ lobby: null, myCities: {}, twinCities: {}, twinViewId: null, activeCityId: null, layers: {}, world: null, summaries: [], chat: [], clock: null, view: 'globe' });
+        toast(`La partie « ${msg.name} » a été supprimée par son hôte.`, 'error');
+        return;
       case 'lobbyJoined': {
         rememberLobby(msg.lobby.code);
         const myCities = Object.fromEntries(msg.myCities.map((c) => [c.cityId, c]));

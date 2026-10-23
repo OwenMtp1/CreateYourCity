@@ -29,7 +29,7 @@ export class LobbyWorld {
     const r = this.record;
     return {
       id: r.id, code: r.code, name: r.name, isPublic: r.isPublic, maxPlayers: r.maxPlayers,
-      playerCount: this.members.size, createdAt: r.createdAt,
+      playerCount: this.members.size, ownerId: r.ownerId, createdAt: r.createdAt,
     };
   }
 

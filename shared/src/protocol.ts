@@ -109,6 +109,7 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   }),
   z.object({ t: z.literal('joinLobby'), reqId, code: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{6}$/) }),
   z.object({ t: z.literal('leaveLobby'), reqId }),
+  z.object({ t: z.literal('deleteLobby'), reqId, lobbyId: z.string().uuid() }),
   z.object({ t: z.literal('claimCity'), reqId, cityId: z.string().max(40) }),
   /** `force` : annexion d'une ville neutre par l'armée stationnée dans la ville de départ, sans paiement. */
   z.object({ t: z.literal('expandCity'), reqId, fromCityId: z.string().max(40), cityId: z.string().max(40), force: z.boolean().optional(), troops: z.number().int().min(1).max(1_000_000).optional() }),
@@ -134,6 +135,7 @@ export interface LobbyInfo {
   isPublic: boolean;
   maxPlayers: number;
   playerCount: number;
+  ownerId: string;
   createdAt: string;
 }
 
@@ -177,8 +179,10 @@ export type ServerMessage =
   | { t: 'result'; reqId: number; ok: boolean; error?: string; cost?: number }
   | { t: 'error'; message: string }
   | { t: 'lobbies'; lobbies: LobbyInfo[] }
-  /** Parties du joueur (salons dont il est membre), avec le nombre de villes qu'il y possède. */
-  | { t: 'myLobbies'; lobbies: (LobbyInfo & { cities: number })[] }
+  /** Parties du joueur (salons dont il est membre), avec les villes qu'il y possède. */
+  | { t: 'myLobbies'; lobbies: (LobbyInfo & { cities: { cityId: string; name: string }[] })[] }
+  /** La partie a été supprimée par son hôte : le joueur revient à l'accueil. */
+  | { t: 'lobbyClosed'; name: string }
   | {
       t: 'lobbyJoined';
       lobby: LobbyInfo;

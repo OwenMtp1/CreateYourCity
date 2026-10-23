@@ -9,6 +9,7 @@ export function LobbyScreen() {
   const player = useGame((s) => s.player)!;
   const lobbies = useGame((s) => s.lobbies);
   const myLobbies = useGame((s) => s.myLobbies);
+  const me = useGame((s) => s.player?.id);
   const [tab, setTab] = useState<'mine' | 'browse'>('mine');
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
@@ -55,9 +56,15 @@ export function LobbyScreen() {
                   <li key={l.id}>
                     <div>
                       <strong>{l.name}</strong>
-                      <span className="muted"> · {l.cities} ville{l.cities > 1 ? 's' : ''} · {l.playerCount}/{l.maxPlayers} joueurs</span>
+                      <span className="muted"> · {l.playerCount}/{l.maxPlayers} joueurs</span>
+                      <div className="small muted">{l.cities.length > 0 ? l.cities.map((c) => c.name).join(', ') : 'Aucune ville'}</div>
                     </div>
                     <button className="primary" onClick={() => void client.act({ t: 'joinLobby', code: l.code })}>Reprendre</button>
+                    {l.ownerId === me && (
+                      <button className="ghost small-btn danger" onClick={() => {
+                        if (confirm(`Supprimer la partie « ${l.name} » ? Toutes les villes seront perdues.`)) void client.act({ t: 'deleteLobby', lobbyId: l.id });
+                      }}>Supprimer</button>
+                    )}
                   </li>
                 ))}
               </ul>

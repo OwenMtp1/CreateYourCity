@@ -15,6 +15,6 @@ describe('parties du joueur', () => {
     await alice.send({ t: 'listLobbies' });
     const names = alice.last('myLobbies')!.lobbies.map((l: { name: string }) => l.name);
     expect(names).toEqual(['Partie A']);
-    expect(alice.last('myLobbies')!.lobbies[0]!.cities).toBe(0);
+    expect(alice.last('myLobbies')!.lobbies[0]!.cities).toEqual([]);
   });
 });
