@@ -159,10 +159,13 @@ function FriendRow({ friend, inLobby }: { friend: FriendEntry; inLobby: boolean 
   );
 }
 
+/** Référence stable : un tableau neuf à chaque lecture fait boucler useSyncExternalStore. */
+const NO_MESSAGES: DirectMessage[] = [];
+
 function DirectChat() {
   const with_ = useGame((s) => s.dmWith);
   const friends = useGame((s) => s.friends);
-  const messages = useGame((s) => (s.dmWith ? s.dms[s.dmWith] ?? [] : []));
+  const messages = useGame((s) => (s.dmWith ? s.dms[s.dmWith] ?? NO_MESSAGES : NO_MESSAGES));
   const me = useGame((s) => s.player?.id);
   const [text, setText] = useState('');
   useEffect(() => {
