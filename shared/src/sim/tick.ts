@@ -113,25 +113,44 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   /** Habitants vivant dans la zone de chalandise (qu'ils achètent ou non). */
   const shopCatchment = new Map<number, number>();
   let sold = 0;
+  /** Capacité encore libre de chaque commerce, et commerces qui couvrent chaque habitant. */
+  const room = new Map<number, number>();
+  const coveredBy = new Map<number, number[]>();
   for (const b of ops) {
     const capacity = BUILDINGS[b.type].goodsSalesCapacityPerDay;
     if (!capacity) continue;
-    let left = capacity * staff(b.id) * utilitySupply * goodsSalesFactor, sales = 0;
-    detail(b.id).capacity = left;
+    const available = capacity * staff(b.id) * utilitySupply * goodsSalesFactor;
+    room.set(b.id, available);
+    shopSold.set(b.id, 0);
+    detail(b.id).capacity = available;
     let catchment = 0;
     for (const resId of layout.shopReach.get(b.id) ?? []) {
       catchment += residents.get(resId) ?? 0;
-      if (left <= 1e-9) break;
-      const want = (residents.get(resId) ?? 0) * ECONOMY.goodsDemandPerResident - (purchased.get(resId) ?? 0);
-      if (want <= 1e-9) continue;
-      const take = Math.min(want, left);
-      purchased.set(resId, (purchased.get(resId) ?? 0) + take);
-      left -= take;
-      sales += take;
+      const shops = coveredBy.get(resId);
+      if (shops) shops.push(b.id);
+      else coveredBy.set(resId, [b.id]);
     }
     shopCatchment.set(b.id, catchment);
-    shopSold.set(b.id, sales);
-    shopCustomers.set(b.id, sales / ECONOMY.goodsDemandPerResident);
+  }
+  // La demande d'un habitant se répartit entre les commerces qui le couvrent, à proportion de leur capacité libre :
+  // un commerce déjà saturé laisse la demande à ceux qui ont encore de la place. Plusieurs passes servent la capacité libérée.
+  for (let pass = 0; pass < 3; pass++) {
+    for (const [resId, shopIds] of coveredBy) {
+      const want = (residents.get(resId) ?? 0) * ECONOMY.goodsDemandPerResident - (purchased.get(resId) ?? 0);
+      const open = shopIds.filter((id) => (room.get(id) ?? 0) > 1e-9);
+      const free = open.reduce((s, id) => s + (room.get(id) ?? 0), 0);
+      if (want <= 1e-9 || free <= 1e-9) continue;
+      const take = Math.min(want, free);
+      purchased.set(resId, (purchased.get(resId) ?? 0) + take);
+      for (const id of open) {
+        const part = take * ((room.get(id) ?? 0) / free);
+        room.set(id, (room.get(id) ?? 0) - part);
+        shopSold.set(id, (shopSold.get(id) ?? 0) + part);
+      }
+    }
+  }
+  for (const [id, sales] of shopSold) {
+    shopCustomers.set(id, sales / ECONOMY.goodsDemandPerResident);
     sold += sales;
   }
 
