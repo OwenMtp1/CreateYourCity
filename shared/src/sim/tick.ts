@@ -113,40 +113,34 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   /** Habitants vivant dans la zone de chalandise (qu'ils achètent ou non). */
   const shopCatchment = new Map<number, number>();
   let sold = 0;
-  /** Capacité encore libre de chaque commerce, et commerces qui couvrent chaque habitant. */
+  /** Capacité encore libre de chaque commerce. */
   const room = new Map<number, number>();
-  const coveredBy = new Map<number, number[]>();
-  for (const b of ops) {
-    const capacity = BUILDINGS[b.type].goodsSalesCapacityPerDay;
-    if (!capacity) continue;
-    const available = capacity * staff(b.id) * utilitySupply * goodsSalesFactor;
+  const shops = ops.filter((b) => (BUILDINGS[b.type].goodsSalesCapacityPerDay ?? 0) > 0);
+  for (const b of shops) {
+    const available = BUILDINGS[b.type].goodsSalesCapacityPerDay! * staff(b.id) * utilitySupply * goodsSalesFactor;
     room.set(b.id, available);
     shopSold.set(b.id, 0);
     detail(b.id).capacity = available;
     let catchment = 0;
-    for (const resId of layout.shopReach.get(b.id) ?? []) {
-      catchment += residents.get(resId) ?? 0;
-      const shops = coveredBy.get(resId);
-      if (shops) shops.push(b.id);
-      else coveredBy.set(resId, [b.id]);
-    }
+    for (const resId of layout.shopReach.get(b.id) ?? []) catchment += residents.get(resId) ?? 0;
     shopCatchment.set(b.id, catchment);
   }
-  // Chaque habitant achète d'abord au commerce le plus proche qui a encore du stock ; quand il est épuisé, il passe au suivant.
+  // Tous les habitants de la ville achètent, du commerce le plus proche au plus lointain, jusqu'à épuisement de chaque commerce.
   const at = new Map(city.buildings.map((b) => [b.id, b]));
   const distance = (a: Building | undefined, b: Building | undefined) => (a && b ? Math.hypot(a.x - b.x, a.y - b.y) : Infinity);
-  for (const [resId, shopIds] of coveredBy) {
-    let want = (residents.get(resId) ?? 0) * ECONOMY.goodsDemandPerResident;
+  for (const [resId, count] of residents) {
+    let want = count * ECONOMY.goodsDemandPerResident;
     const home = at.get(resId);
-    const nearestFirst = [...shopIds].sort((a, b) => distance(home, at.get(a)) - distance(home, at.get(b)));
-    for (const id of nearestFirst) {
+    const nearestFirst = shops
+      .filter((s) => (room.get(s.id) ?? 0) > 1e-9)
+      .sort((a, b) => distance(home, a) - distance(home, b));
+    for (const s of nearestFirst) {
       if (want <= 1e-9) break;
-      const free = room.get(id) ?? 0;
-      if (free <= 1e-9) continue;
+      const free = room.get(s.id) ?? 0;
       const take = Math.min(want, free);
       want -= take;
-      room.set(id, free - take);
-      shopSold.set(id, (shopSold.get(id) ?? 0) + take);
+      room.set(s.id, free - take);
+      shopSold.set(s.id, (shopSold.get(s.id) ?? 0) + take);
       purchased.set(resId, (purchased.get(resId) ?? 0) + take);
     }
   }

@@ -30,7 +30,7 @@ const settle = (city: CityState, days = 5) => {
 };
 
 describe('circuit des biens', () => {
-  it('un commerce vend aux habitants de son quartier, pas à ceux qui sont trop loin', () => {
+  it("les habitants achètent d'abord au commerce le plus proche, puis au suivant, même lointain", () => {
     const city = town();
     build(city, 'shop', 120, 978);
     build(city, 'shop', 1300, 978); // à 1 km des logements
@@ -39,8 +39,10 @@ describe('circuit des biens', () => {
     const far = layers.economy![idOf(city, 'shop', 1)]!;
     expect(near.sold).toBeGreaterThan(0);
     expect(near.customers).toBeGreaterThan(0);
-    expect(far.sold).toBe(0);
-    expect(far.profit).toBeLessThan(0);
+    // Le lointain ne reçoit que ce que le proche n'a pas pu servir.
+    const capNear = layers.details![idOf(city, 'shop', 0)]!.capacity!;
+    expect(near.sold).toBeLessThanOrEqual(capNear + 1e-6);
+    expect(far.sold).toBeGreaterThan(0);
   });
 
   it('une usine voisine livre les commerces : achats moins chers, commerce rentable, moins d\'importations', () => {
