@@ -125,12 +125,19 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     for (const resId of layout.shopReach.get(b.id) ?? []) catchment += residents.get(resId) ?? 0;
     shopCatchment.set(b.id, catchment);
   }
-  // Tous les habitants de la ville achètent, du commerce le plus proche au plus lointain, jusqu'à épuisement de chaque commerce.
+  // Achats du jour : habitants (à domicile) et salariés (près de leur lieu de travail, hors commerces).
+  // Chacun achète dans le commerce le plus proche qui a encore de la capacité, puis dans le suivant.
   const at = new Map(city.buildings.map((b) => [b.id, b]));
   const distance = (a: Building | undefined, b: Building | undefined) => (a && b ? Math.hypot(a.x - b.x, a.y - b.y) : Infinity);
-  for (const [resId, count] of residents) {
-    let want = count * ECONOMY.goodsDemandPerResident;
-    const home = at.get(resId);
+  const buyers: { id: number; want: number }[] = [...residents].map(([id, count]) => ({ id, want: count * ECONOMY.goodsDemandPerResident }));
+  for (const b of ops) {
+    if (BUILDINGS[b.type].goodsSalesCapacityPerDay) continue;
+    const workers = allocation.employed.get(b.id) ?? 0;
+    if (workers > 0) buyers.push({ id: b.id, want: workers * ECONOMY.goodsDemandPerWorker });
+  }
+  for (const buyer of buyers) {
+    let want = buyer.want;
+    const home = at.get(buyer.id);
     const nearestFirst = shops
       .filter((s) => (room.get(s.id) ?? 0) > 1e-9)
       .sort((a, b) => distance(home, a) - distance(home, b));
@@ -141,7 +148,7 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
       want -= take;
       room.set(s.id, free - take);
       shopSold.set(s.id, (shopSold.get(s.id) ?? 0) + take);
-      purchased.set(resId, (purchased.get(resId) ?? 0) + take);
+      purchased.set(buyer.id, (purchased.get(buyer.id) ?? 0) + take);
     }
   }
   for (const [id, sales] of shopSold) {
@@ -365,7 +372,11 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
   let imported = 0, exported = 0, commercialTax = 0, industrialTax = 0, lostSales = 0, unsoldGoods = 0;
   for (const b of ops) {
     const def = BUILDINGS[b.type];
-    const wages = def.jobs * staff(b.id) * wage;
+    // La masse salariale d'un commerce suit ses ventes, avec un plancher.
+    const payroll = def.goodsSalesCapacityPerDay
+      ? Math.max(COMMERCE.minPayroll, (detail(b.id).capacity ?? 0) > 0 ? (shopSold.get(b.id) ?? 0) / detail(b.id).capacity! : 0)
+      : 1;
+    const wages = def.jobs * staff(b.id) * wage * payroll;
     if (def.goodsSalesCapacityPerDay) {
       const wanted = shopSold.get(b.id) ?? 0;
       const contract = sold > 0 ? (wanted * contractUsed) / sold : 0;

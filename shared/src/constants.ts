@@ -43,6 +43,8 @@ export const ECONOMY = {
   workforceShare: 0.5,
   /** Biens achetés par habitant et par jour (dans un commerce à proximité). */
   goodsDemandPerResident: 0.3,
+  /** Biens achetés par salarié et par jour, près de son lieu de travail (hors commerces). */
+  goodsDemandPerWorker: 0.1,
   retailPrice: 30,
   localWholesalePrice: 14,
   importGoodsPrice: 18,
@@ -62,6 +64,8 @@ export const ECONOMY = {
 export const COMMERCE = {
   /** Rayon de chalandise : un commerce vend aux habitants à moins de 450 m. */
   catchmentRadius: 450,
+  /** Part minimale de la masse salariale d'un commerce, même quand il vend peu. Le reste suit ses ventes. */
+  minPayroll: 0.4,
   /** Frais d'importation (transport, intermédiaires) ajoutés au prix du marché commun. */
   importHandling: 5,
   /** Coût de livraison par mètre de route entre une usine et un commerce (payé par le commerce). */

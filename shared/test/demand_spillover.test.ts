@@ -30,7 +30,8 @@ describe('demande partagée entre commerces', () => {
     const cap1 = layers.details![s1!.id]!.capacity!;
     const cap2 = layers.details![s2!.id]!.capacity!;
     // Le plus proche sert d'abord sa zone, jusqu'à sa capacité ; le reste de la demande passe au suivant.
-    expect(e1.sold).toBeCloseTo(Math.min(cap1, e1.catchment! * 0.3), 6);
+    expect(e1.sold!).toBeLessThanOrEqual(cap1 + 1e-6);
+    expect(e1.sold!).toBeGreaterThanOrEqual(Math.min(cap1, e1.catchment! * 0.3) - 1e-6);
     expect(e2.sold!).toBeLessThanOrEqual(cap2 + 1e-6);
   });
 });
