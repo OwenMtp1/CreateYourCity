@@ -1,6 +1,6 @@
 // Transports en commun : bus sur les routes, tram et métro sur leur propre voie.
 import * as THREE from 'three';
-import { BUILDINGS, CITY_SIZE_M, type CityState, type CityLayout } from '@cyc/shared';
+import { BUILDINGS, buildingRect, CITY_SIZE_M, tramPath, type Building, type CityState, type CityLayout } from '@cyc/shared';
 import { sharedGeometry, solid } from './models.ts';
 
 const HALF = CITY_SIZE_M / 2;
@@ -54,7 +54,7 @@ export class TransitView {
           rest.sort((a, b) => Math.hypot(a.x - last.x, a.y - last.y) - Math.hypot(b.x - last.x, b.y - last.y));
           chain.push(rest.shift()!);
         }
-        chains = [chain.map((b) => new THREE.Vector3(b.x - HALF, st.y, b.y - HALF))];
+        chains = mode === 'tram' ? tramChains(city, chain, st.y) : [chain.map((b) => new THREE.Vector3(b.x - HALF, st.y, b.y - HALF))];
       }
       for (const pts of chains) {
         if (pts.length < 2) continue;
@@ -118,4 +118,29 @@ export class TransitView {
     }
   }
 
+}
+
+/**
+ * Voie de tram entre stations consécutives : le tracé contourne les bâtiments. Si une liaison est impossible,
+ * la ligne est coupée à cet endroit plutôt que de traverser un bâtiment.
+ */
+function tramChains(city: CityState, chain: Building[], y: number): THREE.Vector3[][] {
+  const rects = city.buildings.map((b) => [b.id, buildingRect(b)] as const);
+  const pieces: THREE.Vector3[][] = [];
+  let cur: THREE.Vector3[] = [];
+  for (let k = 1; k < chain.length; k++) {
+    const a = chain[k - 1]!, b = chain[k]!;
+    const obstacles = rects.filter(([id]) => id !== a.id && id !== b.id).map(([, r]) => r);
+    const path = tramPath({ x: a.x, y: a.y }, { x: b.x, y: b.y }, obstacles);
+    if (!path) {
+      if (cur.length > 1) pieces.push(cur);
+      cur = [];
+      continue;
+    }
+    const v = path.map((p) => new THREE.Vector3(p.x - HALF, y, p.y - HALF));
+    if (cur.length === 0) cur = v;
+    else cur.push(...v.slice(1));
+  }
+  if (cur.length > 1) pieces.push(cur);
+  return pieces;
 }
