@@ -11,6 +11,8 @@ export interface Building {
   builtAtTick: number;
   /** Parkings : prix d'un stationnement en crédits (absent ou 0 : gratuit). */
   fee?: number;
+  /** Vente à l'unité : prix d'une place ou d'une chambre (absent : prix par défaut du bâtiment). */
+  price?: number;
   /**
    * Usines : capacité envoyée à chaque commerce (biens/j), choisie par le joueur. Absent : répartition
    * automatique par proximité. Présent (même vide) : seuls les commerces listés sont approvisionnés.
@@ -199,6 +201,8 @@ export interface CityLayers {
 
 /** Comptes d'un bâtiment, en crédits par jour de jeu. */
 export interface BuildingEconomy {
+  /** Entrées (cinéma) ou chambres louées (hôtel) par jour. */
+  visitors?: number;
   /** Recettes (ventes, chiffre d'affaires) et dépenses (achats, salaires) de l'entreprise. */
   revenue: number;
   costs: number;

@@ -131,6 +131,9 @@ export const TRAFFIC = {
  * habitants ; l'offre vient des rues raccordées et des parkings. Un parking payant attire moins
  * (poids exp(−tarif / sensibilité)) ; les automobilistes n'y vont que faute de mieux.
  */
+/** Bornes du prix d'une vente à l'unité, en fraction du prix par défaut. */
+export const PRICING = { minFactor: 0.5, maxFactor: 3 } as const;
+
 export const PARKING = {
   streetSpacesPerMeter: { street: 0.08, avenue: 0.05, bridge: 0 },
   spacesPerCarTrip: 0.12,

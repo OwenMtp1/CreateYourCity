@@ -1,7 +1,7 @@
 // Fiches détaillées des bâtiments : inspecteur flottant (clic sur un bâtiment) et répertoire de la ville.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  BUILDINGS, COMMERCE, ECONOMY, FACTORY_STOCK_DAYS, formatGameTime, sectorOf, SERVICE_KINDS, TRANSIT, type Building, type BuildingCategory, type BuildingEconomy, type CityLayers, type CityState, type Sector,
+  BUILDINGS, COMMERCE, ECONOMY, FACTORY_STOCK_DAYS, formatGameTime, PRICING, sectorOf, SERVICE_KINDS, TRANSIT, type Building, type BuildingCategory, type BuildingEconomy, type CityLayers, type CityState, type Sector,
 } from '@cyc/shared';
 import { client } from '../../net/client.ts';
 import { activeCity, useGame } from '../../state.ts';
@@ -75,6 +75,26 @@ export function buildingDetails(city: CityState, layers: CityLayers | null, b: B
 const signed = (v: number) => `${v >= 0 ? '+' : '−'}${fmtInt(Math.abs(v))} cr/j`;
 
 /** Comptes du jour d'une entreprise ou d'un logement, avec ses fournisseurs et clients (cliquables). */
+/** Prix d'une place de cinéma ou d'une chambre d'hôtel : plus cher, moins de clients. */
+function PriceSettings({ id, pricing, price, visitors, revenue }: { id: number; pricing: { unit: string; defaultPrice: number }; price: number; visitors: number | undefined; revenue: number | undefined }) {
+  const [value, setValue] = useState(price);
+  useEffect(() => setValue(price), [price]);
+  const min = Math.round(pricing.defaultPrice * PRICING.minFactor), max = Math.round(pricing.defaultPrice * PRICING.maxFactor);
+  return (
+    <form className="stack" onSubmit={(e) => { e.preventDefault(); void client.cityCommand({ type: 'setPrice', id, price: value }); }}>
+      <Row label={`Prix d'une ${pricing.unit}`} value={`${price.toLocaleString('fr-FR')} cr (défaut ${pricing.defaultPrice} cr)`} />
+      <Row label={`${pricing.unit === 'chambre' ? 'Chambres louées' : 'Entrées'} / j`} value={visitors === undefined ? '—' : fmtInt(visitors)} />
+      <Row label="Recettes" value={revenue === undefined ? '—' : `${fmtInt(revenue)} cr/j`} />
+      <label>
+        Nouveau prix : {value.toLocaleString('fr-FR')} cr
+        <input type="range" min={min} max={max} step={0.5} value={value} onChange={(e) => setValue(Number(e.target.value))} />
+      </label>
+      <p className="small muted">Entre {min} et {max} cr. Au-delà du prix par défaut, la demande baisse plus vite que le prix ne monte : le prix par défaut rapporte le plus.</p>
+      <button type="submit" disabled={Math.abs(value - price) < 0.05}>Appliquer le prix</button>
+    </form>
+  );
+}
+
 function Accounts({ city, layers, b, onSelect }: { city: CityState; layers: CityLayers | null; b: Building; onSelect: (b: Building) => void }) {
   const e = layers?.economy?.[b.id];
   const def = BUILDINGS[b.type];
@@ -182,6 +202,7 @@ export function BuildingInspector({ id, onClose, onFocus, onSelect }: { id: numb
         <Accounts city={city} layers={layers} b={b} onSelect={onSelect} />
         {buildingDetails(city, layers, b).map((r) => <Row key={r.label} label={r.label} value={r.value} tone={r.tone} />)}
         {def.parking && <ParkingSettings key={b.id} id={b.id} spaces={def.parking.spaces} fee={b.fee ?? 0} use={layers?.parkingUse?.[b.id]} revenue={layers?.details?.[b.id]?.revenue} />}
+        {def.pricing && <PriceSettings key={b.id} id={b.id} pricing={def.pricing} price={b.price ?? def.pricing.defaultPrice} visitors={layers?.economy?.[b.id]?.visitors} revenue={layers?.details?.[b.id]?.revenue} />}
         {def.transit && <TransitSettings key={def.transit.mode} mode={def.transit.mode} fare={city.transitFares?.[def.transit.mode] ?? TRANSIT.farePerRide} riders={layers?.details?.[b.id]?.riders} revenue={layers?.details?.[b.id]?.revenue} />}
       </div>
       <div className="row">

@@ -72,6 +72,11 @@ export interface BuildingDef {
   needsWater?: boolean;
   /** Parking municipal : nombre de places (gratuit ou payant, tarif réglable par parking). */
   parking?: { spaces: number };
+  /**
+   * Vente à l'unité (place de cinéma, chambre d'hôtel) : prix réglable par le joueur. La demande suit
+   * (defaultPrice / prix)^elasticity, plafonnée par la capacité du bâtiment (capacityPerDay × personnel).
+   */
+  pricing?: { unit: string; defaultPrice: number; capacityPerDay: number; elasticity: number };
 }
 
 export const BUILDINGS: Record<BuildingType, BuildingDef> = {
@@ -85,13 +90,14 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     type: 'hotel', label: 'Hôtel', category: 'commercial',
     description: "Héberge des visiteurs de passage : chiffre d'affaires sans habitants supplémentaires.",
     w: 40, h: 40, cost: 300_000, upkeepPerDay: 150, jobs: 20, housing: 0, powerMW: 0.6, waterM3PerDay: 15,
-    revenuePerWorker: 180,
+    pricing: { unit: 'chambre', defaultPrice: 150, capacityPerDay: 24, elasticity: 1.2 },
   },
   cinema: {
     type: 'cinema', label: 'Cinéma', category: 'commercial',
     description: 'Loisirs pour les quartiers voisins, avec un petit chiffre d\'affaires.',
     w: 40, h: 30, cost: 180_000, upkeepPerDay: 90, jobs: 12, housing: 0, powerMW: 0.2, waterM3PerDay: 3,
-    revenuePerWorker: 220, service: { kind: 'leisure', radius: 350, capacity: 1_500 },
+    service: { kind: 'leisure', radius: 350, capacity: 1_500 },
+    pricing: { unit: 'place', defaultPrice: 11, capacityPerDay: 300, elasticity: 1.2 },
   },
   house: {
     type: 'house', label: 'Maisons', category: 'residential',

@@ -407,6 +407,15 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
       const tax = city.taxes.commercial * Math.max(0, profit);
       commercialTax += tax;
       economy[b.id] = { revenue, costs: wages, profit, tax, educated };
+    } else if (def.pricing) {
+      const p = b.price ?? def.pricing.defaultPrice;
+      const demand = def.pricing.capacityPerDay * Math.pow(def.pricing.defaultPrice / p, def.pricing.elasticity);
+      const visitors = Math.min(demand, def.pricing.capacityPerDay * staff(b.id) * trafficEfficiency * utilitySupply);
+      const revenue = visitors * p;
+      const profit = revenue - wages;
+      const tax = city.taxes.commercial * Math.max(0, profit);
+      commercialTax += tax;
+      economy[b.id] = { revenue, costs: wages, profit, tax, visitors };
     } else if (def.revenuePerWorker) {
       const revenue = def.jobs * staff(b.id) * def.revenuePerWorker * trafficEfficiency * utilitySupply;
       const profit = revenue - wages;

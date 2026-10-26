@@ -23,9 +23,10 @@ describe('casino, hôtel et cinéma', () => {
   it('sont définis comme des bâtiments commerciaux avec leurs effets', () => {
     expect(BUILDINGS.casino.revenuePerWorker).toBeGreaterThan(0);
     expect(BUILDINGS.casino.pollution).toBeDefined();
-    expect(BUILDINGS.hotel.revenuePerWorker).toBeGreaterThan(0);
+    expect(BUILDINGS.hotel.pricing).toBeDefined();
     expect(BUILDINGS.hotel.housing).toBe(0);
     expect(BUILDINGS.cinema.service?.kind).toBe('leisure');
+    expect(BUILDINGS.cinema.pricing).toBeDefined();
   });
 
   it('un casino et un cinéma en activité génèrent un chiffre d\'affaires', () => {
@@ -35,5 +36,16 @@ describe('casino, hôtel et cinéma', () => {
     const cinema = c.buildings.find((b) => b.type === 'cinema')!;
     expect(layers.economy![casino.id]!.revenue).toBeGreaterThan(0);
     expect(layers.economy![cinema.id]!.revenue).toBeGreaterThan(0);
+  });
+
+  it('le prix d\'une place se règle dans des bornes, et une place plus chère fait fuir des spectateurs', () => {
+    const c = town();
+    const cinema = c.buildings.find((b) => b.type === 'cinema')!;
+    expect(applyCityCommand(c, { type: 'setPrice', id: cinema.id, price: 1 }).ok).toBe(false);
+    expect(applyCityCommand(c, { type: 'setPrice', id: cinema.id, price: 20 }).ok).toBe(true);
+    const high = simulateTick(c).economy![cinema.id]!;
+    cinema.price = 11;
+    const base = simulateTick(c).economy![cinema.id]!;
+    expect(base.visitors!).toBeGreaterThan(high.visitors!);
   });
 });

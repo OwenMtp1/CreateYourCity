@@ -2,7 +2,7 @@
 // Le client réutilise les mêmes validations pour l'aperçu de construction (retour immédiat).
 import { BUILDINGS, ROADS, sectorOf, type BuildingType, type RoadType } from './catalog.ts';
 import {
-  CITY_SIZE_M, MAX_DEBT, MAX_TAX_RATE, PARKING, POPULATION_POLICY, REGIONAL_ACCESS, TICKS_PER_DAY, TRANSIT, ROAD_ACCESS_DISTANCE, ROAD_AUTO_CONNECT_DISTANCE, ROAD_MAX_LENGTH, ROAD_MIN_LENGTH,
+  CITY_SIZE_M, MAX_DEBT, MAX_TAX_RATE, PARKING, POPULATION_POLICY, PRICING, REGIONAL_ACCESS, TICKS_PER_DAY, TRANSIT, ROAD_ACCESS_DISTANCE, ROAD_AUTO_CONNECT_DISTANCE, ROAD_MAX_LENGTH, ROAD_MIN_LENGTH,
 } from './constants.ts';
 import {
   buildingRect, closestPointOnSegment, footprint, pointSegmentDistance, rectsOverlap, roadWidth, segmentLength, segmentRectDistance, type Point, type Segment,
@@ -25,6 +25,8 @@ export type CityCommand =
   | { type: 'repay'; amount: number }
   /** Tarif d'un parking (0 : gratuit). */
   | { type: 'setParkingFee'; id: number; fee: number }
+  /** Prix d'une place de cinéma ou d'une chambre d'hôtel. */
+  | { type: 'setPrice'; id: number; price: number }
   /** Campagne de communication pour l'emploi ou l'attractivité. */
   | { type: 'campaign'; kind: CampaignKind }
   /** Déplace `count` actifs d'un site d'emploi vers un autre du même secteur. */
@@ -324,6 +326,17 @@ export function applyCityCommand(city: CityState, cmd: CityCommand): CommandResu
       city.debt -= amount;
       city.treasury -= amount;
       return { ok: true, cost: amount };
+    }
+    case 'setPrice': {
+      const b = city.buildings.find((x) => x.id === cmd.id);
+      const pricing = b && BUILDINGS[b.type].pricing;
+      if (!b || !pricing) return { ok: false, reason: 'Ce bâtiment ne vend pas à l\'unité.' };
+      const min = pricing.defaultPrice * PRICING.minFactor, max = pricing.defaultPrice * PRICING.maxFactor;
+      if (!Number.isFinite(cmd.price) || cmd.price < min || cmd.price > max) {
+        return { ok: false, reason: `Prix entre ${Math.round(min)} et ${Math.round(max)} cr.` };
+      }
+      b.price = Math.round(cmd.price * 10) / 10;
+      return { ok: true, cost: 0 };
     }
     case 'setParkingFee': {
       const b = city.buildings.find((x) => x.id === cmd.id);
