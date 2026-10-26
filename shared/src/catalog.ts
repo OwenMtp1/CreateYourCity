@@ -23,7 +23,10 @@ export type BuildingType =
   | 'parking'
   | 'parking_garage'
   | 'urban_forest'
-  | 'solar_plant';
+  | 'solar_plant'
+  | 'casino'
+  | 'hotel'
+  | 'cinema';
 
 export type RoadType = 'street' | 'avenue' | 'bridge';
 export type BuildingCategory = 'residential' | 'commercial' | 'industrial' | 'service' | 'utility' | 'transport' | 'military';
@@ -51,6 +54,8 @@ export interface BuildingDef {
   goodsSalesCapacityPerDay?: number;
   /** Bureaux : chiffre d'affaires par employé et par jour. */
   officeRevenue?: boolean;
+  /** Autres entreprises privées : chiffre d'affaires par employé et par jour (comme les bureaux). */
+  revenuePerWorker?: number;
   service?: { kind: ServiceKind; radius: number; capacity: number };
   powerOutputMW?: number;
   waterOutputM3PerDay?: number;
@@ -70,6 +75,24 @@ export interface BuildingDef {
 }
 
 export const BUILDINGS: Record<BuildingType, BuildingDef> = {
+  casino: {
+    type: 'casino', label: 'Casino', category: 'commercial',
+    description: 'Gros chiffre d\'affaires pour peu d\'employés, mais affluence et bruit autour : nuisance pour les logements proches.',
+    w: 40, h: 30, cost: 450_000, upkeepPerDay: 250, jobs: 30, housing: 0, powerMW: 0.8, waterM3PerDay: 8,
+    revenuePerWorker: 260, pollution: { radius: 250, intensity: 0.3 },
+  },
+  hotel: {
+    type: 'hotel', label: 'Hôtel', category: 'commercial',
+    description: "Héberge des visiteurs de passage : chiffre d'affaires sans habitants supplémentaires.",
+    w: 40, h: 40, cost: 300_000, upkeepPerDay: 150, jobs: 20, housing: 0, powerMW: 0.6, waterM3PerDay: 15,
+    revenuePerWorker: 180,
+  },
+  cinema: {
+    type: 'cinema', label: 'Cinéma', category: 'commercial',
+    description: 'Loisirs pour les quartiers voisins, avec un petit chiffre d\'affaires.',
+    w: 40, h: 30, cost: 180_000, upkeepPerDay: 90, jobs: 12, housing: 0, powerMW: 0.2, waterM3PerDay: 3,
+    revenuePerWorker: 220, service: { kind: 'leisure', radius: 350, capacity: 1_500 },
+  },
   house: {
     type: 'house', label: 'Maisons', category: 'residential',
     description: 'Petit îlot de maisons individuelles.',

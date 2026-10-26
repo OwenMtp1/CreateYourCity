@@ -214,6 +214,29 @@ export function buildModel(type: BuildingType, seed: number): { group: THREE.Gro
       info.height = h + 18;
       break;
     }
+    case 'casino': {
+      g.add(ground(W, D, 0x6b7280));
+      g.add(box(W - 4, 9, D - 4, solid(0x7f1d1d), 0, 0, 0));
+      g.add(box(W - 10, 5, D - 10, solid(0xb45309, { emissive: new THREE.Color(0xf59e0b), emissiveIntensity: 0.35 }), 0, 9, 0));
+      g.add(box(6, 9, 6, solid(0x991b1b), W / 2 - 6, 0, -D / 2 + 6));
+      info.height = 14;
+      break;
+    }
+    case 'hotel': {
+      const floors = 6 + Math.floor(rnd() * 3);
+      g.add(ground(W, D, 0xa8a29e));
+      g.add(tower(W - 8, floors * 3.2, D - 8, 'office', 0xe7e5e4));
+      g.add(box(W - 6, 0.6, D - 6, solid(0x44403c), 0, floors * 3.2, 0));
+      info.height = floors * 3.2 + 1;
+      break;
+    }
+    case 'cinema': {
+      g.add(ground(W, D, 0x94a3b8));
+      g.add(box(W - 6, 8, D - 6, solid(0x475569), 0, 0, 0));
+      g.add(box(W - 8, 0.4, 4, solid(0xfacc15, { emissive: new THREE.Color(0xfacc15), emissiveIntensity: 0.5 }), 0, 8.2, D / 2 - 6));
+      info.height = 9;
+      break;
+    }
     case 'factory': {
       g.add(ground(W, D, 0x7d7b74));
       const hallMat = solid(0x9a8f80);

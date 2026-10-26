@@ -407,6 +407,12 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
       const tax = city.taxes.commercial * Math.max(0, profit);
       commercialTax += tax;
       economy[b.id] = { revenue, costs: wages, profit, tax, educated };
+    } else if (def.revenuePerWorker) {
+      const revenue = def.jobs * staff(b.id) * def.revenuePerWorker * trafficEfficiency * utilitySupply;
+      const profit = revenue - wages;
+      const tax = city.taxes.commercial * Math.max(0, profit);
+      commercialTax += tax;
+      economy[b.id] = { revenue, costs: wages, profit, tax };
     } else if (def.goodsProductionPerDay) {
       const out = potentialOutput(b) * trafficEfficiency;
       const share = plan.total > 0 ? out / plan.total : 0;
@@ -505,10 +511,11 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     const healthFactor = law.public_health && def.service?.kind === 'health' ? LAW_EFFECTS.public_health.healthUpkeepFactor : 1;
     // Services publics : une part fixe, le reste selon l'utilisation (un équipement vide coûte moins cher).
     const use = serviceUse.get(b.id) ?? 0;
-    const usage = def.service ? COMMERCE.serviceFixedUpkeepShare + (1 - COMMERCE.serviceFixedUpkeepShare) * use : 1;
+    const publicService = !!def.service && !!def.publicSector;
+    const usage = publicService ? COMMERCE.serviceFixedUpkeepShare + (1 - COMMERCE.serviceFixedUpkeepShare) * use : 1;
     const cost = def.upkeepPerDay * healthFactor * usage;
     upkeep += cost;
-    if (def.service) economy[b.id] = { revenue: 0, costs: cost, profit: -cost, tax: 0, publicCost: cost, use };
+    if (publicService) economy[b.id] = { revenue: 0, costs: cost, profit: -cost, tax: 0, publicCost: cost, use };
   }
   for (const r of city.roads) upkeep += segmentLength(r) * ROADS[r.type].upkeepPerMeterPerDay;
   const utilityImports =
