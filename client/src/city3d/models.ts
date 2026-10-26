@@ -6,6 +6,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BUILDINGS, mulberry32, hashString, type Building, type BuildingType } from '@cyc/shared';
 
+/** Matériaux des maquettes qui s'éclairent la nuit (vitrages, enseignes). */
+const LIT_MATERIAL = /glass|sign|marquee|metro_m|bus_sign/i;
 /** Maquettes chargées, par type de bâtiment. Absente : le modèle procédural est utilisé. */
 const bakedModels = new Map<string, THREE.Group>();
 
@@ -16,7 +18,16 @@ export async function preloadModels(types: readonly string[]): Promise<void> {
     try {
       const gltf = await loader.loadAsync(`/models/${type}.glb`);
       gltf.scene.traverse((o) => {
-        if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; }
+        if (!(o instanceof THREE.Mesh)) return;
+        o.castShadow = true;
+        o.receiveShadow = true;
+        // Vitrages et enseignes s'allument la nuit, comme les fenêtres procédurales.
+        for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+          if (m instanceof THREE.MeshStandardMaterial && LIT_MATERIAL.test(m.name)) {
+            m.emissive = new THREE.Color(0xffd9a0);
+            windowMaterials.add(m);
+          }
+        }
       });
       bakedModels.set(type, gltf.scene);
     } catch {

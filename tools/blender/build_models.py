@@ -468,11 +468,15 @@ def port(w, d):
     box(warehouse_w, d * 0.45, 8, w * 0.28, d * 0.22, 1.2, mat("warehouse", (0.58, 0.60, 0.62), 0.6, 0.3))
     gable(warehouse_w + 0.4, d * 0.45 + 0.4, 2.0, w * 0.28, d * 0.22, 9.2, mat("roof", BITUMEN, 0.8), ridge="x")
     # Portique : deux jambes, une flèche en porte-à-faux.
-    gx = w / 2 - 6
-    box(1.2, 14, 36, gx - 3, -d / 2 + 4, 1.2, mat("crane", (0.85, 0.55, 0.15), 0.5, 0.4))
-    box(1.2, 14, 36, gx + 3, -d / 2 + 4, 1.2, mat("crane", (0.85, 0.55, 0.15), 0.5, 0.4))
-    box(8, 1.4, 1.4, gx, -d / 2 + 4, 34, mat("crane", (0.85, 0.55, 0.15), 0.5, 0.4))
-    box(24, 1.2, 1.2, gx - 10, -d / 2 + 4, 33.5, mat("crane_arm", (0.85, 0.55, 0.15), 0.5, 0.4))
+    gx, gy = w / 2 - 6, -d / 2 + 4
+    crane = mat("crane", (0.85, 0.55, 0.15), 0.5, 0.4)
+    for lx in (gx - 3.5, gx + 3.5):
+        box(1.0, 1.0, 34, lx, gy, 1.2, crane)
+    box(9.0, 1.4, 1.4, gx, gy, 34.5, crane)
+    box(26.0, 1.0, 1.0, gx - 11, gy, 35.0, crane)
+    box(2.6, 2.6, 2.4, gx - 3, gy, 31.8, mat("crane_cab", (0.9, 0.9, 0.85), 0.5))
+    for k in range(4):
+        cyl(0.12, 1.0, gx - 18 + k * 1.2, gy, 35.0, mat("crane_stay", (0.4, 0.4, 0.42), 0.5, 0.6), verts=6)
 
 
 def airbase(w, d):
@@ -513,19 +517,24 @@ def parking(w, d):
 
 def parking_garage(w, d):
     floors, fh = 4, 3.2
+    concrete = mat("concrete", CONCRETE, 0.85)
     for k in range(floors):
         z = k * fh
-        box(w, 0.4, fh, 0, -d / 2 + 0.2, z, mat("concrete", CONCRETE, 0.85))
-        box(w, 0.4, fh, 0, d / 2 - 0.2, z, mat("concrete", CONCRETE, 0.85))
-        box(0.4, d, fh, -w / 2 + 0.2, 0, z, mat("concrete", CONCRETE, 0.85))
-        box(0.4, d, fh, w / 2 - 0.2, 0, z, mat("concrete", CONCRETE, 0.85))
-        for x in range(-int(w / 2) + 3, int(w / 2) - 2, 3):
-            box(0.25, 0.25, fh - 0.4, x, -d / 2 + 0.2, z, mat("concrete_dark", CONCRETE_DARK, 0.9))
-        box(w - 0.8, d - 0.8, 0.15, 0, 0, z, mat("slab", CONCRETE_DARK, 0.9))
-    # Rampe extérieure en pente.
-    ramp = box(6, 14, 0.4, w / 2 + 3, 0, 0, mat("ramp", CONCRETE_DARK, 0.9))
-    ramp.rotation_euler = (0, math.radians(-12), 0)
-    box(w, d, 0.4, 0, 0, floors * fh, mat("roof_slab", CONCRETE, 0.9))
+        # Dalle de sol de chaque niveau, bordure en façade, poteaux en trame, muret de fond seulement.
+        box(w, d, 0.3, 0, 0, z, concrete)
+        box(w, 0.4, fh, 0, d / 2 - 0.2, z, concrete)
+        box(0.4, d, 0.25, -w / 2 + 0.2, 0, z + fh - 0.3, concrete)
+        box(0.4, d, 0.25, w / 2 - 0.2, 0, z + fh - 0.3, concrete)
+        for x in range(-int(w / 2) + 2, int(w / 2) - 1, 5):
+            for y in (-d / 2 + 0.5, d / 2 - 0.5):
+                box(0.5, 0.5, fh, x, y, z, mat("column", CONCRETE_DARK, 0.9))
+        box(w - 1.0, 0.25, 0.9, 0, -d / 2 + 0.5, z + fh - 1.0, mat("garage_rail", (0.55, 0.56, 0.58), 0.6, 0.4))
+    # Rampe en pente droite, de la rue au premier niveau ; toit-terrasse avec garde-corps.
+    run = math.hypot(fh, 12.0)
+    ramp = box(6.0, run, 0.3, w / 2 + 6.0, 0, 0, mat("ramp", CONCRETE_DARK, 0.9))
+    ramp.rotation_euler = (math.atan2(fh, 12.0), 0, 0)
+    box(w, d, 0.3, 0, 0, floors * fh, mat("roof_slab", CONCRETE, 0.9))
+    box(w, 0.12, 1.0, 0, -d / 2 + 0.1, floors * fh + 0.3, mat("garde_corps", (0.5, 0.5, 0.52), 0.5, 0.5))
 
 
 def casino(w, d):
@@ -588,10 +597,25 @@ def terrain(kind):
     if kind == "land":
         box(20, 20, 0.5, 0, 0, -0.5, mat("grass", LAWN, 0.9))
     elif kind == "hill":
-        bpy.ops.mesh.primitive_uv_sphere_add(radius=10, location=(0, 0, -2), segments=24, ring_count=12)
-        o = bpy.context.active_object
-        o.scale = (1, 1, 0.5)
-        _link(o, mat("hill", (0.40, 0.50, 0.28), 0.95))
+        # Grille 24×24 de 20 m : un massif avec des creux et des crêtes, pour que la colline ne soit pas un dôme.
+        n, size = 24, 20.0
+        rnd = random.Random(5)
+        bumps = [(rnd.uniform(-7, 7), rnd.uniform(-7, 7), rnd.uniform(2.0, 4.0), rnd.uniform(3, 6)) for _ in range(5)]
+        verts, faces = [], []
+        for j in range(n + 1):
+            for i in range(n + 1):
+                x = -size / 2 + size * i / n
+                y = -size / 2 + size * j / n
+                r2 = (x * x + y * y) / 100.0
+                z = max(0.0, 4.5 * (1 - r2) ** 1.5) if r2 < 1 else 0.0
+                for bx, by, bh, bs in bumps:
+                    z += bh * math.exp(-((x - bx) ** 2 + (y - by) ** 2) / (2 * bs * bs)) * (1 - r2 if r2 < 1 else 0)
+                verts.append((x, y, z - 0.4))
+        for j in range(n):
+            for i in range(n):
+                a = j * (n + 1) + i
+                faces.append((a, a + 1, a + n + 2, a + n + 1))
+        mesh_from(verts, faces, mat("hill", (0.40, 0.50, 0.28), 0.95))
     elif kind == "water":
         box(20, 20, 0.4, 0, 0, -0.45, mat("water", WATER, 0.1, 0.0))
 
