@@ -1,6 +1,7 @@
 // Circulation animée : voitures sur chaque tronçon relié (au trafic réel) et camions sur les livraisons.
 // Les véhicules ralentissent sur les tronçons saturés.
 import * as THREE from 'three';
+import { InstancedVehicles } from './vehicles.ts';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CITY_SIZE_M, hashString, mulberry32, segmentEfficiency, type CityLayers, type CityLayout, type CityState, type Routing } from '@cyc/shared';
 import { sharedGeometry } from './models.ts';
@@ -36,7 +37,7 @@ export class TrafficView {
 
   // --- Camions : livraisons usine → commerce et exportations ------------------------------------
 
-  private trucks: THREE.InstancedMesh | null = null;
+  private trucks: InstancedVehicles | null = null;
   private truckState: { path: number; s: number; dir: 1 | -1; speed: number }[] = [];
   private truckPaths: { pts: THREE.Vector3[]; cum: number[]; total: number }[] = [];
   private truckKey = '';
@@ -55,7 +56,7 @@ export class TrafficView {
     if (key === this.truckKey && (this.trucks || !key)) return;
     this.truckKey = key;
     if (this.trucks) {
-      this.scene.remove(this.trucks);
+      this.trucks.removeFrom(this.scene);
       this.trucks.dispose();
       this.trucks = null;
     }
@@ -86,21 +87,21 @@ export class TrafficView {
     const n = Math.min(this.truckState.length, this.low ? 60 : 160);
     this.truckState.length = n;
     if (!n) return;
-    const geo = sharedGeometry('truck', () => {
-      const trailer = new THREE.BoxGeometry(5.2, 3, 2.5).translate(-0.9, 0, 0);
-      const cab = new THREE.BoxGeometry(1.7, 2.3, 2.4).translate(2.7, -0.35, 0);
+    // Repli sans maquette : remorque et cabine, posées sur y = 0 comme la maquette.
+    const fallback = sharedGeometry('truck', () => {
+      const trailer = new THREE.BoxGeometry(5.2, 3, 2.5).translate(-0.9, 1.5, 0);
+      const cab = new THREE.BoxGeometry(1.7, 2.3, 2.4).translate(2.7, 1.15, 0);
       return mergeGeometries([trailer.toNonIndexed(), cab.toNonIndexed()])!;
     });
-    this.trucks = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.2 }), n);
-    this.trucks.castShadow = !this.low;
-    for (let i = 0; i < n; i++) this.trucks.setColorAt(i, new THREE.Color(colors[i]!));
-    this.scene.add(this.trucks);
+    this.trucks = new InstancedVehicles('truck', n, fallback, new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.2 }), 0.1, !this.low);
+    for (let i = 0; i < n; i++) this.trucks.setColor(i, new THREE.Color(colors[i]!));
+    this.trucks.addTo(this.scene);
   }
 
   // --- Circulation animée -------------------------------------------------------------------
 
   private layout: CityLayout | null = null;
-  private cars: THREE.InstancedMesh | null = null;
+  private cars: InstancedVehicles | null = null;
   private carState: { path: number; s: number; dir: 1 | -1; speed: number }[] = [];
   private paths: { pts: THREE.Vector3[]; cum: number[]; total: number; weight?: number; roadId?: number }[] = [];
   private trafficEfficiency = 1;
@@ -125,7 +126,7 @@ export class TrafficView {
     if (this.cars && this.carState.length === wanted && this.trafficRouting === routing) return;
     this.trafficRouting = routing;
     if (this.cars) {
-      this.scene.remove(this.cars);
+      this.cars.removeFrom(this.scene);
       this.cars.dispose();
       this.cars = null;
     }
@@ -143,9 +144,8 @@ export class TrafficView {
       return { pts, cum: [0, pts[0]!.distanceTo(pts[1]!)], total: pts[0]!.distanceTo(pts[1]!), weight: 1 + 8 * ((load.get(e.id) ?? 0) / maxLoad), roadId: e.roadId };
     });
     if (!this.paths.length) return;
-    const geo = sharedGeometry('car', () => new THREE.BoxGeometry(4.4, 1.6, 2));
-    this.cars = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.3 }), wanted);
-    this.cars.castShadow = !this.low;
+    const fallback = sharedGeometry('car', () => new THREE.BoxGeometry(4.4, 1.6, 2).translate(0, 0.8, 0));
+    this.cars = new InstancedVehicles('car', wanted, fallback, new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.3 }), 0.1, !this.low);
     const rnd = mulberry32(hashString(city.cityId) + wanted);
     const colors = [0xe5e7eb, 0x1f2937, 0xdc2626, 0x2563eb, 0x9ca3af, 0xf59e0b, 0x16a34a, 0xf8fafc];
     // Chaque tronçon reçoit d'abord une voiture, puis le reste est réparti selon son poids.
@@ -159,22 +159,22 @@ export class TrafficView {
         path = k;
       }
       this.carState.push({ path, s: rnd() * this.paths[path]!.total, dir: rnd() < 0.5 ? 1 : -1, speed: 10 + rnd() * 6 });
-      this.cars.setColorAt(i, new THREE.Color(colors[Math.floor(rnd() * colors.length)]!));
+      this.cars.setColor(i, new THREE.Color(colors[Math.floor(rnd() * colors.length)]!));
     }
-    this.scene.add(this.cars);
+    this.cars.addTo(this.scene);
   }
 
   private moveCars(dt: number) {
     // Les embouteillages ralentissent visiblement la circulation.
     const slow = Math.max(0.15, this.trafficEfficiency ** 3);
-    if (this.cars) this.moveAlong(this.cars, this.carState, this.paths, dt, slow, 0.9);
-    if (this.trucks) this.moveAlong(this.trucks, this.truckState, this.truckPaths, dt, slow, 1.5);
+    if (this.cars) this.moveAlong(this.cars, this.carState, this.paths, dt, slow);
+    if (this.trucks) this.moveAlong(this.trucks, this.truckState, this.truckPaths, dt, slow);
   }
 
   /** Avance des véhicules instanciés le long de leurs tracés (aller-retour, circulation à droite). */
   private moveAlong(
-    mesh: THREE.InstancedMesh, states: { path: number; s: number; dir: 1 | -1; speed: number }[],
-    paths: { pts: THREE.Vector3[]; cum: number[]; total: number; roadId?: number }[], dt: number, slow: number, height: number,
+    mesh: InstancedVehicles, states: { path: number; s: number; dir: 1 | -1; speed: number }[],
+    paths: { pts: THREE.Vector3[]; cum: number[]; total: number; roadId?: number }[], dt: number, slow: number,
   ) {
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
@@ -195,12 +195,12 @@ export class TrafficView {
       const dir = new THREE.Vector3().subVectors(b, a).normalize().multiplyScalar(c.dir);
       // Circulation à droite.
       pos.add(new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(-2.4));
-      pos.y = height + (this.deckAt(pos.x, pos.z));
+      pos.y = mesh.groundY + this.deckAt(pos.x, pos.z);
       q.setFromAxisAngle(up, Math.atan2(-dir.z, dir.x));
       m.compose(pos, q, new THREE.Vector3(1, 1, 1));
-      mesh.setMatrixAt(i, m);
+      mesh.setMatrix(i, m);
     });
-    mesh.instanceMatrix.needsUpdate = true;
+    mesh.update();
   }
 
 }

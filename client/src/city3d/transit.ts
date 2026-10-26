@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { BUILDINGS, buildingRect, CITY_SIZE_M, tramPath, type Building, type CityState, type CityLayout } from '@cyc/shared';
 import { sharedGeometry, solid } from './models.ts';
+import { vehicleObject } from './vehicles.ts';
 
 const HALF = CITY_SIZE_M / 2;
 
@@ -33,8 +34,8 @@ export class TransitView {
     this.vehicles = [];
     if (!this.transitGroup.parent) this.scene.add(this.transitGroup);
     const style = {
-      bus: { color: 0x3b82f6, y: 1.2, vehicle: () => box3(11, 3.2, 2.6, 0xf59e0b), speed: 12 },
-      tram: { color: 0x10b981, y: 0.3, vehicle: () => box3(26, 3.4, 2.6, 0x10b981), speed: 14 },
+      bus: { color: 0x3b82f6, y: 1.2, vehicle: () => vehicleObject('bus', 0xf59e0b, () => box3(11, 3.2, 2.6, 0xf59e0b)), speed: 12 },
+      tram: { color: 0x10b981, y: 0.3, vehicle: () => vehicleObject('tram', 0x10b981, () => box3(26, 3.4, 2.6, 0x10b981)), speed: 14 },
       metro: { color: 0xfacc15, y: 9, vehicle: () => box3(40, 3.2, 3, 0xe5e7eb), speed: 22 },
     } as const;
     for (const mode of ['bus', 'tram', 'metro'] as const) {
