@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { BUILDING_TYPES } from '@cyc/shared';
+import { preloadModels } from './city3d/models.ts';
 import { loadPublicConfig } from './net/auth.ts';
 import { client } from './net/client.ts';
 import { GameScreen } from './screens/GameScreen.tsx';
@@ -16,6 +18,7 @@ export function App() {
 
   useEffect(() => {
     loadPublicConfig()
+      .then(() => preloadModels(BUILDING_TYPES))
       .then(() => {
         setReady(true);
         client.start();

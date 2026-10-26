@@ -1,8 +1,29 @@
-// Modèles 3D procéduraux des constructions (aucun fichier externe). Matériaux et textures
-// partagés ; les fenêtres s'illuminent la nuit via l'intensité émissive.
+// Modèles 3D des constructions : maquettes Blender (public/models, générées par tools/blender) lorsqu'elles
+// sont chargées, sinon modèles procéduraux. Matériaux et textures partagés ; les fenêtres procédurales
+// s'illuminent la nuit via l'intensité émissive.
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BUILDINGS, mulberry32, hashString, type Building, type BuildingType } from '@cyc/shared';
+
+/** Maquettes chargées, par type de bâtiment. Absente : le modèle procédural est utilisé. */
+const bakedModels = new Map<string, THREE.Group>();
+
+/** Charge les maquettes glTF. Un fichier manquant n'est pas bloquant : le modèle procédural prend le relais. */
+export async function preloadModels(types: readonly string[]): Promise<void> {
+  const loader = new GLTFLoader();
+  await Promise.all(types.map(async (type) => {
+    try {
+      const gltf = await loader.loadAsync(`/models/${type}.glb`);
+      gltf.scene.traverse((o) => {
+        if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; }
+      });
+      bakedModels.set(type, gltf.scene);
+    } catch {
+      /* pas de maquette pour ce type : modèle procédural */
+    }
+  }));
+}
 
 type WindowStyle = 'residential' | 'glass' | 'office' | 'shop' | 'brick' | 'plain';
 
@@ -156,6 +177,13 @@ const ROOFS = [0x9c3b2e, 0x7a4a36, 0x5b5f66, 0xa8553d, 0x6d3b2f];
 
 /** Modèle d'un bâtiment, centré sur son emprise, variations déterministes par identifiant. */
 export function buildModel(type: BuildingType, seed: number): { group: THREE.Group; info: ModelInfo } {
+  const baked = bakedModels.get(type);
+  if (baked) {
+    const group = new THREE.Group();
+    group.add(baked.clone(true));
+    const box = new THREE.Box3().setFromObject(group);
+    return { group, info: { height: Math.max(1, box.max.y), smoke: [] } };
+  }
   const def = BUILDINGS[type];
   const rnd = mulberry32(seed * 7919 + hashString(type));
   const g = new THREE.Group();
