@@ -29,15 +29,22 @@ for path in sorted(glob.glob(os.path.join(src, "*.glb"))):
     cam.rotation_euler = (math.radians(60), 0, math.radians(45))
     bpy.context.scene.camera = cam
     sun = bpy.data.lights.new("sun", "SUN")
-    sun.energy = 3.5
+    sun.energy = 4.0
     sun_obj = bpy.data.objects.new("sun", sun)
     bpy.context.scene.collection.objects.link(sun_obj)
     sun_obj.rotation_euler = (math.radians(55), 0, math.radians(30))
-    bpy.context.scene.render.engine = "BLENDER_WORKBENCH"
-    bpy.context.scene.display.shading.light = "STUDIO"
-    bpy.context.scene.display.shading.color_type = "MATERIAL"
-    bpy.context.scene.render.resolution_x = 384
-    bpy.context.scene.render.resolution_y = 384
+    # Ciel clair et lumière du soleil : rendu physique (Cycles, CPU).
+    scene = bpy.context.scene
+    world = bpy.data.worlds.new("sky")
+    world.use_nodes = True
+    world.node_tree.nodes["Background"].inputs["Color"].default_value = (0.62, 0.74, 0.90, 1.0)
+    world.node_tree.nodes["Background"].inputs["Strength"].default_value = 1.0
+    scene.world = world
+    scene.render.engine = "CYCLES"
+    scene.cycles.device = "CPU"
+    scene.cycles.samples = 48
+    scene.render.resolution_x = 512
+    scene.render.resolution_y = 512
     bpy.context.scene.render.filepath = os.path.join(dst, os.path.basename(path)[:-4] + ".png")
     bpy.ops.render.render(write_still=True)
     print("aperçu :", bpy.context.scene.render.filepath)
