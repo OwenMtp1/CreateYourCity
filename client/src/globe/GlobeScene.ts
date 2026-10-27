@@ -50,6 +50,33 @@ const TEX_W = 4096;
 /** Couleur des territoires : vous, vos alliés, les autres. */
 const TERRITORY_COLOR: Record<Relation, string> = { mine: '#22c55e', ally: '#3b82f6', enemy: '#ef4444', other: '#ef4444' };
 const CITY_BY_ID_MAP = new Map(WORLD_CITIES.map((c) => [c.id, c]));
+
+type Ring = [number, number][];
+const polygonCache = new WeakMap<object, Ring[][]>();
+
+/** Polygones d'une région (anneaux en degrés : premier = contour, suivants = trous). Mis en cache. */
+function regionPolygons(feature: object): Ring[][] {
+  let polygons = polygonCache.get(feature);
+  if (!polygons) {
+    const f = feature as { geometry: { type: string; coordinates: unknown } };
+    polygons = f.geometry.type === 'Polygon' ? [f.geometry.coordinates as Ring[]] : (f.geometry.coordinates as Ring[][]);
+    polygonCache.set(feature, polygons);
+  }
+  return polygons;
+}
+
+/** Point dans des anneaux (règle pair-impair, planaire en degrés : suffisant pour une région). */
+function pointInRings(lon: number, lat: number, rings: Ring[]): boolean {
+  let inside = false;
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i]!;
+      const [xj, yj] = ring[j]!;
+      if (yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+  }
+  return inside;
+}
 const TEX_H = 2048;
 
 export function latLonToVec(lat: number, lon: number, r = 1): THREE.Vector3 {
@@ -242,7 +269,7 @@ export class GlobeScene {
     this.borders = this.buildLines(high.map((c) => c.feature), 1.0015, 0xe8eef7, 0.45);
     this.scene.add(this.borders);
     try {
-      const fc = (await (await fetch('/geo/regions-50m.json')).json()) as GeoJSON.FeatureCollection;
+      const fc = (await (await fetch('/geo/regions.json')).json()) as GeoJSON.FeatureCollection;
       if (this.disposed) return;
       this.regionFeatures = fc.features as GeoPermissibleObjects[];
       this.regions = this.buildLines(fc.features, 1.0012, 0xc9d4df, 0.22);
@@ -290,14 +317,22 @@ export class GlobeScene {
       const current = chosen.get(index);
       if (!current || rank[owner.relation] < rank[current]) chosen.set(index, owner.relation);
     }
-    const path = geoPath(proj, ctx);
     for (const [index, relation] of chosen) {
-      const feature = this.regionFeatures[index]!;
+      const polygons = regionPolygons(this.regionFeatures[index]!);
       ctx.beginPath();
-      path(feature);
+      for (const rings of polygons) {
+        for (const ring of rings) {
+          ring.forEach(([lon, lat], k) => {
+            const [x, y] = proj([lon, lat])!;
+            if (k === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          });
+          ctx.closePath();
+        }
+      }
       ctx.globalAlpha = 0.38;
       ctx.fillStyle = TERRITORY_COLOR[relation];
-      ctx.fill();
+      ctx.fill('evenodd');
       ctx.globalAlpha = 1;
       ctx.lineWidth = 2.5;
       ctx.strokeStyle = TERRITORY_COLOR[relation];
@@ -310,7 +345,7 @@ export class GlobeScene {
     const key = `${lon},${lat}`;
     let index = this.regionCache.get(key);
     if (index === undefined) {
-      index = this.regionFeatures.findIndex((f) => geoContains(f, [lon, lat]));
+      index = this.regionFeatures.findIndex((f) => regionPolygons(f).some((rings) => pointInRings(lon, lat, rings)));
       this.regionCache.set(key, index);
     }
     return index;
