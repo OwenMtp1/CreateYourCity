@@ -146,9 +146,12 @@ export const NATION = {
   } as Partial<Record<LawId | ProjectId, number>>,
 } as const;
 
-/** Entretien quotidien total des lois et projets en vigueur d'un pays. */
+/**
+ * Entretien quotidien total des lois et projets en vigueur d'un pays. Un budget en déficit suspend les
+ * mesures : elles ne coûtent plus rien tant que la trésorerie n'est pas repassée au-dessus de zéro.
+ */
 export function measuresUpkeep(nation: NationState | undefined): number {
-  if (!nation) return 0;
+  if (!nation || nation.treasury < 0) return 0;
   const active = [...Object.entries(nation.laws), ...Object.entries(nation.projects)].filter(([, on]) => on).map(([id]) => id);
   return active.reduce((sum, id) => sum + (NATION.measureUpkeepPerDay[id as LawId | ProjectId] ?? 0), 0);
 }
