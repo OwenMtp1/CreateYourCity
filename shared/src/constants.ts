@@ -17,6 +17,12 @@ export const DAYS_PER_YEAR = 360;
 
 /** Côté de l'espace constructible d'une ville, en mètres (Q94 non répondue : provisoire). */
 export const CITY_SIZE_M = 2000;
+
+/** Joueurs administrateurs (par nom, sans tenir compte de la casse) : remise à zéro des budgets nationaux. */
+export const ADMIN_PLAYER_NAMES: readonly string[] = ['OwenMtp'];
+
+export const isAdminName = (name: string | undefined): boolean =>
+  !!name && ADMIN_PLAYER_NAMES.some((admin) => admin.toLowerCase() === name.toLowerCase());
 /** Point d'accès au réseau régional (bord ouest, milieu). */
 export const REGIONAL_ACCESS = { x: 0, y: CITY_SIZE_M / 2 } as const;
 /** Distance maximale bord de bâtiment ↔ bord de route pour être desservi. */

@@ -7,6 +7,7 @@ import type { CityState } from '../types.ts';
 import { CITY_BY_ID } from '../world.ts';
 import { captureCity, changeOwner, fortification, landSize } from './military.ts';
 import { countryName, evaluateNation, getNation } from './nations.ts';
+import { isAdminName } from '../constants.ts';
 import {
   activeTreaty, allied, ANNEXATION, annexationRangeKm, annexationTroops, atWar, cityName, citiesOf, distanceKm, eligibleVoters, EXPANSION, MILITARY, NATION, NATION_RELIEF, nationReliefDue, FIRST_RELIEF_ID,
   hasBuilding, isIndependent, NON_AGGRESSION_NOTICE_TICKS, travelLosses, nextId, ORGANIZATION, playerName, pushEvent, TREATY_LABEL, UNIT_REQUIRES, UNITS,
@@ -43,6 +44,8 @@ export type WorldAction =
   | { type: 'fundProject'; countryId: string; project: ProjectId }
   /** Dirigeant : aide de la Communauté internationale (dette effacée, ou versement si la nation n'a pas de dette). */
   | { type: 'claimNationRelief'; countryId: string }
+  /** Administrateur : remet le budget national d'une nation à zéro. */
+  | { type: 'resetNationBudget'; countryId: string }
   | { type: 'nationalGrant'; countryId: string; toCityId: string; amount: number }
   | { type: 'createOrganization'; name: string; kind: OrganizationKind }
   | { type: 'inviteToOrganization'; orgId: number; playerId: string }
@@ -612,6 +615,15 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
       nation.treasury -= cost;
       nation.projects[action.project] = true;
       pushEvent(world, 'project', `${countryName(action.countryId)} réalise le grand projet « ${PROJECT_LABEL[action.project]} ».`);
+      return;
+    }
+
+    case 'resetNationBudget': {
+      if (!isAdminName(playerName(meta, player))) fail("Réservé à l'administrateur.");
+      const nation = meta.nations[action.countryId];
+      if (!nation) fail('Nation introuvable.');
+      nation!.treasury = 0;
+      pushEvent(world, 'funds', `L'administration remet à zéro le budget national de ${countryName(action.countryId)}.`);
       return;
     }
 

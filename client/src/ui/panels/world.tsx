@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { formatGameTime, INDEPENDENCE, TICKS_PER_DAY, type CityState } from '@cyc/shared';
+import { formatGameTime, INDEPENDENCE, isAdminName, TICKS_PER_DAY, type CityState } from '@cyc/shared';
 import {
   LAW_LABEL, MILITARY, NATION, ORG_LABEL, TRANSPORT, TREATY_LABEL, UNIT_REQUIRES, UNITS, UNIT_TYPES,
   type OrganizationKind, type TreatyType, type UnitType, type WorldView,
@@ -601,6 +601,11 @@ export function NationPanel() {
       )}
       {countryId && <NationDetail world={world} me={player.id} countryId={countryId} />}
       {countryId && <NationDebts countryId={countryId} />}
+      {countryId && isAdminName(player.name) && (
+        <button className="danger" onClick={() => { if (confirm('Remettre à zéro le budget de cette nation ?')) void client.action({ type: 'resetNationBudget', countryId }); }}>
+          Remettre le budget à zéro (admin)
+        </button>
+      )}
     </div>
   );
 }
