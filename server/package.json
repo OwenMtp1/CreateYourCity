@@ -9,7 +9,8 @@
     "start:dev": "tsx src/index.ts",
     "build": "tsc -p . --noEmit && esbuild src/index.ts src/migrate.ts --bundle --splitting --platform=node --format=esm --target=node22 --sourcemap --outdir=dist --external:pg --external:ws --external:jose --external:zod",
     "migrate": "tsx --env-file-if-exists=../.env src/migrate.ts",
-    "migrate:prod": "node --enable-source-maps dist/migrate.js"
+    "migrate:prod": "node --enable-source-maps dist/migrate.js",
+    "budget:reset": "tsx --env-file-if-exists=../.env src/resetNationBudgets.ts"
   },
   "dependencies": {
     "@cyc/shared": "*",
