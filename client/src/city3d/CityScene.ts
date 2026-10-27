@@ -699,14 +699,22 @@ export class CityScene {
   setGrid(on: boolean) {
     for (const o of [...this.gridGroup.children]) o.removeFromParent();
     if (!on) return;
+    // Grille à 2 m du sol : à 0,25 m, elle se confondait avec le terrain dès que la caméra s'éloignait
+    // (précision du tampon de profondeur avec un plan proche à 0,2 m). Le décalage aide à la départager.
     const fine = new THREE.GridHelper(CITY_SIZE_M, CITY_SIZE_M / 10, 0xffffff, 0xffffff);
     (fine.material as THREE.Material).transparent = true;
     (fine.material as THREE.Material).opacity = 0.05;
-    fine.position.y = 0.25;
+    (fine.material as THREE.Material).depthWrite = false;
+    (fine.material as THREE.Material).polygonOffset = true;
+    (fine.material as THREE.Material).polygonOffsetFactor = -4;
+    fine.position.y = 2;
     const coarse = new THREE.GridHelper(CITY_SIZE_M, CITY_SIZE_M / 50, 0xffffff, 0xffffff);
     (coarse.material as THREE.Material).transparent = true;
     (coarse.material as THREE.Material).opacity = 0.14;
-    coarse.position.y = 0.26;
+    (coarse.material as THREE.Material).depthWrite = false;
+    (coarse.material as THREE.Material).polygonOffset = true;
+    (coarse.material as THREE.Material).polygonOffsetFactor = -4;
+    coarse.position.y = 2.05;
     this.gridGroup.add(fine, coarse);
   }
 
