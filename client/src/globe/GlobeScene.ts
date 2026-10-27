@@ -47,8 +47,6 @@ const RELATION_COLOR: Record<Relation, number> = { mine: 0xfbbf24, ally: 0x34d39
 const OCCUPIED_COLOR = 0x22c55e;
 const DICTATOR_COLOR = 0xef4444;
 const TEX_W = 4096;
-/** Rayon d'un territoire contrôlé autour de chaque ville, en kilomètres. */
-const TERRITORY_KM = 120;
 /** Couleur des territoires : vous, vos alliés, les autres. */
 const TERRITORY_COLOR: Record<Relation, string> = { mine: '#22c55e', ally: '#3b82f6', enemy: '#ef4444', other: '#ef4444' };
 const CITY_BY_ID_MAP = new Map(WORLD_CITIES.map((c) => [c.id, c]));
@@ -101,6 +99,9 @@ export class GlobeScene {
   private readonly texture: THREE.CanvasTexture;
   private countries: CountryShape[] = [];
   private ownersKey = '';
+  /** Régions administratives réelles (frontières officielles), pour colorer les territoires. */
+  private regionFeatures: GeoPermissibleObjects[] = [];
+  private readonly regionCache = new Map<string, number>();
   private borders: THREE.LineSegments | null = null;
   private regions: THREE.LineSegments | null = null;
   private readonly cityPoints: THREE.Points;
@@ -243,9 +244,11 @@ export class GlobeScene {
     try {
       const fc = (await (await fetch('/geo/regions-50m.json')).json()) as GeoJSON.FeatureCollection;
       if (this.disposed) return;
+      this.regionFeatures = fc.features as GeoPermissibleObjects[];
       this.regions = this.buildLines(fc.features, 1.0012, 0xc9d4df, 0.22);
       this.regions.visible = false;
       this.scene.add(this.regions);
+      this.paintTexture();
     } catch { /* régions facultatives */ }
   }
 
@@ -271,25 +274,46 @@ export class GlobeScene {
   }
 
   /** Redessine la texture politique (océan, terres, pays joués et sélection). */
-  /** Territoires contrôlés : une zone remplie et entourée par ville, colorée selon la relation. Les villes libres ne sont pas dessinées. */
+  /**
+   * Territoires contrôlés : la région administrative réelle (frontières officielles) de chaque ville possédée
+   * est remplie et bordée de la couleur de son propriétaire. Priorité : vous, puis vos alliés, puis les autres.
+   */
   private paintTerritories(ctx: CanvasRenderingContext2D, proj: ReturnType<typeof geoEquirectangular>) {
-    const ry = ((TERRITORY_KM / 111.32) / 180) * TEX_H;
+    if (!this.regionFeatures.length) return;
+    const rank: Record<Relation, number> = { mine: 0, ally: 1, enemy: 2, other: 2 };
+    const chosen = new Map<number, Relation>();
     for (const [cityId, owner] of this.data.owners) {
       const city = CITY_BY_ID_MAP.get(cityId);
       if (!city) continue;
-      const p = proj([city.lon, city.lat]);
-      if (!p) continue;
-      const rx = ry / Math.max(0.2, Math.cos((city.lat * Math.PI) / 180));
+      const index = this.regionIndexOf(city.lon, city.lat);
+      if (index < 0) continue;
+      const current = chosen.get(index);
+      if (!current || rank[owner.relation] < rank[current]) chosen.set(index, owner.relation);
+    }
+    const path = geoPath(proj, ctx);
+    for (const [index, relation] of chosen) {
+      const feature = this.regionFeatures[index]!;
       ctx.beginPath();
-      ctx.ellipse(p[0], p[1], rx, ry, 0, 0, Math.PI * 2);
-      ctx.globalAlpha = 0.4;
-      ctx.fillStyle = TERRITORY_COLOR[owner.relation];
+      path(feature);
+      ctx.globalAlpha = 0.38;
+      ctx.fillStyle = TERRITORY_COLOR[relation];
       ctx.fill();
       ctx.globalAlpha = 1;
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = TERRITORY_COLOR[owner.relation];
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = TERRITORY_COLOR[relation];
       ctx.stroke();
     }
+  }
+
+  /** Index de la région administrative qui contient le point (mis en cache : les villes ne bougent pas). */
+  private regionIndexOf(lon: number, lat: number): number {
+    const key = `${lon},${lat}`;
+    let index = this.regionCache.get(key);
+    if (index === undefined) {
+      index = this.regionFeatures.findIndex((f) => geoContains(f, [lon, lat]));
+      this.regionCache.set(key, index);
+    }
+    return index;
   }
 
   private paintTexture() {
