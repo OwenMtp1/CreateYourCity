@@ -8,7 +8,7 @@ import { CITY_BY_ID } from '../world.ts';
 import { captureCity, changeOwner, fortification, landSize } from './military.ts';
 import { countryName, evaluateNation, getNation } from './nations.ts';
 import {
-  activeTreaty, allied, ANNEXATION, annexationRangeKm, annexationTroops, atWar, cityName, citiesOf, distanceKm, eligibleVoters, EXPANSION, MILITARY, NATION,
+  activeTreaty, allied, ANNEXATION, annexationRangeKm, annexationTroops, atWar, cityName, citiesOf, distanceKm, eligibleVoters, EXPANSION, MILITARY, NATION, NATION_RELIEF, nationReliefDue,
   hasBuilding, isIndependent, NON_AGGRESSION_NOTICE_TICKS, travelLosses, nextId, ORGANIZATION, playerName, pushEvent, TREATY_LABEL, UNIT_REQUIRES, UNITS,
 } from './rules.ts';
 import { LAND_UNITS, UNIT_TYPES, type Army, type OrganizationKind, type TreatyType, type UnitType, type World } from './types.ts';
@@ -41,6 +41,8 @@ export type WorldAction =
   | { type: 'setNationalTax'; countryId: string; rate: number }
   | { type: 'setLaw'; countryId: string; law: LawId; enabled: boolean }
   | { type: 'fundProject'; countryId: string; project: ProjectId }
+  /** Dirigeant : aide de la Communauté internationale (dette effacée, ou versement si la nation n'a pas de dette). */
+  | { type: 'claimNationRelief'; countryId: string }
   | { type: 'nationalGrant'; countryId: string; toCityId: string; amount: number }
   | { type: 'createOrganization'; name: string; kind: OrganizationKind }
   | { type: 'inviteToOrganization'; orgId: number; playerId: string }
@@ -610,6 +612,22 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
       nation.treasury -= cost;
       nation.projects[action.project] = true;
       pushEvent(world, 'project', `${countryName(action.countryId)} réalise le grand projet « ${PROJECT_LABEL[action.project]} ».`);
+      return;
+    }
+
+    case 'claimNationRelief': {
+      const nation = requireLeader(world, player, action.countryId);
+      if (!nationReliefDue(world.tick, nation)) fail("Aucune aide disponible : elle est accordée tous les 2 000 jours.");
+      nation.reliefClaimed = (nation.reliefClaimed ?? 0) + 1;
+      const indebted = [...world.cities.values()].filter((c) => c.countryId === action.countryId && c.debt > 0);
+      const debt = indebted.reduce((s, c) => s + c.debt, 0);
+      if (debt > 0) {
+        for (const c of indebted) c.debt = 0;
+        pushEvent(world, 'funds', `La Communauté internationale efface la dette de ${countryName(action.countryId)} (${fmt(debt)} cr).`);
+      } else {
+        nation.treasury += NATION_RELIEF.aid;
+        pushEvent(world, 'funds', `La Communauté internationale verse ${fmt(NATION_RELIEF.aid)} cr à ${countryName(action.countryId)}.`);
+      }
       return;
     }
 

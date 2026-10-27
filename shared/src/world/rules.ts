@@ -1,4 +1,5 @@
 // Règles et constantes du monde multijoueur (valeurs provisoires : docs/DECISIONS.md).
+import { TICKS_PER_DAY } from '../constants.ts';
 import { CITY_BY_ID } from '../world.ts';
 import type { LawId, ProjectId } from '../sim/modifiers.ts';
 import type { NationState, Treaty, TreatyType, UnitType, World, WorldEventKind, WorldMeta } from './types.ts';
@@ -112,6 +113,15 @@ export const LOGISTICS = {
 } as const;
 
 export const ORGANIZATION = { maxMembers: 20, maxPerPlayer: 5 } as const;
+
+/** Aide de la Communauté internationale : une demande par palier de 2 000 jours. */
+export const NATION_RELIEF = { everyDays: 2000, aid: 1_000_000 } as const;
+
+/** Une aide est due quand un palier de jours est atteint et n'a pas encore été demandé. */
+export function nationReliefDue(tick: number, nation: NationState): boolean {
+  const milestones = Math.floor(tick / TICKS_PER_DAY / NATION_RELIEF.everyDays);
+  return milestones > (nation.reliefClaimed ?? 0);
+}
 
 export const NATION = {
   maxTaxRate: 0.1,

@@ -701,6 +701,12 @@ function NationDetail({ world, me, countryId }: { world: WorldView; me: string; 
       {isLeader && (
         <div className="card compact stack">
           <h4>Pouvoirs du dirigeant</h4>
+          {nation?.reliefDue && (
+            <div className="stack">
+              <p className="small muted">Tous les 2 000 jours, la Communauté internationale efface la dette de la nation, ou verse 1 000 000 cr si elle n'en a pas.</p>
+              <button onClick={() => { if (confirm('Demander l\'aide de la Communauté internationale ?')) void client.action({ type: 'claimNationRelief', countryId }); }}>Demander l'aide internationale</button>
+            </div>
+          )}
           <label>Impôt national : {fmtPct(tax, 1)}
             <input type="range" min={0} max={NATION.maxTaxRate} step={0.005} value={tax} onChange={(e) => setTax(Number(e.target.value))} />
           </label>

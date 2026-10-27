@@ -1,6 +1,6 @@
 // Vue personnalisée du monde envoyée à un joueur : ce qu'il a le droit de voir.
 import { armySize, hasUnit, landSize } from './military.ts';
-import { allied, armyPosition, detailVisible, distanceLatLonKm, eligibleVoters, marketPrices } from './rules.ts';
+import { allied, armyPosition, detailVisible, distanceLatLonKm, eligibleVoters, marketPrices, nationReliefDue } from './rules.ts';
 import type { DirectMessage, FieldBattle, MarketState, NationState, Organization, Siege, TradeContract, Treaty, UnitType, War, World, WorldEvent } from './types.ts';
 import { UNIT_TYPES } from './types.ts';
 
@@ -27,6 +27,8 @@ export interface ArmyView {
 
 export interface NationView extends Omit<NationState, 'votes' | 'impeach'> {
   voters: string[];
+  /** Aide de la Communauté internationale disponible pour la nation. */
+  reliefDue: boolean;
   voteCounts: Record<string, number>;
   myVote: string | null;
   impeachCount: number;
@@ -103,7 +105,7 @@ export function buildWorldView(world: World, viewer: string): WorldView {
     const { votes, impeach, ...rest } = n;
     nations.push({
       ...rest, voters: eligibleVoters(world, n.countryId), voteCounts, myVote: votes[viewer] ?? null,
-      impeachCount: impeach.length, iSupportImpeach: impeach.includes(viewer),
+      impeachCount: impeach.length, iSupportImpeach: impeach.includes(viewer), reliefDue: nationReliefDue(world.tick, n),
     });
   }
 
