@@ -47,6 +47,11 @@ const RELATION_COLOR: Record<Relation, number> = { mine: 0xfbbf24, ally: 0x34d39
 const OCCUPIED_COLOR = 0x22c55e;
 const DICTATOR_COLOR = 0xef4444;
 const TEX_W = 4096;
+/** Rayon d'un territoire contrôlé autour de chaque ville, en kilomètres. */
+const TERRITORY_KM = 120;
+/** Couleur des territoires : vous, vos alliés, les autres. */
+const TERRITORY_COLOR: Record<Relation, string> = { mine: '#22c55e', ally: '#3b82f6', enemy: '#ef4444', other: '#ef4444' };
+const CITY_BY_ID_MAP = new Map(WORLD_CITIES.map((c) => [c.id, c]));
 const TEX_H = 2048;
 
 export function latLonToVec(lat: number, lon: number, r = 1): THREE.Vector3 {
@@ -95,6 +100,7 @@ export class GlobeScene {
   private readonly specCanvas = document.createElement('canvas');
   private readonly texture: THREE.CanvasTexture;
   private countries: CountryShape[] = [];
+  private ownersKey = '';
   private borders: THREE.LineSegments | null = null;
   private regions: THREE.LineSegments | null = null;
   private readonly cityPoints: THREE.Points;
@@ -265,6 +271,27 @@ export class GlobeScene {
   }
 
   /** Redessine la texture politique (océan, terres, pays joués et sélection). */
+  /** Territoires contrôlés : une zone remplie et entourée par ville, colorée selon la relation. Les villes libres ne sont pas dessinées. */
+  private paintTerritories(ctx: CanvasRenderingContext2D, proj: ReturnType<typeof geoEquirectangular>) {
+    const ry = ((TERRITORY_KM / 111.32) / 180) * TEX_H;
+    for (const [cityId, owner] of this.data.owners) {
+      const city = CITY_BY_ID_MAP.get(cityId);
+      if (!city) continue;
+      const p = proj([city.lon, city.lat]);
+      if (!p) continue;
+      const rx = ry / Math.max(0.2, Math.cos((city.lat * Math.PI) / 180));
+      ctx.beginPath();
+      ctx.ellipse(p[0], p[1], rx, ry, 0, 0, Math.PI * 2);
+      ctx.globalAlpha = 0.4;
+      ctx.fillStyle = TERRITORY_COLOR[owner.relation];
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = TERRITORY_COLOR[owner.relation];
+      ctx.stroke();
+    }
+  }
+
   private paintTexture() {
     const ctx = this.texCanvas.getContext('2d')!;
     const grad = ctx.createLinearGradient(0, 0, 0, TEX_H);
@@ -286,6 +313,7 @@ export class GlobeScene {
       ctx.fill();
     }
     ctx.restore();
+    this.paintTerritories(ctx, proj);
     for (const c of this.countries) {
       const selected = this.data.selectedCountry === c.id;
       if (!selected) continue;
@@ -310,8 +338,10 @@ export class GlobeScene {
   }
 
   setData(data: GlobeData) {
-    const repaint = data.selectedCountry !== this.data.selectedCountry ||
+    const ownersKey = [...data.owners].map(([id, o]) => `${id}:${o.relation}`).sort().join();
+    const repaint = data.selectedCountry !== this.data.selectedCountry || ownersKey !== this.ownersKey ||
       [...data.playedCountries].sort().join() !== [...this.data.playedCountries].sort().join();
+    this.ownersKey = ownersKey;
     this.data = data;
     if (repaint) this.paintTexture();
 
