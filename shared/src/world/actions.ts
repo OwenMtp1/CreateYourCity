@@ -623,6 +623,7 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
       const debt = indebted.reduce((s, c) => s + c.debt, 0);
       if (debt > 0) {
         for (const c of indebted) c.debt = 0;
+        nation.treasury = 0;
         pushEvent(world, 'funds', `La Communauté internationale efface la dette de ${countryName(action.countryId)} (${fmt(debt)} cr).`);
       } else {
         nation.treasury += NATION_RELIEF.aid;

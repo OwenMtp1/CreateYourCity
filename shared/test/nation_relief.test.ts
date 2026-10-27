@@ -36,6 +36,7 @@ describe('aide de la Communauté internationale', () => {
     expect(claim(w, 'alice').ok).toBe(true);
     expect(paris.debt).toBe(0);
     expect(lyon.debt).toBe(0);
+    expect(w.meta.nations[PARIS.countryId]!.treasury).toBe(0);
   });
 
   it("verse l'aide à la nation sans dette, et seul le dirigeant peut la demander", () => {
