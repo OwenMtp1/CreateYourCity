@@ -109,6 +109,8 @@ export interface NationState {
   electedAtTick: number | null;
   /** Nombre de paliers de 2 000 jours dont l'aide a déjà été demandée. */
   reliefClaimed?: number;
+  /** Aides ponctuelles déjà utilisées (identifiants de RELIEF). */
+  reliefGrants?: string[];
   /** Budget initial accordé au premier vote de la partie (une seule fois). */
   endowed?: boolean;
   candidates: string[];

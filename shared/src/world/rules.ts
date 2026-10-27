@@ -117,10 +117,13 @@ export const ORGANIZATION = { maxMembers: 20, maxPerPlayer: 5 } as const;
 /** Aide de la Communauté internationale : une demande par palier de 2 000 jours. */
 export const NATION_RELIEF = { everyDays: 2000, aid: 1_000_000 } as const;
 
-/** Une aide est due quand un palier de jours est atteint et n'a pas encore été demandé. */
+/** Aide immédiate, offerte une seule fois à chaque nation (en plus des paliers de 2 000 jours). */
+export const FIRST_RELIEF_ID = 'premiere-aide';
+
+/** Une aide est due : un palier atteint non demandé, ou la première aide pas encore utilisée. */
 export function nationReliefDue(tick: number, nation: NationState): boolean {
   const milestones = Math.floor(tick / TICKS_PER_DAY / NATION_RELIEF.everyDays);
-  return milestones > (nation.reliefClaimed ?? 0);
+  return milestones > (nation.reliefClaimed ?? 0) || !(nation.reliefGrants ?? []).includes(FIRST_RELIEF_ID);
 }
 
 export const NATION = {

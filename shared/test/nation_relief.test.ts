@@ -49,9 +49,11 @@ describe('aide de la Communauté internationale', () => {
     expect(w.meta.nations[PARIS.countryId]!.treasury).toBe(before + NATION_RELIEF.aid);
   });
 
-  it("une seule demande par palier : la suivante attend 2 000 jours de plus", () => {
+  it("la première aide est due tout de suite, une seule fois ; les paliers suivent", () => {
     const w = world();
     city(w, PARIS.id, PARIS.countryId, 'alice', 0);
+    expect(claim(w, 'alice').ok).toBe(true);
+    expect(claim(w, 'alice').ok).toBe(false);
     milestone(w, 1);
     expect(claim(w, 'alice').ok).toBe(true);
     expect(claim(w, 'alice').ok).toBe(false);

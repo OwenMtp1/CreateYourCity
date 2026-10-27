@@ -8,7 +8,7 @@ import { CITY_BY_ID } from '../world.ts';
 import { captureCity, changeOwner, fortification, landSize } from './military.ts';
 import { countryName, evaluateNation, getNation } from './nations.ts';
 import {
-  activeTreaty, allied, ANNEXATION, annexationRangeKm, annexationTroops, atWar, cityName, citiesOf, distanceKm, eligibleVoters, EXPANSION, MILITARY, NATION, NATION_RELIEF, nationReliefDue,
+  activeTreaty, allied, ANNEXATION, annexationRangeKm, annexationTroops, atWar, cityName, citiesOf, distanceKm, eligibleVoters, EXPANSION, MILITARY, NATION, NATION_RELIEF, nationReliefDue, FIRST_RELIEF_ID,
   hasBuilding, isIndependent, NON_AGGRESSION_NOTICE_TICKS, travelLosses, nextId, ORGANIZATION, playerName, pushEvent, TREATY_LABEL, UNIT_REQUIRES, UNITS,
 } from './rules.ts';
 import { LAND_UNITS, UNIT_TYPES, type Army, type OrganizationKind, type TreatyType, type UnitType, type World } from './types.ts';
@@ -618,7 +618,9 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
     case 'claimNationRelief': {
       const nation = requireLeader(world, player, action.countryId);
       if (!nationReliefDue(world.tick, nation)) fail("Aucune aide disponible : elle est accordée tous les 2 000 jours.");
-      nation.reliefClaimed = (nation.reliefClaimed ?? 0) + 1;
+      // La première aide est utilisée avant les paliers : les paliers restent disponibles ensuite.
+      if (!(nation.reliefGrants ?? []).includes(FIRST_RELIEF_ID)) nation.reliefGrants = [...(nation.reliefGrants ?? []), FIRST_RELIEF_ID];
+      else nation.reliefClaimed = (nation.reliefClaimed ?? 0) + 1;
       const indebted = [...world.cities.values()].filter((c) => c.countryId === action.countryId && c.debt > 0);
       const debt = indebted.reduce((s, c) => s + c.debt, 0);
       if (debt > 0) {
