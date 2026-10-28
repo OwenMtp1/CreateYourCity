@@ -34,6 +34,8 @@ export interface Road {
   x2: number;
   y2: number;
   builtAtTick: number;
+  /** Rond-point ou boucle fermée : identifiant commun aux tronçons qui forment l'anneau (circulation à sens unique). */
+  ring?: number;
 }
 
 export interface TaxRates {

@@ -213,7 +213,11 @@ export function applyCityCommand(city: CityState, cmd: CityCommand): CommandResu
       const v = validateRoadPath(city, cmd.road, connectRoadEnds(city, cmd.points));
       if (!v.ok) return v;
       city.treasury -= v.cost;
-      for (const seg of v.segments) city.roads.push({ id: city.nextEntityId++, type: cmd.road, ...seg, builtAtTick: city.tick });
+      // Tracé fermé (rond-point) : tous ses tronçons partagent un identifiant d'anneau.
+      const first = cmd.points[0], last = cmd.points.at(-1);
+      const closed = cmd.points.length >= 7 && !!first && !!last && Math.hypot(first.x - last.x, first.y - last.y) < 0.5;
+      const ring = closed ? city.nextEntityId++ : undefined;
+      for (const seg of v.segments) city.roads.push({ id: city.nextEntityId++, type: cmd.road, ...seg, builtAtTick: city.tick, ...(ring !== undefined ? { ring } : {}) });
       city.layoutVersion++;
       return { ok: true, cost: v.cost };
     }

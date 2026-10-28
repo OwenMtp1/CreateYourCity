@@ -103,7 +103,7 @@ export class TrafficView {
   private layout: CityLayout | null = null;
   private cars: InstancedVehicles | null = null;
   private carState: { path: number; s: number; dir: 1 | -1; speed: number }[] = [];
-  private paths: { pts: THREE.Vector3[]; cum: number[]; total: number; weight?: number; roadId?: number }[] = [];
+  private paths: { pts: THREE.Vector3[]; cum: number[]; total: number; weight?: number; roadId?: number; loop?: boolean }[] = [];
   private trafficEfficiency = 1;
 
   private trafficRouting: unknown = null;
@@ -139,10 +139,27 @@ export class TrafficView {
     for (const m of routing.freight.values()) addLoad(m);
     const maxLoad = Math.max(1e-9, ...load.values());
     // Chaque tronçon est un aller-retour ; son poids dépend de son trafic (un tronçon vide garde un poids de base).
-    this.paths = edges.map((e) => {
+    // Tronçons d'un rond-point : un seul anneau parcouru dans un sens, pas des allers-retours sur chaque tronçon.
+    const ringOf = new Map(city.roads.filter((r) => r.ring !== undefined).map((r) => [r.id, r.ring!]));
+    const rings = new Map<number, typeof edges>();
+    const straight: typeof edges = [];
+    for (const e of edges) {
+      const ring = ringOf.get(e.roadId);
+      if (ring === undefined) straight.push(e);
+      else rings.set(ring, [...(rings.get(ring) ?? []), e]);
+    }
+    const straightPaths = straight.map((e) => {
       const pts = [new THREE.Vector3(e.ax - HALF, 0.9, e.ay - HALF), new THREE.Vector3(e.bx - HALF, 0.9, e.by - HALF)];
       return { pts, cum: [0, pts[0]!.distanceTo(pts[1]!)], total: pts[0]!.distanceTo(pts[1]!), weight: 1 + 8 * ((load.get(e.id) ?? 0) / maxLoad), roadId: e.roadId };
     });
+    const loopPaths = [...rings.values()].map((group) => {
+      const pts = ringLoop(group);
+      const cum = [0];
+      for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1]! + pts[i]!.distanceTo(pts[i - 1]!));
+      const meanLoad = group.reduce((s, e) => s + (load.get(e.id) ?? 0), 0) / group.length;
+      return { pts, cum, total: cum.at(-1)!, weight: 1 + 8 * (meanLoad / maxLoad), loop: true };
+    });
+    this.paths = [...straightPaths, ...loopPaths];
     if (!this.paths.length) return;
     const fallback = sharedGeometry('car', () => new THREE.BoxGeometry(4.4, 1.6, 2).translate(0, 0.8, 0));
     this.cars = new InstancedVehicles('car', wanted, fallback, new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.3 }), 0.1, !this.low);
@@ -174,7 +191,7 @@ export class TrafficView {
   /** Avance des véhicules instanciés le long de leurs tracés (aller-retour, circulation à droite). */
   private moveAlong(
     mesh: InstancedVehicles, states: { path: number; s: number; dir: 1 | -1; speed: number }[],
-    paths: { pts: THREE.Vector3[]; cum: number[]; total: number; roadId?: number }[], dt: number, slow: number,
+    paths: { pts: THREE.Vector3[]; cum: number[]; total: number; roadId?: number; loop?: boolean }[], dt: number, slow: number,
   ) {
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
@@ -185,8 +202,14 @@ export class TrafficView {
       // Un tronçon saturé ralentit ses véhicules : l'embouteillage se voit sur la route.
       const jam = p.roadId !== undefined ? this.roadEfficiency.get(p.roadId) ?? 1 : 1;
       c.s += c.dir * c.speed * slow * jam * dt * 4;
-      if (c.s > p.total) { c.s = p.total; c.dir = -1; }
-      if (c.s < 0) { c.s = 0; c.dir = 1; }
+      if (p.loop) {
+        // Anneau : les voitures tournent toujours dans le même sens, sans faire demi-tour.
+        c.dir = 1;
+        c.s = ((c.s % p.total) + p.total) % p.total;
+      } else {
+        if (c.s > p.total) { c.s = p.total; c.dir = -1; }
+        if (c.s < 0) { c.s = 0; c.dir = 1; }
+      }
       let k = 1;
       while (k < p.cum.length - 1 && p.cum[k]! < c.s) k++;
       const a = p.pts[k - 1]!, b = p.pts[k]!;
@@ -203,4 +226,24 @@ export class TrafficView {
     mesh.update();
   }
 
+}
+
+/**
+ * Chemin fermé d'un rond-point : ses tronçons, ordonnés autour du centre, dans le sens anti-horaire
+ * (circulation à droite). Chaque tronçon est orienté pour suivre le précédent.
+ */
+function ringLoop(group: { ax: number; ay: number; bx: number; by: number }[]): THREE.Vector3[] {
+  const xs = group.flatMap((e) => [e.ax, e.bx]), ys = group.flatMap((e) => [e.ay, e.by]);
+  const cx = xs.reduce((a, b) => a + b, 0) / xs.length, cy = ys.reduce((a, b) => a + b, 0) / ys.length;
+  const angle = (e: { ax: number; ay: number; bx: number; by: number }) => Math.atan2((e.ay + e.by) / 2 - cy, (e.ax + e.bx) / 2 - cx);
+  const ordered = [...group].sort((p, q) => angle(p) - angle(q));
+  const first = ordered[0]!;
+  let cur = { x: first.ax, y: first.ay };
+  const pts: { x: number; y: number }[] = [cur];
+  for (const e of ordered) {
+    const toA = Math.hypot(e.ax - cur.x, e.ay - cur.y), toB = Math.hypot(e.bx - cur.x, e.by - cur.y);
+    cur = toA <= toB ? { x: e.bx, y: e.by } : { x: e.ax, y: e.ay };
+    pts.push(cur);
+  }
+  return pts.map((p) => new THREE.Vector3(p.x - HALF, 0.9, p.y - HALF));
 }
