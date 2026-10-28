@@ -239,7 +239,7 @@ export class TrafficView {
       const sx = c.dir === 1 ? e.ax : e.bx, sy = c.dir === 1 ? e.ay : e.by;
       const ex = c.dir === 1 ? e.bx : e.ax, ey = c.dir === 1 ? e.by : e.ay;
       pos.set(sx + (ex - sx) * t - HALF, 0.9, sy + (ey - sy) * t - HALF);
-      const dir = new THREE.Vector3(ex - sx, 0, ey - sy).normalize();
+      const dir = directionOf(ex - sx, ey - sy);
       // Circulation à droite.
       pos.add(new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(-2.4));
       pos.y = mesh.groundY + this.deckAt(pos.x, pos.z);
@@ -277,7 +277,7 @@ export class TrafficView {
       const a = p.pts[k - 1]!, b = p.pts[k]!;
       const segLen = p.cum[k]! - p.cum[k - 1]! || 1;
       pos.lerpVectors(a, b, (c.s - p.cum[k - 1]!) / segLen);
-      const dir = new THREE.Vector3().subVectors(b, a).normalize().multiplyScalar(c.dir);
+      const dir = directionOf(b.x - a.x, b.z - a.z).multiplyScalar(c.dir);
       // Circulation à droite.
       pos.add(new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(-2.4));
       pos.y = mesh.groundY + this.deckAt(pos.x, pos.z);
@@ -307,5 +307,13 @@ function ringLoop(group: { ax: number; ay: number; bx: number; by: number }[]): 
     cur = toA <= toB ? { x: e.bx, y: e.by } : { x: e.ax, y: e.ay };
     pts.push(cur);
   }
-  return pts.map((p) => new THREE.Vector3(p.x - HALF, 0.9, p.y - HALF));
+  // Points confondus (tronçons de longueur nulle) retirés : ils donneraient une direction indéfinie.
+  const unique = pts.filter((p, i) => i === 0 || Math.hypot(p.x - pts[i - 1]!.x, p.y - pts[i - 1]!.y) > 0.01);
+  return unique.map((p) => new THREE.Vector3(p.x - HALF, 0.9, p.y - HALF));
+}
+
+/** Direction horizontale unitaire ; un segment de longueur nulle garde la direction est (sinon la voiture disparaît : NaN). */
+function directionOf(dx: number, dz: number): THREE.Vector3 {
+  const len = Math.hypot(dx, dz);
+  return len > 1e-6 ? new THREE.Vector3(dx / len, 0, dz / len) : new THREE.Vector3(1, 0, 0);
 }
