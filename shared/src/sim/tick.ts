@@ -366,7 +366,8 @@ export function simulateTick(city: CityState, mod: CityModifiers = DEFAULT_MODIF
     localIn.set(l.to, c);
     localSupplied += l.qty;
   }
-  const importUnit = mod.goodsImportPrice * (1 + mod.tariffRate) + COMMERCE.importHandling;
+  const airportFactor = ops.some((b) => b.type === 'airport') ? COMMERCE.airportImportFactor : 1;
+  const importUnit = (mod.goodsImportPrice * (1 + mod.tariffRate) + COMMERCE.importHandling) * airportFactor;
   const contractUnit = mod.contractIn.qty > 0 ? (mod.contractIn.cost + mod.contractIn.tariff) / mod.contractIn.qty : 0;
   const economy: Record<number, BuildingEconomy> = {};
   let imported = 0, exported = 0, commercialTax = 0, industrialTax = 0, lostSales = 0, unsoldGoods = 0;

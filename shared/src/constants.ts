@@ -74,6 +74,8 @@ export const COMMERCE = {
   minPayroll: 0.4,
   /** Frais d'importation (transport, intermédiaires) ajoutés au prix du marché commun. */
   importHandling: 5,
+  /** Coefficient sur le prix des importations quand la ville a un aéroport international. */
+  airportImportFactor: 0.9,
   /** Coût de livraison par mètre de route entre une usine et un commerce (payé par le commerce). */
   deliveryCostPerMeter: 0.004,
   /** Bonus de chiffre d'affaires des bureaux à portée d'une école (main-d'œuvre qualifiée). */

@@ -253,6 +253,41 @@ export function buildModel(type: BuildingType, seed: number): { group: THREE.Gro
       info.height = h + 18;
       break;
     }
+    case 'skyscraper': {
+      g.add(ground(W, D, 0x6b7280));
+      g.add(tower(W, 130, D, 'glass', 0x9ca3af));
+      g.add(tower(W * 0.6, 22, D * 0.6, 'glass', 0x9ca3af, 0, 130));
+      g.add(box(1.2, 14, 1.2, solid(0xe5e7eb), 0, 152, 0));
+      info.height = 152;
+      break;
+    }
+    case 'theme_park': {
+      g.add(ground(W, D, 0x86a86b));
+      // Grande roue : anneau et rayons, et deux chapiteaux colorés.
+      const wheel = new THREE.Mesh(new THREE.TorusGeometry(14, 0.6, 6, 28), solid(0xfacc15));
+      wheel.position.set(-W * 0.2, 16, -D * 0.1);
+      g.add(wheel);
+      g.add(box(1.2, 16, 1.2, solid(0x9ca3af), -W * 0.2, 0, -D * 0.1));
+      for (const [x, z, c] of [[W * 0.2, D * 0.15, 0xef4444], [W * 0.3, -D * 0.25, 0x3b82f6]] as const) {
+        const tent = new THREE.Mesh(new THREE.ConeGeometry(7, 6, 8), solid(c));
+        tent.position.set(x, 3, z);
+        g.add(tent);
+      }
+      info.height = 32;
+      break;
+    }
+    case 'airport': {
+      g.add(ground(W, D, 0x9ca3af));
+      g.add(box(W * 0.9, 0.3, D * 0.2, solid(0x374151), 0, 0.2, -D * 0.3));
+      g.add(box(W * 0.45, 9, D * 0.18, solid(0xe5e7eb), -W * 0.1, 0, D * 0.15));
+      g.add(box(W * 0.45, 0.8, D * 0.18, solid(0x64748b), -W * 0.1, 9, D * 0.15));
+      const control = new THREE.Mesh(new THREE.CylinderGeometry(3, 3.5, 30, 10), solid(0xf1f5f9));
+      control.position.set(W * 0.3, 15, D * 0.2);
+      g.add(control);
+      g.add(box(7, 4, 7, solid(0x0ea5e9, { emissive: new THREE.Color(0x0ea5e9), emissiveIntensity: 0.3 }), W * 0.3, 30, D * 0.2));
+      info.height = 34;
+      break;
+    }
     case 'casino': {
       g.add(ground(W, D, 0x6b7280));
       g.add(box(W - 4, 9, D - 4, solid(0x7f1d1d), 0, 0, 0));

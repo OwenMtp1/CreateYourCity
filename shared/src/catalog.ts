@@ -26,7 +26,10 @@ export type BuildingType =
   | 'solar_plant'
   | 'casino'
   | 'hotel'
-  | 'cinema';
+  | 'cinema'
+  | 'theme_park'
+  | 'airport'
+  | 'skyscraper';
 
 export type RoadType = 'street' | 'avenue' | 'bridge';
 export type BuildingCategory = 'residential' | 'commercial' | 'industrial' | 'service' | 'utility' | 'transport' | 'military';
@@ -80,6 +83,18 @@ export interface BuildingDef {
 }
 
 export const BUILDINGS: Record<BuildingType, BuildingDef> = {
+  theme_park: {
+    type: 'theme_park', label: 'Parc à thème', category: 'commercial',
+    description: "Grand parc d'attractions : gros chiffre d'affaires et loisirs pour toute la région, mais beaucoup de visiteurs et d'électricité.",
+    w: 80, h: 80, cost: 4_000_000, upkeepPerDay: 600, jobs: 60, housing: 0, powerMW: 2.0, waterM3PerDay: 40,
+    revenuePerWorker: 240, service: { kind: 'leisure', radius: 600, capacity: 6_000 },
+  },
+  airport: {
+    type: 'airport', label: 'Aéroport international', category: 'transport',
+    description: "Relie la ville au monde : importations moins chères dans toute la ville (-10 %) et gros chiffre d'affaires. Très grande emprise.",
+    w: 200, h: 120, cost: 8_000_000, upkeepPerDay: 2_000, jobs: 150, housing: 0, powerMW: 3.0, waterM3PerDay: 30,
+    revenuePerWorker: 300, publicSector: false,
+  },
   casino: {
     type: 'casino', label: 'Casino', category: 'commercial',
     description: 'Gros chiffre d\'affaires pour peu d\'employés, mais affluence et bruit autour : nuisance pour les logements proches.',
@@ -103,6 +118,11 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     type: 'house', label: 'Maisons', category: 'residential',
     description: 'Petit îlot de maisons individuelles.',
     w: 20, h: 20, cost: 15_000, upkeepPerDay: 10, jobs: 0, housing: 12, powerMW: 0.02, waterM3PerDay: 3,
+  },
+  skyscraper: {
+    type: 'skyscraper', label: 'Gratte-ciel de luxe', category: 'residential',
+    description: "Tour de très haut standing : beaucoup d'appartements premium sur une petite emprise. Gros besoins en électricité et en eau.",
+    w: 50, h: 50, cost: 5_000_000, upkeepPerDay: 800, jobs: 0, housing: 900, powerMW: 4.0, waterM3PerDay: 250,
   },
   tower: {
     type: 'tower', label: "Tour d'habitation", category: 'residential',
