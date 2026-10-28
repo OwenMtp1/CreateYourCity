@@ -67,16 +67,16 @@ export class TransitView {
           const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
           const angle = Math.atan2(b.z - a.z, b.x - a.x);
           if (mode === 'metro') {
-            const deck = new THREE.Mesh(new THREE.BoxGeometry(len, 1.2, 6), solid(0x9ca3af));
+            // Métro discret : voie fine et translucide, piliers rares et fins, pour ne pas masquer les bâtiments.
+            const ghost = { transparent: true, opacity: 0.32, depthWrite: false };
+            const deck = new THREE.Mesh(new THREE.BoxGeometry(len, 0.5, 2.4), solid(0x9ca3af, ghost));
             deck.position.copy(mid).setY(st.y - 1.4);
             deck.rotation.y = -angle;
-            deck.castShadow = deck.receiveShadow = true;
             this.transitGroup.add(deck);
-            for (let k = 0; k <= Math.floor(len / 40); k++) {
-              const p = new THREE.Vector3().lerpVectors(a, b, len > 0 ? (k * 40) / len : 0);
-              const pillar = new THREE.Mesh(sharedGeometry('pillar', () => new THREE.CylinderGeometry(0.8, 1, 7.6, 8)), solid(0xa8a29e));
+            for (let k = 0; k <= Math.floor(len / 80); k++) {
+              const p = new THREE.Vector3().lerpVectors(a, b, len > 0 ? (k * 80) / len : 0);
+              const pillar = new THREE.Mesh(sharedGeometry('pillar', () => new THREE.CylinderGeometry(0.4, 0.5, 7.6, 6)), solid(0xa8a29e, ghost));
               pillar.position.set(p.x, 3.8, p.z);
-              pillar.castShadow = true;
               this.transitGroup.add(pillar);
             }
           } else if (mode === 'tram') {
