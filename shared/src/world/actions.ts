@@ -44,6 +44,10 @@ export type WorldAction =
   | { type: 'fundProject'; countryId: string; project: ProjectId }
   /** Dirigeant : aide de la Communauté internationale (dette effacée, ou versement si la nation n'a pas de dette). */
   | { type: 'claimNationRelief'; countryId: string }
+  /** Propriétaire d'une ville : demande une aide de montant libre à la nation. */
+  | { type: 'requestNationAid'; cityId: string; amount: number }
+  /** Dirigeant : accepte une demande (au montant `amount`, sinon celui demandé), ou la refuse. */
+  | { type: 'respondNationAid'; countryId: string; requestId: number; accept: boolean; amount?: number }
   /** Administrateur : remet le budget national d'une nation à zéro. */
   | { type: 'resetNationBudget'; countryId: string }
   | { type: 'nationalGrant'; countryId: string; toCityId: string; amount: number }
@@ -643,6 +647,38 @@ function run(world: World, player: string, action: WorldAction, now: Date) {
         nation.treasury += NATION_RELIEF.aid;
         pushEvent(world, 'funds', `La Communauté internationale verse ${fmt(NATION_RELIEF.aid)} cr à ${countryName(action.countryId)}.`);
       }
+      return;
+    }
+
+    case 'requestNationAid': {
+      const city = ownCity(world, player, action.cityId);
+      const nation = meta.nations[city.countryId];
+      if (!nation) fail("Cette ville n'appartient à aucune nation.");
+      const amount = Math.floor(action.amount);
+      if (!(amount > 0)) fail('Montant invalide.');
+      const requests = nation!.aidRequests ?? [];
+      if (requests.some((r) => r.cityId === city.cityId)) fail('Une demande est déjà en attente pour cette ville.');
+      nation!.aidRequests = [...requests, { id: nextId(meta), cityId: city.cityId, requester: player, amount }];
+      pushEvent(world, 'funds', `${cityName(city.cityId)} demande ${fmt(amount)} cr d'aide à ${countryName(city.countryId)}.`, [player, nation!.leaderId ?? player], true);
+      return;
+    }
+
+    case 'respondNationAid': {
+      const nation = requireLeader(world, player, action.countryId);
+      const request = (nation.aidRequests ?? []).find((r) => r.id === action.requestId);
+      if (!request) fail('Demande introuvable.');
+      nation.aidRequests = (nation.aidRequests ?? []).filter((r) => r.id !== action.requestId);
+      const city = world.cities.get(request!.cityId);
+      if (!action.accept) {
+        pushEvent(world, 'funds', `${countryName(action.countryId)} refuse l'aide demandée par ${cityName(request!.cityId)}.`, [request!.requester], true);
+        return;
+      }
+      const amount = Math.floor(action.amount ?? request!.amount);
+      if (!(amount > 0)) fail('Montant invalide.');
+      if (amount > nation.treasury) fail('Budget national insuffisant.');
+      nation.treasury -= amount;
+      if (city) city.treasury += amount;
+      pushEvent(world, 'funds', `${countryName(action.countryId)} verse ${fmt(amount)} cr à ${cityName(request!.cityId)}.`, [request!.requester], true);
       return;
     }
 

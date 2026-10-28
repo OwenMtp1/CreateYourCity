@@ -601,6 +601,7 @@ export function NationPanel() {
       )}
       {countryId && <NationDetail world={world} me={player.id} countryId={countryId} />}
       {countryId && <NationDebts countryId={countryId} />}
+      {countryId && <NationAid countryId={countryId} />}
       {countryId && isAdminName(player.name) && (
         <button className="danger" onClick={() => { if (confirm('Remettre à zéro le budget de cette nation ?')) void client.action({ type: 'resetNationBudget', countryId }); }}>
           Remettre le budget à zéro (admin)
@@ -743,6 +744,61 @@ function NationDetail({ world, me, countryId }: { world: WorldView; me: string; 
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * Demandes d'aide : une ville demande le montant de son choix à la nation. Le dirigeant accepte (au montant
+ * demandé ou un autre montant), ou refuse.
+ */
+function NationAid({ countryId }: { countryId: string }) {
+  const world = useGame((s) => s.world);
+  const player = useGame((s) => s.player);
+  const myCities = useGame((s) => s.myCities);
+  const nation = world?.nations.find((n) => n.countryId === countryId);
+  const requests = nation?.aidRequests ?? [];
+  const isLeader = !!player && nation?.leaderId === player.id;
+  const sources = Object.values(myCities).filter((c) => c.countryId === countryId);
+  const [city, setCity] = useState('');
+  const [amount, setAmount] = useState(100_000);
+  const [counter, setCounter] = useState<Record<number, number>>({});
+  const requestCity = city && sources.some((c) => c.cityId === city) ? city : (sources[0]?.cityId ?? '');
+  return (
+    <div className="card compact stack">
+      <h4>Demandes d'aide</h4>
+      {sources.length > 0 && (
+        <div className="row wrap">
+          <select value={requestCity} onChange={(e) => setCity(e.target.value)}>
+            {sources.map((c) => <option key={c.cityId} value={c.cityId}>{cityLabel(c.cityId)}</option>)}
+          </select>
+          <input type="number" min={1} step={10000} value={amount} onChange={(e) => setAmount(Number(e.target.value))} />
+          <button disabled={!requestCity || amount <= 0} onClick={() => void client.action({ type: 'requestNationAid', cityId: requestCity, amount })}>
+            Demander une aide
+          </button>
+        </div>
+      )}
+      {requests.length === 0 && <p className="small muted">Aucune demande en attente.</p>}
+      {requests.map((r) => {
+        const value = counter[r.id] ?? r.amount;
+        return (
+          <div key={r.id} className="row wrap">
+            <span>{cityLabel(r.cityId)} demande <strong>{fmtMoney(r.amount)}</strong></span>
+            {isLeader && (
+              <>
+                <input type="number" min={1} step={10000} value={value} onChange={(e) => setCounter({ ...counter, [r.id]: Number(e.target.value) })} />
+                <button disabled={value <= 0 || (nation?.treasury ?? 0) < value}
+                  onClick={() => void client.action({ type: 'respondNationAid', countryId, requestId: r.id, accept: true, amount: value })}>
+                  Accepter
+                </button>
+                <button className="ghost" onClick={() => void client.action({ type: 'respondNationAid', countryId, requestId: r.id, accept: false })}>
+                  Refuser
+                </button>
+              </>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

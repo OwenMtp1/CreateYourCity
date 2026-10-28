@@ -48,6 +48,8 @@ export const worldActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('fundProject'), countryId: id, project: z.enum(['highway', 'power_grid', 'university', 'national_defense', 'trade_fair', 'national_health', 'data_network', 'national_park', 'international_airport']) }),
   z.object({ type: z.literal('claimNationRelief'), countryId: id }),
   z.object({ type: z.literal('resetNationBudget'), countryId: id }),
+  z.object({ type: z.literal('requestNationAid'), cityId, amount: z.number().finite().positive().max(1e10) }),
+  z.object({ type: z.literal('respondNationAid'), countryId: id, requestId: z.number().int().nonnegative(), accept: z.boolean(), amount: z.number().finite().positive().max(1e10).optional() }),
   z.object({ type: z.literal('nationalGrant'), countryId: id, toCityId: cityId, amount }),
   z.object({ type: z.literal('createOrganization'), name: z.string().trim().min(3).max(40), kind: z.enum(['military', 'trade']) }),
   z.object({ type: z.literal('inviteToOrganization'), orgId: z.number().int(), playerId: id }),

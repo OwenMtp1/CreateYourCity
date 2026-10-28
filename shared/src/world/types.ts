@@ -103,6 +103,14 @@ export interface Siege {
   progress: number;
 }
 
+/** Demande d'aide d'une ville à sa nation : le dirigeant peut accepter, refuser ou modifier le montant. */
+export interface AidRequest {
+  id: number;
+  cityId: string;
+  requester: string;
+  amount: number;
+}
+
 export interface NationState {
   countryId: string;
   leaderId: string | null;
@@ -111,6 +119,8 @@ export interface NationState {
   reliefClaimed?: number;
   /** Aides ponctuelles déjà utilisées (identifiants de RELIEF). */
   reliefGrants?: string[];
+  /** Demandes d'aide des villes de la nation, en attente de décision du dirigeant. */
+  aidRequests?: AidRequest[];
   /** Budget initial accordé au premier vote de la partie (une seule fois). */
   endowed?: boolean;
   candidates: string[];
