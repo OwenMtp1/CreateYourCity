@@ -103,6 +103,10 @@ export class TrafficView {
   private layout: CityLayout | null = null;
   private cars: InstancedVehicles | null = null;
   private carState: { path: number; s: number; dir: 1 | -1; speed: number }[] = [];
+  /** Voitures du réseau routier (hors anneaux), avec leur tronçon courant. */
+  private graphState: { edge: number; s: number; dir: 1 | -1; speed: number; seed: number }[] = [];
+  private graphEdges: { a: number; b: number; ax: number; ay: number; bx: number; by: number; len: number; roadId: number; weight: number }[] = [];
+  private adj = new Map<number, number[]>();
   private paths: { pts: THREE.Vector3[]; cum: number[]; total: number; weight?: number; roadId?: number; loop?: boolean }[] = [];
   private trafficEfficiency = 1;
 
@@ -121,9 +125,9 @@ export class TrafficView {
     const carTrips = trips * (1 - (city.stats?.transit.share ?? 0));
     this.trafficEfficiency = city.stats?.traffic.efficiency ?? 1;
     const cap = this.low ? 120 : 360;
-    const edges = routing?.edges.filter((e) => Math.hypot(e.bx - e.ax, e.by - e.ay) > 5) ?? [];
+    const edges = routing?.edges.filter((e) => Math.hypot(e.bx - e.ax, e.by - e.ay) > 0.5) ?? [];
     const wanted = routing && edges.length ? Math.min(cap, Math.max(Math.round(carTrips / 25), edges.length * 2)) : 0;
-    if (this.cars && this.carState.length === wanted && this.trafficRouting === routing) return;
+    if (this.cars && this.carState.length + this.graphState.length === wanted && this.trafficRouting === routing) return;
     this.trafficRouting = routing;
     if (this.cars) {
       this.cars.removeFrom(this.scene);
@@ -131,6 +135,7 @@ export class TrafficView {
       this.cars = null;
     }
     this.carState = [];
+    this.graphState = [];
     if (!routing || wanted === 0) return;
     const load = new Map<number, number>();
     const addLoad = (m: Map<number, number>) => { for (const [e, w] of m) load.set(e, (load.get(e) ?? 0) + w); };
@@ -138,8 +143,8 @@ export class TrafficView {
     for (const m of routing.shopping.values()) addLoad(m);
     for (const m of routing.freight.values()) addLoad(m);
     const maxLoad = Math.max(1e-9, ...load.values());
-    // Chaque tronçon est un aller-retour ; son poids dépend de son trafic (un tronçon vide garde un poids de base).
-    // Tronçons d'un rond-point : un seul anneau parcouru dans un sens, pas des allers-retours sur chaque tronçon.
+    // Tronçons d'un rond-point : un anneau parcouru dans un sens. Les autres tronçons forment le réseau
+    // routier : les voitures y enchaînent les routes à chaque carrefour, sans faire demi-tour.
     const ringOf = new Map(city.roads.filter((r) => r.ring !== undefined).map((r) => [r.id, r.ring!]));
     const rings = new Map<number, typeof edges>();
     const straight: typeof edges = [];
@@ -148,9 +153,13 @@ export class TrafficView {
       if (ring === undefined) straight.push(e);
       else rings.set(ring, [...(rings.get(ring) ?? []), e]);
     }
-    const straightPaths = straight.map((e) => {
-      const pts = [new THREE.Vector3(e.ax - HALF, 0.9, e.ay - HALF), new THREE.Vector3(e.bx - HALF, 0.9, e.by - HALF)];
-      return { pts, cum: [0, pts[0]!.distanceTo(pts[1]!)], total: pts[0]!.distanceTo(pts[1]!), weight: 1 + 8 * ((load.get(e.id) ?? 0) / maxLoad), roadId: e.roadId };
+    this.graphEdges = straight.map((e) => ({
+      a: e.a, b: e.b, ax: e.ax, ay: e.ay, bx: e.bx, by: e.by, len: Math.hypot(e.bx - e.ax, e.by - e.ay),
+      roadId: e.roadId, weight: 1 + 8 * ((load.get(e.id) ?? 0) / maxLoad),
+    }));
+    this.adj = new Map();
+    this.graphEdges.forEach((g, k) => {
+      for (const node of [g.a, g.b]) this.adj.set(node, [...(this.adj.get(node) ?? []), k]);
     });
     const loopPaths = [...rings.values()].map((group) => {
       const pts = ringLoop(group);
@@ -159,39 +168,92 @@ export class TrafficView {
       const meanLoad = group.reduce((s, e) => s + (load.get(e.id) ?? 0), 0) / group.length;
       return { pts, cum, total: cum.at(-1)!, weight: 1 + 8 * (meanLoad / maxLoad), loop: true };
     });
-    this.paths = [...straightPaths, ...loopPaths];
-    if (!this.paths.length) return;
+    this.paths = loopPaths;
+    if (!this.graphEdges.length && !this.paths.length) return;
     const fallback = sharedGeometry('car', () => new THREE.BoxGeometry(4.4, 1.6, 2).translate(0, 0.8, 0));
     this.cars = new InstancedVehicles('car', wanted, fallback, new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.3 }), 0.1, !this.low);
     const rnd = mulberry32(hashString(city.cityId) + wanted);
     const colors = [0xe5e7eb, 0x1f2937, 0xdc2626, 0x2563eb, 0x9ca3af, 0xf59e0b, 0x16a34a, 0xf8fafc];
-    // Chaque tronçon reçoit d'abord une voiture, puis le reste est réparti selon son poids.
-    const weights = this.paths.map((p) => p.weight ?? 1);
-    const total = weights.reduce((a, b) => a + b, 0);
-    for (let i = 0; i < wanted; i++) {
-      let path = i < this.paths.length ? i : 0;
-      if (i >= this.paths.length) {
-        let r = rnd() * total, k = 0;
-        while (k < weights.length - 1 && r > weights[k]!) { r -= weights[k]!; k++; }
-        path = k;
-      }
-      this.carState.push({ path, s: rnd() * this.paths[path]!.total, dir: rnd() < 0.5 ? 1 : -1, speed: 10 + rnd() * 6 });
-      this.cars.setColor(i, new THREE.Color(colors[Math.floor(rnd() * colors.length)]!));
+    // Une voiture par anneau, puis les autres voitures sur le réseau, réparties selon le poids des tronçons.
+    const loopCount = Math.min(this.paths.length, wanted);
+    for (let i = 0; i < loopCount; i++) {
+      this.carState.push({ path: i, s: rnd() * this.paths[i]!.total, dir: 1, speed: 10 + rnd() * 6 });
     }
+    const weights = this.graphEdges.map((g) => g.weight);
+    const total = weights.reduce((a, b) => a + b, 0);
+    for (let i = loopCount; i < wanted && this.graphEdges.length; i++) {
+      let r = rnd() * total, k = 0;
+      while (k < weights.length - 1 && r > weights[k]!) { r -= weights[k]!; k++; }
+      this.graphState.push({ edge: k, s: rnd() * this.graphEdges[k]!.len, dir: rnd() < 0.5 ? 1 : -1, speed: 10 + rnd() * 6, seed: Math.floor(rnd() * 0x7fffffff) });
+    }
+    for (let i = 0; i < wanted; i++) this.cars.setColor(i, new THREE.Color(colors[Math.floor(rnd() * colors.length)]!));
     this.cars.addTo(this.scene);
   }
 
   private moveCars(dt: number) {
     // Les embouteillages ralentissent visiblement la circulation.
     const slow = Math.max(0.15, this.trafficEfficiency ** 3);
-    if (this.cars) this.moveAlong(this.cars, this.carState, this.paths, dt, slow);
+    if (this.cars) {
+      this.moveAlong(this.cars, this.carState, this.paths, dt, slow, 0);
+      this.moveOnNetwork(this.cars, dt, slow, this.carState.length);
+    }
     if (this.trucks) this.moveAlong(this.trucks, this.truckState, this.truckPaths, dt, slow);
+  }
+
+  /**
+   * Voitures sur le réseau : à chaque carrefour, la voiture prend une route qui continue (au hasard, sans demi-tour),
+   * et ne fait demi-tour qu'en impasse.
+   */
+  private moveOnNetwork(mesh: InstancedVehicles, dt: number, slow: number, offset: number) {
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const up = new THREE.Vector3(0, 1, 0);
+    const pos = new THREE.Vector3();
+    this.graphState.forEach((c, i) => {
+      const jam0 = this.roadEfficiency.get(this.graphEdges[c.edge]!.roadId) ?? 1;
+      let remaining = c.speed * slow * jam0 * dt * 4;
+      for (let guard = 0; remaining > 0 && guard < 8; guard++) {
+        const e = this.graphEdges[c.edge]!;
+        const toEnd = c.dir === 1 ? e.len - c.s : c.s;
+        if (remaining < toEnd) {
+          c.s += c.dir * remaining;
+          remaining = 0;
+          break;
+        }
+        remaining -= toEnd;
+        const node = c.dir === 1 ? e.b : e.a;
+        c.s = c.dir === 1 ? e.len : 0;
+        const options = (this.adj.get(node) ?? []).filter((k) => k !== c.edge);
+        if (options.length === 0) {
+          c.dir = c.dir === 1 ? -1 : 1;
+          continue;
+        }
+        c.seed = (c.seed * 1103515245 + 12345) & 0x7fffffff;
+        const next = options[c.seed % options.length]!;
+        const ne = this.graphEdges[next]!;
+        c.edge = next;
+        if (ne.a === node) { c.dir = 1; c.s = 0; } else { c.dir = -1; c.s = ne.len; }
+      }
+      const e = this.graphEdges[c.edge]!;
+      const t = e.len ? c.s / e.len : 0;
+      const sx = c.dir === 1 ? e.ax : e.bx, sy = c.dir === 1 ? e.ay : e.by;
+      const ex = c.dir === 1 ? e.bx : e.ax, ey = c.dir === 1 ? e.by : e.ay;
+      pos.set(sx + (ex - sx) * t - HALF, 0.9, sy + (ey - sy) * t - HALF);
+      const dir = new THREE.Vector3(ex - sx, 0, ey - sy).normalize();
+      // Circulation à droite.
+      pos.add(new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(-2.4));
+      pos.y = mesh.groundY + this.deckAt(pos.x, pos.z);
+      q.setFromAxisAngle(up, Math.atan2(-dir.z, dir.x));
+      m.compose(pos, q, new THREE.Vector3(1, 1, 1));
+      mesh.setMatrix(offset + i, m);
+    });
+    mesh.update();
   }
 
   /** Avance des véhicules instanciés le long de leurs tracés (aller-retour, circulation à droite). */
   private moveAlong(
     mesh: InstancedVehicles, states: { path: number; s: number; dir: 1 | -1; speed: number }[],
-    paths: { pts: THREE.Vector3[]; cum: number[]; total: number; roadId?: number; loop?: boolean }[], dt: number, slow: number,
+    paths: { pts: THREE.Vector3[]; cum: number[]; total: number; roadId?: number; loop?: boolean }[], dt: number, slow: number, offset = 0,
   ) {
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
@@ -221,7 +283,7 @@ export class TrafficView {
       pos.y = mesh.groundY + this.deckAt(pos.x, pos.z);
       q.setFromAxisAngle(up, Math.atan2(-dir.z, dir.x));
       m.compose(pos, q, new THREE.Vector3(1, 1, 1));
-      mesh.setMatrix(i, m);
+      mesh.setMatrix(offset + i, m);
     });
     mesh.update();
   }
